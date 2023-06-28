@@ -1,5 +1,6 @@
 mod airdrop;
 mod governance;
-mod merkle_tree;
-
 mod interfaces;
+
+#[cfg(test)]
+mod airdrop_test;

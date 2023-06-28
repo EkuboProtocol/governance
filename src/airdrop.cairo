@@ -9,14 +9,32 @@ trait IAirdrop<TStorage> {
 #[starknet::contract]
 mod Airdrop {
     use super::{IAirdrop, ContractAddress};
-
-    use array::ArrayTrait;
-    use hash::LegacyHash;
+    use array::{ArrayTrait, SpanTrait};
+    use hash::{pedersen};
     use traits::{Into, TryInto};
     use starknet::ContractAddressIntoFelt252;
 
-    use governance::merkle_tree::{verify};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+
+    // Compute the pedersen root by combining the node with the 
+    fn compute_pedersen_root(mut current: felt252, mut proof: Span<felt252>) -> felt252 {
+        match proof.pop_front() {
+            Option::Some(proof_element) => {
+                let a: u256 = current.into();
+                let b: u256 = (*proof_element).into();
+                if b > a {
+                    current = pedersen(current, *proof_element);
+                } else {
+                    current = pedersen(*proof_element, current);
+                }
+
+                compute_pedersen_root(current, proof)
+            },
+            Option::None(()) => {
+                current
+            },
+        }
+    }
 
     #[storage]
     struct Storage {
@@ -48,10 +66,9 @@ mod Airdrop {
         fn claim(
             ref self: ContractState, claimee: ContractAddress, amount: u128, proof: Array::<felt252>
         ) {
-            let amount_felt: felt252 = amount.into();
-            let leaf = LegacyHash::hash(claimee.into(), amount_felt);
+            let leaf = pedersen(claimee.into(), amount.into());
             assert(!self.claimed.read(leaf), 'ALREADY_CLAIMED');
-            assert(verify(self.root.read(), leaf, proof.span()), 'INVALID_PROOF');
+            assert(self.root.read() == compute_pedersen_root(leaf, proof.span()), 'INVALID_PROOF');
             self.claimed.write(leaf, true);
 
             self.token.read().transfer(claimee, u256 { high: 0, low: amount });
