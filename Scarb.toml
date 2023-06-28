@@ -1,5 +1,5 @@
 [package]
-name = "ekubo"
+name = "governance"
 version = "0.1.0"
 description = "Contracts for governance of the Ekubo Protocol"
 homepage = "https://ekubo.org"
