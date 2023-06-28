@@ -56,7 +56,7 @@ mod Airdrop {
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, root: felt252, token: IERC20Dispatcher) {
+    fn constructor(ref self: ContractState, token: IERC20Dispatcher, root: felt252) {
         self.root.write(root);
         self.token.write(token);
     }
@@ -67,6 +67,7 @@ mod Airdrop {
             ref self: ContractState, claimee: ContractAddress, amount: u128, proof: Array::<felt252>
         ) {
             let leaf = pedersen(claimee.into(), amount.into());
+
             assert(!self.claimed.read(leaf), 'ALREADY_CLAIMED');
             assert(self.root.read() == compute_pedersen_root(leaf, proof.span()), 'INVALID_PROOF');
             self.claimed.write(leaf, true);
