@@ -1,0 +1,12 @@
+[package]
+name = "ekubo"
+version = "0.1.0"
+description = "Contracts for governance of the Ekubo Protocol"
+homepage = "https://ekubo.org"
+cairo-version = "2.0.0-rc5"
+
+[dependencies]
+starknet = ">=2.0.0-rc5"
+
+[[target.starknet-contract]]
+allowed-libfuncs-list.name = "experimental_v0.1.0"
