@@ -22,19 +22,24 @@ mod Airdrop {
 
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 
+    fn felt252_lt(lhs: @felt252, rhs: @felt252) -> bool {
+        let a: u256 = (*lhs).into();
+        let b: u256 = (*rhs).into();
+        return a < b;
+    }
+
     // Compute the pedersen root of a merkle tree by combining the current node with each sibling up the tree
-    fn compute_pedersen_root(mut current: felt252, mut proof: Span<felt252>) -> felt252 {
+    fn compute_pedersen_root(current: felt252, mut proof: Span<felt252>) -> felt252 {
         match proof.pop_front() {
             Option::Some(proof_element) => {
-                let a: u256 = current.into();
-                let b: u256 = (*proof_element).into();
-                if b > a {
-                    current = pedersen(current, *proof_element);
-                } else {
-                    current = pedersen(*proof_element, current);
-                }
-
-                compute_pedersen_root(current, proof)
+                compute_pedersen_root(
+                    if felt252_lt(@current, proof_element) {
+                        pedersen(current, *proof_element)
+                    } else {
+                        pedersen(*proof_element, current)
+                    },
+                    proof
+                )
             },
             Option::None(()) => {
                 current

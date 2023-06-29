@@ -20,7 +20,7 @@ fn deploy(token: ITokenDispatcher) -> IGovernanceDispatcher {
     let (address, _) = deploy_syscall(
         Governance::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true
     )
-        .expect('DEPLOY_FAILED');
+        .expect('DEPLOY_GV_FAILED');
     return IGovernanceDispatcher { contract_address: address };
 }
 
