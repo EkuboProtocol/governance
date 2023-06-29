@@ -1,17 +1,12 @@
 use starknet::{ContractAddress};
 use array::{Array};
+use governance::timelock::{Call};
 
 type ProposalId = felt252;
 
 #[derive(Drop, Serde)]
-struct Call {
-    callee: ContractAddress,
-    data: Array<felt252>,
-}
-
-#[derive(Drop, Serde)]
 struct Proposal {
-    calls: Array<felt252>, 
+    calls: Array<Call>, 
 }
 
 #[derive(Copy, Drop, Serde, storage_access::StorageAccess)]
