@@ -4,24 +4,27 @@ use governance::types::{Call};
 
 #[starknet::interface]
 trait ITimelock<TStorage> {
-    // Queue a list of calls to be executed after the delay
+    // Queue a list of calls to be executed after the delay. Only the owner may call this.
     fn queue(ref self: TStorage, calls: Array<Call>) -> felt252;
 
+    // Cancel a queued proposal before it is executed. Only the owner may call this.
     fn cancel(ref self: TStorage, id: felt252);
-    // Execute a list of calls that have previously been queued
+
+    // Execute a list of calls that have previously been queued. Anyone may call this.
     fn execute(ref self: TStorage, calls: Array<Call>) -> Array<Span<felt252>>;
 
     // Return the execution window, i.e. the start and end timestamp in which the call can be executed
     fn get_execution_window(self: @TStorage, id: felt252) -> (u64, u64);
+
     // Get the current owner
     fn get_owner(self: @TStorage) -> ContractAddress;
 
     // Returns the delay and the window for call execution
     fn get_configuration(self: @TStorage) -> (u64, u64);
 
-    // Transfer ownership, i.e. the address that can queue and cancel calls
+    // Transfer ownership, i.e. the address that can queue and cancel calls. This must be self-called via #queue.
     fn transfer(ref self: TStorage, to: ContractAddress);
-    // Configure the delay and the window for call execution
+    // Configure the delay and the window for call execution. This must be self-called via #queue.
     fn configure(ref self: TStorage, delay: u64, window: u64);
 }
 

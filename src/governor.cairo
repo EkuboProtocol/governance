@@ -23,11 +23,11 @@ struct Config {
     voting_start_delay: u64,
     // the period during which votes are collected
     voting_period: u64,
-    // over how many seconds the voting weight is averaged for proposal voting and creation/cancellation
+    // over how many seconds the voting weight is averaged for proposal voting as well as creation/cancellation
     voting_weight_smoothing_duration: u64,
     // how many total votes must be collected for the proposal
     quorum: u128,
-    // the minimum amount of tokens required to create a proposal
+    // the minimum amount of average votes required to create a proposal
     proposal_creation_threshold: u128,
 }
 
