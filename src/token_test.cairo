@@ -27,8 +27,8 @@ fn deploy(name: felt252, symbol: felt252, supply: u128) -> ITokenDispatcher {
 #[test]
 #[available_gas(3000000)]
 fn test_deploy_constructor() {
-    let token = deploy('Governance Token', 'GT', 12345);
-    assert(token.name() == 'Governance Token', 'name');
+    let token = deploy('Governor Token', 'GT', 12345);
+    assert(token.name() == 'Governor Token', 'name');
     assert(token.symbol() == 'GT', 'symbol');
     assert(token.balance_of(get_contract_address()) == 12345, 'deployer balance');
     assert(token.balance_of(contract_address_const::<1234512345>()) == 0, 'random balance');
@@ -38,7 +38,7 @@ fn test_deploy_constructor() {
 #[test]
 #[available_gas(3000000)]
 fn test_transfer_entire_balance() {
-    let token = deploy('Governance Token', 'GT', 12345);
+    let token = deploy('Governor Token', 'GT', 12345);
 
     let recipient = contract_address_const::<12345>();
     token.transfer(recipient, 12345);
@@ -49,7 +49,7 @@ fn test_transfer_entire_balance() {
 #[test]
 #[available_gas(3000000)]
 fn test_transfer_lt_total_balance() {
-    let token = deploy('Governance Token', 'GT', 12345);
+    let token = deploy('Governor Token', 'GT', 12345);
 
     let recipient = contract_address_const::<12345>();
     token.transfer(recipient, 45);
@@ -61,7 +61,7 @@ fn test_transfer_lt_total_balance() {
 #[available_gas(3000000)]
 #[should_panic(expected: ('TRANSFER_INSUFFICIENT_BALANCE', 'ENTRYPOINT_FAILED'))]
 fn test_transfer_gt_total_balance() {
-    let token = deploy('Governance Token', 'GT', 12345);
+    let token = deploy('Governor Token', 'GT', 12345);
 
     let recipient = contract_address_const::<12345>();
     token.transfer(recipient, 12346);
@@ -71,7 +71,7 @@ fn test_transfer_gt_total_balance() {
 #[available_gas(3000000)]
 #[should_panic(expected: ('TRANSFER_AMOUNT_OVERFLOW', 'ENTRYPOINT_FAILED'))]
 fn test_transfer_overflow() {
-    let token = deploy('Governance Token', 'GT', 12345);
+    let token = deploy('Governor Token', 'GT', 12345);
 
     let recipient = contract_address_const::<12345>();
     token.transfer(recipient, u256 { high: 1, low: 0 });
@@ -80,7 +80,7 @@ fn test_transfer_overflow() {
 #[test]
 #[available_gas(3000000)]
 fn test_approve_sets_allowance() {
-    let token = deploy('Governance Token', 'GT', 12345);
+    let token = deploy('Governor Token', 'GT', 12345);
 
     let spender = contract_address_const::<12345>();
     token.approve(spender, 5151);
@@ -90,7 +90,7 @@ fn test_approve_sets_allowance() {
 #[test]
 #[available_gas(3000000)]
 fn test_approve_allows_transfer_from() {
-    let token = deploy('Governance Token', 'GT', 12345);
+    let token = deploy('Governor Token', 'GT', 12345);
 
     let owner = get_contract_address();
     let spender = contract_address_const::<12345>();
@@ -108,7 +108,7 @@ fn test_approve_allows_transfer_from() {
 #[available_gas(3000000)]
 #[should_panic(expected: ('TRANSFER_FROM_ALLOWANCE', 'ENTRYPOINT_FAILED'))]
 fn test_transfer_from_insufficient_allowance() {
-    let token = deploy('Governance Token', 'GT', 12345);
+    let token = deploy('Governor Token', 'GT', 12345);
 
     let owner = get_contract_address();
     let spender = contract_address_const::<12345>();
@@ -122,7 +122,7 @@ fn test_transfer_from_insufficient_allowance() {
 #[available_gas(3000000)]
 #[should_panic(expected: ('APPROVE_AMOUNT_OVERFLOW', 'ENTRYPOINT_FAILED'))]
 fn test_approve_overflow() {
-    let token = deploy('Governance Token', 'GT', 12345);
+    let token = deploy('Governor Token', 'GT', 12345);
 
     let spender = contract_address_const::<12345>();
     let recipient = contract_address_const::<12346>();

@@ -3,6 +3,7 @@ use starknet::ContractAddress;
 
 #[starknet::interface]
 trait IToken<TStorage> {
+    // ERC20 methods
     fn name(self: @TStorage) -> felt252;
     fn symbol(self: @TStorage) -> felt252;
     fn decimals(self: @TStorage) -> u8;
@@ -19,10 +20,18 @@ trait IToken<TStorage> {
         ref self: TStorage, spender: ContractAddress, subtracted_value: u256
     ) -> bool;
 
+    // Delegate tokens from the caller to the given delegate address
     fn delegate(ref self: TStorage, to: ContractAddress);
 
-    fn get_delegated(self: @TStorage, delegate: ContractAddress) -> u128;
-    fn get_delegated_cumulative(self: @TStorage, delegate: ContractAddress) -> u256;
+    // Get how much delegated tokens an address has at a certain timestamp.
+    fn get_delegated(self: @TStorage, delegate: ContractAddress, timestamp: u64) -> u128;
+    // Get the cumulative delegated amount * seconds for an address at a certain timestamp.
+    fn get_delegated_cumulative(self: @TStorage, delegate: ContractAddress, timestamp: u64) -> u256;
+
+    // Get the average amount delegated over the given period of time
+    fn get_average_delegated(
+        self: @TStorage, delegate: ContractAddress, start: u64, end: u64
+    ) -> u128;
 }
 
 #[starknet::contract]
@@ -34,8 +43,8 @@ mod Token {
     use zeroable::{Zeroable};
 
     #[derive(Copy, Drop, storage_access::StorageAccess)]
-    struct DelegatedAccumulator {
-        timestamp_last: u64,
+    struct DelegatedSnapshot {
+        timestamp: u64,
         delegated_cumulative: u256,
     }
 
@@ -48,7 +57,8 @@ mod Token {
         allowances: LegacyMap<(ContractAddress, ContractAddress), u128>,
         delegates: LegacyMap<ContractAddress, ContractAddress>,
         delegated: LegacyMap<ContractAddress, u128>,
-        delegated_cumulative: LegacyMap<ContractAddress, DelegatedAccumulator>,
+        delegated_cumulative_num_snapshots: LegacyMap<ContractAddress, u64>,
+        delegated_cumulative_snapshot: LegacyMap<(ContractAddress, u64), DelegatedSnapshot>,
     }
 
     #[constructor]
@@ -89,6 +99,89 @@ mod Token {
 
     #[generate_trait]
     impl InternalMethods of InternalMethodsTrait {
+        fn insert_snapshot(
+            ref self: ContractState, address: ContractAddress, timestamp: u64
+        ) -> u128 {
+            let amount_delegated = self.delegated.read(address);
+            let num_snapshots = self.delegated_cumulative_num_snapshots.read(address);
+
+            if num_snapshots.is_non_zero() {
+                let last_snapshot = self
+                    .delegated_cumulative_snapshot
+                    .read((address, num_snapshots - 1));
+
+                // if we haven't just snapshotted this address
+                if (last_snapshot.timestamp != timestamp) {
+                    self
+                        .delegated_cumulative_snapshot
+                        .write(
+                            (address, num_snapshots),
+                            DelegatedSnapshot {
+                                timestamp,
+                                delegated_cumulative: last_snapshot.delegated_cumulative
+                                    + ((timestamp - last_snapshot.timestamp).into()
+                                        * amount_delegated.into()),
+                            }
+                        );
+                    self.delegated_cumulative_num_snapshots.write(address, num_snapshots + 1);
+                }
+            } else {
+                // record this timestamp as the first snapshot
+                self
+                    .delegated_cumulative_snapshot
+                    .write(
+                        (address, num_snapshots),
+                        DelegatedSnapshot { timestamp, delegated_cumulative: 0 }
+                    );
+                self.delegated_cumulative_num_snapshots.write(address, 1);
+            };
+
+            amount_delegated
+        }
+
+        fn find_delegated_cumulative(
+            self: @ContractState,
+            delegate: ContractAddress,
+            min_index: u64,
+            max_index_exclusive: u64,
+            timestamp: u64
+        ) -> u256 {
+            if (min_index == (max_index_exclusive - 1)) {
+                let snapshot = self.delegated_cumulative_snapshot.read((delegate, min_index));
+                return if (snapshot.timestamp > timestamp) {
+                    0
+                } else {
+                    let difference = timestamp - snapshot.timestamp;
+                    let next = self.delegated_cumulative_snapshot.read((delegate, min_index + 1));
+                    let delegated_amount = if (next.timestamp.is_zero()) {
+                        self.delegated.read(delegate)
+                    } else {
+                        ((next.delegated_cumulative - snapshot.delegated_cumulative)
+                            / (next.timestamp - snapshot.timestamp).into())
+                            .try_into()
+                            .unwrap()
+                    };
+
+                    snapshot.delegated_cumulative
+                        + ((timestamp - snapshot.timestamp).into() * delegated_amount).into()
+                };
+            }
+            let mid = (min_index + max_index_exclusive) / 2;
+
+            let snapshot = self.delegated_cumulative_snapshot.read((delegate, mid));
+
+            if (timestamp == snapshot.timestamp) {
+                return snapshot.delegated_cumulative;
+            }
+
+            // timestamp we are looking for is before snapshot
+            if (timestamp < snapshot.timestamp) {
+                self.find_delegated_cumulative(delegate, min_index, mid, timestamp)
+            } else {
+                self.find_delegated_cumulative(delegate, mid, max_index_exclusive, timestamp)
+            }
+        }
+
         fn move_delegates(
             ref self: ContractState, from: ContractAddress, to: ContractAddress, amount: u128
         ) {
@@ -99,29 +192,11 @@ mod Token {
             let timestamp = get_block_timestamp();
 
             if (from.is_non_zero()) {
-                self
-                    .delegated_cumulative
-                    .write(
-                        from,
-                        DelegatedAccumulator {
-                            timestamp_last: timestamp,
-                            delegated_cumulative: self.get_delegated_cumulative(from),
-                        }
-                    );
-                self.delegated.write(from, self.delegated.read(from) - amount);
+                self.delegated.write(from, self.insert_snapshot(from, timestamp) - amount);
             }
 
             if (to.is_non_zero()) {
-                self
-                    .delegated_cumulative
-                    .write(
-                        to,
-                        DelegatedAccumulator {
-                            timestamp_last: timestamp,
-                            delegated_cumulative: self.get_delegated_cumulative(to),
-                        }
-                    );
-                self.delegated.write(to, self.delegated.read(to) + amount);
+                self.delegated.write(to, self.insert_snapshot(to, timestamp) + amount);
             }
         }
     }
@@ -203,20 +278,31 @@ mod Token {
             self.move_delegates(old, to, self.balances.read(caller));
         }
 
-        fn get_delegated(self: @ContractState, delegate: ContractAddress) -> u128 {
-            self.delegated.read(delegate)
+        fn get_delegated(self: @ContractState, delegate: ContractAddress, timestamp: u64) -> u128 {
+            (self.get_delegated_cumulative(delegate, timestamp)
+                - self.get_delegated_cumulative(delegate, timestamp - 1))
+                .try_into()
+                .unwrap()
         }
 
-        fn get_delegated_cumulative(self: @ContractState, delegate: ContractAddress) -> u256 {
-            let accumulator = self.delegated_cumulative.read(delegate);
-            let timestamp = get_block_timestamp();
-            if (timestamp == accumulator.timestamp_last) {
-                accumulator.delegated_cumulative
+        fn get_delegated_cumulative(
+            self: @ContractState, delegate: ContractAddress, timestamp: u64
+        ) -> u256 {
+            let num_snapshots = self.delegated_cumulative_num_snapshots.read(delegate);
+            return if (num_snapshots.is_zero()) {
+                0
             } else {
-                accumulator.delegated_cumulative
-                    + ((timestamp - accumulator.timestamp_last).into()
-                        * self.delegated.read(delegate).into())
-            }
+                self.find_delegated_cumulative(delegate, 0, num_snapshots, timestamp)
+            };
+        }
+
+        fn get_average_delegated(
+            self: @ContractState, delegate: ContractAddress, start: u64, end: u64
+        ) -> u128 {
+            let start_snapshot = self.get_delegated_cumulative(delegate, start);
+            let end_snapshot = self.get_delegated_cumulative(delegate, end);
+
+            ((end_snapshot - start_snapshot) / (end - start).into()).try_into().unwrap()
         }
     }
 }

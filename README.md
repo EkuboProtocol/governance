@@ -6,9 +6,9 @@ Simple-as contracts for token governance on Starknet.
 
 ## Principles
 
-Contracts follow the Compound governance philosophy.
+Contracts follow the Compound governance architecture.
 Contracts are focused on immutability.
-All contracts are intended to be upgraded by simply migrating to new ones, including even the token contract if necessary.
+All contracts are intended to be upgraded by simply migrating to new ones. Even the token contract can be migrated, if necessary.
 
 The structure is as follows:
 
