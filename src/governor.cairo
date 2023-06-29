@@ -52,14 +52,17 @@ trait IGovernor<TStorage> {
 #[starknet::contract]
 mod Governor {
     use super::{ContractAddress, Array, IGovernor, ITokenDispatcher, Config, ProposalInfo, Call};
-    use starknet::{get_block_timestamp, get_caller_address};
+    use starknet::{get_block_timestamp, get_caller_address, contract_address_const};
     use governance::types::{CallTrait};
     use governance::token::{ITokenDispatcherTrait};
+    use zeroable::{Zeroable};
 
     #[storage]
     struct Storage {
         config: Config,
-        proposals_started: LegacyMap<felt252, ProposalInfo>,
+        proposals: LegacyMap<felt252, ProposalInfo>,
+        voted: LegacyMap<(ContractAddress, felt252), bool>,
+        executed: LegacyMap<felt252, bool>,
     }
 
     #[constructor]
@@ -71,6 +74,8 @@ mod Governor {
     impl GovernorImpl of IGovernor<ContractState> {
         fn propose(ref self: ContractState, call: Call) -> felt252 {
             let id = call.hash();
+
+            assert(self.proposals.read(id).proposer.is_zero(), 'ALREADY_PROPOSED');
 
             let config = self.config.read();
 
@@ -88,7 +93,7 @@ mod Governor {
             );
 
             self
-                .proposals_started
+                .proposals
                 .write(
                     id,
                     ProposalInfo {
@@ -99,9 +104,115 @@ mod Governor {
             id
         }
 
-        fn vote(ref self: ContractState, id: felt252, vote: bool) {}
-        fn cancel(ref self: ContractState, id: felt252) {}
-        fn execute(ref self: ContractState, call: Call) {}
+        fn vote(ref self: ContractState, id: felt252, vote: bool) {
+            let config = self.config.read();
+            let proposal = self.proposals.read(id);
+
+            assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
+            let timestamp_current = get_block_timestamp();
+            let voting_start_time = (proposal.creation_timestamp + config.voting_start_delay);
+            let voter = get_caller_address();
+
+            assert(timestamp_current >= voting_start_time, 'VOTING_NOT_STARTED');
+            assert(timestamp_current < (voting_start_time + config.voting_period), 'VOTING_ENDED');
+            assert(!self.voted.read((voter, id)), 'ALREADY_VOTED');
+
+            let weight = config
+                .voting_token
+                .get_average_delegated(
+                    voter,
+                    proposal.creation_timestamp - config.voting_weight_smoothing_duration,
+                    proposal.creation_timestamp
+                );
+
+            self
+                .proposals
+                .write(
+                    id,
+                    if vote {
+                        ProposalInfo {
+                            proposer: proposal.proposer,
+                            creation_timestamp: proposal.creation_timestamp,
+                            yes: proposal.yes + weight,
+                            no: proposal.no,
+                        }
+                    } else {
+                        ProposalInfo {
+                            proposer: proposal.proposer,
+                            creation_timestamp: proposal.creation_timestamp,
+                            yes: proposal.yes,
+                            no: proposal.no + weight,
+                        }
+                    }
+                );
+        }
+
+
+        fn cancel(ref self: ContractState, id: felt252) {
+            let config = self.config.read();
+            let proposal = self.proposals.read(id);
+
+            assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
+
+            let timestamp_current = get_block_timestamp();
+
+            if (proposal.proposer != get_caller_address()) {
+                let start = timestamp_current - config.voting_weight_smoothing_duration;
+                // if at any point the average voting weight is below the proposal_creation_threshold for the proposer, it can be canceled
+                assert(
+                    config
+                        .voting_token
+                        .get_average_delegated(proposal.proposer, start, timestamp_current) < config
+                        .proposal_creation_threshold,
+                    'THRESHOLD_NOT_BREACHED'
+                );
+            }
+
+            assert(
+                timestamp_current < (proposal.creation_timestamp
+                    + config.voting_start_delay
+                    + config.voting_period),
+                'VOTING_ENDED'
+            );
+
+            self
+                .proposals
+                .write(
+                    id,
+                    ProposalInfo {
+                        proposer: contract_address_const::<0>(),
+                        creation_timestamp: 0,
+                        yes: 0,
+                        no: 0,
+                    }
+                );
+        }
+
+        fn execute(ref self: ContractState, call: Call) {
+            let id = call.hash();
+
+            let config = self.config.read();
+            let proposal = self.proposals.read(id);
+
+            assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
+            assert(!self.executed.read(id), 'ALREADY_EXECUTED');
+
+            let timestamp_current = get_block_timestamp();
+
+            assert(
+                timestamp_current >= (proposal.creation_timestamp
+                    + config.voting_start_delay
+                    + config.voting_period),
+                'VOTING_NOT_ENDED'
+            );
+
+            assert((proposal.yes + proposal.no) >= config.quorum, 'QUORUM_NOT_MET');
+            assert(proposal.yes >= proposal.no, 'NO_MAJORITY');
+
+            self.executed.write(id, true);
+
+            call.execute();
+        }
 
         fn get_config(self: @ContractState) -> Config {
             self.config.read()
