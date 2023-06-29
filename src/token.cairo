@@ -18,6 +18,8 @@ trait IToken<TStorage> {
     fn decrease_allowance(
         ref self: TStorage, spender: ContractAddress, subtracted_value: u256
     ) -> bool;
+
+    fn delegate(ref self: TStorage, to: ContractAddress);
 }
 
 #[starknet::contract]
@@ -26,6 +28,7 @@ mod Token {
     use traits::{Into, TryInto};
     use option::{OptionTrait};
     use starknet::{get_caller_address};
+    use zeroable::{Zeroable};
 
     #[storage]
     struct Storage {
@@ -34,6 +37,8 @@ mod Token {
         total_supply: u128,
         balances: LegacyMap<ContractAddress, u128>,
         allowances: LegacyMap<(ContractAddress, ContractAddress), u128>,
+        delegates: LegacyMap<ContractAddress, ContractAddress>,
+        delegated: LegacyMap<ContractAddress, u128>,
     }
 
     #[constructor]
@@ -59,10 +64,31 @@ mod Token {
     }
 
     #[derive(starknet::Event, Drop)]
+    struct Delegate {
+        from: ContractAddress,
+        to: ContractAddress,
+    }
+
+    #[derive(starknet::Event, Drop)]
     #[event]
     enum Event {
         Transfer: Transfer,
         Approval: Approval,
+        Delegate: Delegate,
+    }
+
+    #[generate_trait]
+    impl InternalMethods of InternalMethodsTrait {
+        fn move_delegates(
+            ref self: ContractState, from: ContractAddress, to: ContractAddress, amount: u128
+        ) {
+            if (from.is_non_zero()) {
+                self.delegated.write(from, self.delegated.read(from) - amount);
+            }
+            if (to.is_non_zero()) {
+                self.delegated.write(to, self.delegated.read(to) + amount);
+            }
+        }
     }
 
     #[external(v0)]
@@ -122,6 +148,7 @@ mod Token {
             self.emit(Event::Approval(Approval { owner, spender, value: amount }));
             true
         }
+
         fn increase_allowance(
             ref self: ContractState, spender: ContractAddress, added_value: u256
         ) -> bool {
@@ -131,6 +158,14 @@ mod Token {
             ref self: ContractState, spender: ContractAddress, subtracted_value: u256
         ) -> bool {
             self.approve(spender, self.allowance(get_caller_address(), spender) - subtracted_value)
+        }
+
+        fn delegate(ref self: ContractState, to: ContractAddress) {
+            let caller = get_caller_address();
+            let old = self.delegates.read(caller);
+
+            self.delegates.write(caller, to);
+            self.move_delegates(old, to, self.balances.read(caller));
         }
     }
 }
