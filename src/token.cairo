@@ -32,13 +32,37 @@ mod Token {
         name: felt252,
         symbol: felt252,
         decimals: u8,
-        total_supply: u256,
+        total_supply: u128,
         balances: LegacyMap<ContractAddress, u128>,
         allowances: LegacyMap<(ContractAddress, ContractAddress), u128>,
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState) {}
+    fn constructor(ref self: ContractState, total_supply: u128) {
+        self.total_supply.write(total_supply);
+        self.balances.write(get_caller_address(), total_supply);
+    }
+
+    #[derive(starknet::Event, Drop)]
+    struct Transfer {
+        from: ContractAddress,
+        to: ContractAddress,
+        value: u256,
+    }
+
+    #[derive(starknet::Event, Drop)]
+    struct Approval {
+        owner: ContractAddress,
+        spender: ContractAddress,
+        value: u256
+    }
+
+    #[derive(starknet::Event, Drop)]
+    #[event]
+    enum Event {
+        Transfer: Transfer,
+        Approval: Approval,
+    }
 
     #[external(v0)]
     impl TokenImpl of IToken<ContractState> {
@@ -52,7 +76,7 @@ mod Token {
             self.decimals.read()
         }
         fn total_supply(self: @ContractState) -> u256 {
-            self.total_supply.read()
+            self.total_supply.read().into()
         }
         fn balance_of(self: @ContractState, account: ContractAddress) -> u256 {
             self.balances.read(account).into()
@@ -81,18 +105,19 @@ mod Token {
                 self.allowances.write((sender, caller), allowance - amount_small);
             }
             let sender_balance = self.balances.read(sender);
-            assert(sender_balance < amount_small, 'TRANSFER_INSUFFICIENT_BALANCE');
+            assert(amount_small <= sender_balance, 'TRANSFER_INSUFFICIENT_BALANCE');
             self.balances.write(sender, sender_balance - amount_small);
             self.balances.write(recipient, self.balances.read(recipient) + amount_small);
+
+            self.emit(Event::Transfer(Transfer { from: sender, to: recipient, value: amount }));
             true
         }
         fn approve(ref self: ContractState, spender: ContractAddress, amount: u256) -> bool {
+            let owner = get_caller_address();
             self
                 .allowances
-                .write(
-                    (get_caller_address(), spender),
-                    amount.try_into().expect('APPROVE_AMOUNT_OVERFLOW')
-                );
+                .write((owner, spender), amount.try_into().expect('APPROVE_AMOUNT_OVERFLOW'));
+            self.emit(Event::Approval(Approval { owner, spender, value: amount }));
             true
         }
         fn increase_allowance(
