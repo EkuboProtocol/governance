@@ -27,6 +27,14 @@ The structure is as follows:
 - Airdrop can be used to distribute Token
     - Compute a merkle root by computing a list of amounts and recipients, hashing them, and arranging them into a merkle binary tree
 
+## Testing
+
+This code uses the version of Scarb specified in [.github/workflows/test.yaml](./.github/workflows/test.yaml). To run unit tests, simply run:
+
+```
+scarb test
+```
+
 ## Disclaimer
 
 These contracts are unaudited. Use at your own risk. Additional review is greatly appreciated.
