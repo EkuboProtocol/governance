@@ -20,7 +20,7 @@ fn deploy(owner: ContractAddress, delay: u64, window: u64) -> ITimelockDispatche
     Serde::serialize(@window, ref constructor_args);
 
     let (address, _) = deploy_syscall(
-        Timelock::TEST_CLASS_HASH.try_into().unwrap(), 3, constructor_args.span(), true
+        Timelock::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true
     )
         .expect('DEPLOY_FAILED');
     return ITimelockDispatcher { contract_address: address };

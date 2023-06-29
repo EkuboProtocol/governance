@@ -23,7 +23,7 @@ fn deploy(token: IERC20Dispatcher, root: felt252) -> IAirdropDispatcher {
     Serde::serialize(@root, ref constructor_args);
 
     let (address, _) = deploy_syscall(
-        Airdrop::TEST_CLASS_HASH.try_into().unwrap(), 2, constructor_args.span(), true
+        Airdrop::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true
     )
         .expect('DEPLOY_AD_FAILED');
     return IAirdropDispatcher { contract_address: address };

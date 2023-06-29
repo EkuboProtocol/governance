@@ -18,7 +18,7 @@ fn deploy(name: felt252, symbol: felt252, supply: u128) -> ITokenDispatcher {
     Serde::serialize(@supply, ref constructor_args);
 
     let (address, _) = deploy_syscall(
-        Token::TEST_CLASS_HASH.try_into().unwrap(), 1, constructor_args.span(), true
+        Token::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true
     )
         .expect('DEPLOY_TK_FAILED');
     return ITokenDispatcher { contract_address: address };
