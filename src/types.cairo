@@ -36,7 +36,9 @@ impl CallTraitImpl of CallTrait {
             *self.address, *self.entry_point_selector, self.calldata.span()
         );
 
-        assert(result.is_ok(), 'ERROR_IN_CALL');
+        if (result.is_err()) {
+            panic(result.unwrap_err());
+        }
 
         result.unwrap()
     }

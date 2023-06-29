@@ -2,6 +2,8 @@ use debug::PrintTrait;
 use governance::types::{Call, CallTrait};
 use starknet::{contract_address_const};
 use array::{Array, ArrayTrait};
+use governance::token_test::{deploy as deploy_token};
+use serde::{Serde};
 
 #[test]
 #[available_gas(300000000)]
@@ -64,3 +66,68 @@ fn test_hash_address_data_one_two() {
         call.hash() == 0x34552b59a4ecaac8c01b63dfb0ee31f2e49fb784dc90f58c7475fbcdaf3330b, 'hash'
     );
 }
+
+#[test]
+#[available_gas(300000000)]
+#[should_panic(expected: ('CONTRACT_NOT_DEPLOYED', ))]
+fn test_execute_contract_not_deployed() {
+    let mut calldata: Array<felt252> = ArrayTrait::new();
+    let call = Call {
+        address: contract_address_const::<0>(), entry_point_selector: 0, calldata: calldata
+    };
+    call.execute();
+}
+
+
+#[test]
+#[available_gas(300000000)]
+#[should_panic(expected: ('ENTRYPOINT_NOT_FOUND', ))]
+fn test_execute_invalid_entry_point() {
+    let token = deploy_token('TIMELOCK', 'TL', 1);
+
+    let mut calldata: Array<felt252> = ArrayTrait::new();
+    let call = Call {
+        address: token.contract_address, entry_point_selector: 0, calldata: calldata
+    };
+
+    call.execute();
+}
+
+
+#[test]
+#[available_gas(300000000)]
+#[should_panic(expected: ('Input too short for arguments', 'ENTRYPOINT_FAILED'))]
+fn test_execute_invalid_call_data_too_short() {
+    let token = deploy_token('TIMELOCK', 'TL', 1);
+
+    let mut calldata: Array<felt252> = ArrayTrait::new();
+    let call = Call {
+        address: token.contract_address,
+        // transfer
+        entry_point_selector: 0x83afd3f4caedc6eebf44246fe54e38c95e3179a5ec9ea81740eca5b482d12e,
+        calldata: calldata
+    };
+
+    call.execute();
+}
+
+
+#[test]
+#[available_gas(300000000)]
+fn test_execute_valid_call_data() {
+    let token = deploy_token('TIMELOCK', 'TL', 1);
+
+    let mut calldata: Array<felt252> = ArrayTrait::new();
+    Serde::serialize(@contract_address_const::<1>(), ref calldata);
+    Serde::serialize(@1_u256, ref calldata);
+
+    let call = Call {
+        address: token.contract_address,
+        // transfer
+        entry_point_selector: 0x83afd3f4caedc6eebf44246fe54e38c95e3179a5ec9ea81740eca5b482d12e,
+        calldata: calldata
+    };
+
+    call.execute();
+}
+
