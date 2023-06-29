@@ -2,6 +2,8 @@ use starknet::{ContractAddress, ContractAddressIntoFelt252};
 use array::{ArrayTrait, SpanTrait};
 use traits::{Into};
 use hash::{LegacyHash};
+use starknet::{SyscallResult, syscalls::call_contract_syscall};
+use result::{ResultTrait};
 
 #[derive(Drop, Serde)]
 struct Call {
@@ -27,6 +29,16 @@ impl CallTraitImpl of CallTrait {
         };
 
         pedersen(pedersen((*self.address).into(), *self.entry_point_selector), data_hash)
+    }
+
+    fn execute(self: @Call) -> Span<felt252> {
+        let result = call_contract_syscall(
+            *self.address, *self.entry_point_selector, self.calldata.span()
+        );
+
+        assert(result.is_ok(), 'ERROR_IN_CALL');
+
+        result.unwrap()
     }
 }
 

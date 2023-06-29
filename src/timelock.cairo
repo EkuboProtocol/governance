@@ -7,7 +7,7 @@ trait ITimelock<TStorage> {
     // Queue a list of calls to be executed after the delay
     fn queue(ref self: TStorage, calls: Array<Call>) -> felt252;
     // Execute a list of calls that have previously been queued
-    fn execute(ref self: TStorage, calls: Array<Call>);
+    fn execute(ref self: TStorage, calls: Array<Call>) -> Array<Span<felt252>>;
 
     // Return the execution window, i.e. the start and end timestamp in which the call can be executed
     fn get_execution_window(self: @TStorage, id: felt252) -> (u64, u64);
@@ -88,7 +88,7 @@ mod Timelock {
             id
         }
 
-        fn execute(ref self: ContractState, calls: Array<Call>) {
+        fn execute(ref self: ContractState, calls: Array<Call>) -> Array<Span<felt252>> {
             let id = to_id(@calls);
 
             assert(self.executed.read(id).is_zero(), 'ALREADY_EXECUTED');
@@ -104,21 +104,20 @@ mod Timelock {
             // now do the execution
 
             let mut call_span = calls.span();
-            let mut results: Array<Array<felt252>> = ArrayTrait::new();
+            let mut results: Array<Span<felt252>> = ArrayTrait::new();
+
             loop {
                 match call_span.pop_front() {
                     Option::Some(call) => {
-                        let result = call_contract_syscall(
-                            *call.address, *call.entry_point_selector, call.calldata.span()
-                        );
-
-                        assert(result.is_ok(), 'ERROR_IN_CALL');
+                        results.append(call.execute());
                     },
                     Option::None(_) => {
                         break;
                     }
                 };
             };
+
+            results
         }
 
         fn get_execution_window(self: @ContractState, id: felt252) -> (u64, u64) {
