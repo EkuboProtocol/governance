@@ -1,3 +1,4 @@
+use governance::token::ITokenDispatcherTrait;
 use array::{ArrayTrait};
 use debug::PrintTrait;
 use governance::airdrop::{
@@ -7,8 +8,10 @@ use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress
 };
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+use governance::token::{Token, ITokenDispatcher};
+use governance::token_test::{deploy as deploy_token};
 use starknet::class_hash::Felt252TryIntoClassHash;
-use traits::{TryInto};
+use traits::{TryInto, Into};
 
 use result::{Result, ResultTrait};
 use option::{OptionTrait};
@@ -21,7 +24,7 @@ fn deploy(token: IERC20Dispatcher, root: felt252) -> IAirdropDispatcher {
     let (address, _) = deploy_syscall(
         Airdrop::TEST_CLASS_HASH.try_into().unwrap(), 2, constructor_args.span(), true
     )
-        .expect('DEPLOY_FAILED');
+        .expect('DEPLOY_AD_FAILED');
     return IAirdropDispatcher { contract_address: address };
 }
 
@@ -83,5 +86,25 @@ fn test_compute_pedersen_root_recursive() {
         ) == 0xc92a4f7aa8979b0202770b378e46de07bebe0836f8ceece5a47ccf3929c6b0,
         'example'
     );
+}
+
+#[test]
+#[available_gas(3000000)]
+fn test_claim_single_recipient() {
+    let token = deploy_token('AIRDROP', 'AD', 1234567);
+
+    let claimee = contract_address_const::<2345>();
+    let amount: u128 = 6789;
+
+    let leaf = pedersen(claimee.into(), amount.into());
+
+    let airdrop = deploy(IERC20Dispatcher { contract_address: token.contract_address }, leaf);
+
+    token.transfer(airdrop.contract_address, 6789);
+    let proof = ArrayTrait::new();
+
+    airdrop.claim(claimee, amount, proof);
+    assert(token.balance_of(airdrop.contract_address) == 0, 'emptied');
+    assert(token.balance_of(claimee) == 6789, 'received');
 }
 
