@@ -16,7 +16,7 @@ mod Airdrop {
 
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 
-    // Compute the pedersen root by combining the node with the 
+    // Compute the pedersen root of a merkle tree by combining the current node with each sibling up the tree
     fn compute_pedersen_root(mut current: felt252, mut proof: Span<felt252>) -> felt252 {
         match proof.pop_front() {
             Option::Some(proof_element) => {
