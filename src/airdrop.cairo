@@ -1,14 +1,20 @@
 use starknet::ContractAddress;
 use array::{Array};
 
+#[derive(Copy, Drop, Serde)]
+struct Claim {
+    claimee: ContractAddress,
+    amount: u128,
+}
+
 #[starknet::interface]
 trait IAirdrop<TStorage> {
-    fn claim(ref self: TStorage, claimee: ContractAddress, amount: u128, proof: Array::<felt252>);
+    fn claim(ref self: TStorage, claim: Claim, proof: Array::<felt252>);
 }
 
 #[starknet::contract]
 mod Airdrop {
-    use super::{IAirdrop, ContractAddress};
+    use super::{IAirdrop, ContractAddress, Claim};
     use array::{ArrayTrait, SpanTrait};
     use hash::{pedersen};
     use traits::{Into, TryInto};
@@ -36,6 +42,13 @@ mod Airdrop {
         }
     }
 
+    #[generate_trait]
+    impl ClaimToLeaf of ClaimToLeafTrait {
+        fn to_leaf(self: @Claim) -> felt252 {
+            pedersen((*self.claimee).into(), (*self.amount).into())
+        }
+    }
+
     #[storage]
     struct Storage {
         root: felt252,
@@ -45,8 +58,7 @@ mod Airdrop {
 
     #[derive(Drop, starknet::Event)]
     struct Claimed {
-        claimee: ContractAddress,
-        amount: u128,
+        claim: Claim
     }
 
     #[derive(starknet::Event, Drop)]
@@ -63,18 +75,16 @@ mod Airdrop {
 
     #[external(v0)]
     impl AirdropImpl of IAirdrop<ContractState> {
-        fn claim(
-            ref self: ContractState, claimee: ContractAddress, amount: u128, proof: Array::<felt252>
-        ) {
-            let leaf = pedersen(claimee.into(), amount.into());
+        fn claim(ref self: ContractState, claim: Claim, proof: Array::<felt252>) {
+            let leaf = claim.to_leaf();
 
             assert(!self.claimed.read(leaf), 'ALREADY_CLAIMED');
             assert(self.root.read() == compute_pedersen_root(leaf, proof.span()), 'INVALID_PROOF');
             self.claimed.write(leaf, true);
 
-            self.token.read().transfer(claimee, u256 { high: 0, low: amount });
+            self.token.read().transfer(claim.claimee, u256 { high: 0, low: claim.amount });
 
-            self.emit(Event::Claimed(Claimed { claimee, amount }));
+            self.emit(Event::Claimed(Claimed { claim }));
         }
     }
 }

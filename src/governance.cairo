@@ -22,12 +22,17 @@ trait IGovernance<TStorage> {}
 mod Governance {
     use super::{Proposal, VoteCounts, Array, IGovernance};
     use starknet::ContractAddress;
+    use governance::token::{ITokenDispatcher, ITokenDispatcherTrait};
 
     #[storage]
-    struct Storage {}
+    struct Storage {
+        token: ITokenDispatcher, 
+    }
 
     #[constructor]
-    fn constructor(ref self: ContractState) {}
+    fn constructor(ref self: ContractState, token: ITokenDispatcher) {
+        self.token.write(token);
+    }
 
     #[external(v0)]
     impl GovernanceImpl of IGovernance<ContractState> {}

@@ -1,6 +1,7 @@
 use array::{ArrayTrait};
 use debug::PrintTrait;
 use governance::governance::{IGovernanceDispatcher, IGovernanceDispatcherTrait, Governance};
+use governance::token::{ITokenDispatcher, ITokenDispatcherTrait};
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress
 };
@@ -9,9 +10,12 @@ use traits::{TryInto};
 
 use result::{Result, ResultTrait};
 use option::{OptionTrait};
+use governance::token_test::{deploy as deploy_token};
+use serde::Serde;
 
-fn deploy() -> IGovernanceDispatcher {
+fn deploy(token: ITokenDispatcher) -> IGovernanceDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
+    Serde::serialize(@token, ref constructor_args);
 
     let (address, _) = deploy_syscall(
         Governance::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true
@@ -23,5 +27,6 @@ fn deploy() -> IGovernanceDispatcher {
 #[test]
 #[available_gas(3000000)]
 fn test_governance_deploy() {
-    let governance = deploy();
+    let token = deploy_token('Governance', 'GT', 1000);
+    let governance = deploy(token);
 }

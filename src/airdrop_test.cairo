@@ -2,7 +2,7 @@ use governance::token::ITokenDispatcherTrait;
 use array::{ArrayTrait};
 use debug::PrintTrait;
 use governance::airdrop::{
-    IAirdropDispatcher, IAirdropDispatcherTrait, Airdrop, Airdrop::compute_pedersen_root
+    IAirdropDispatcher, IAirdropDispatcherTrait, Airdrop, Airdrop::compute_pedersen_root, Claim
 };
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress
@@ -103,7 +103,7 @@ fn test_claim_single_recipient() {
     token.transfer(airdrop.contract_address, 6789);
     let proof = ArrayTrait::new();
 
-    airdrop.claim(claimee, amount, proof);
+    airdrop.claim(Claim { claimee, amount }, proof);
     assert(token.balance_of(airdrop.contract_address) == 0, 'emptied');
     assert(token.balance_of(claimee) == 6789, 'received');
 }
