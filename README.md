@@ -38,3 +38,7 @@ scarb test
 ## Disclaimer
 
 These contracts are unaudited. Use at your own risk. Additional review is greatly appreciated.
+
+## Credits
+
+The [Airdrop](./src/airdrop.cairo) contract was heavily inspired by the [Carmine Options Airdrop contract](https://github.com/CarmineOptions/governance/blob/master/src/airdrop.cairo).
