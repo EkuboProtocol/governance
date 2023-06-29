@@ -20,6 +20,9 @@ trait IToken<TStorage> {
     ) -> bool;
 
     fn delegate(ref self: TStorage, to: ContractAddress);
+
+    fn get_delegated(self: @TStorage, delegate: ContractAddress) -> u128;
+    fn get_delegated_cumulative(self: @TStorage, delegate: ContractAddress) -> u256;
 }
 
 #[starknet::contract]
@@ -27,8 +30,14 @@ mod Token {
     use super::{IToken, ContractAddress};
     use traits::{Into, TryInto};
     use option::{OptionTrait};
-    use starknet::{get_caller_address};
+    use starknet::{get_caller_address, get_block_timestamp};
     use zeroable::{Zeroable};
+
+    #[derive(Copy, Drop, storage_access::StorageAccess)]
+    struct DelegatedAccumulator {
+        timestamp_last: u64,
+        delegated_cumulative: u256,
+    }
 
     #[storage]
     struct Storage {
@@ -39,6 +48,7 @@ mod Token {
         allowances: LegacyMap<(ContractAddress, ContractAddress), u128>,
         delegates: LegacyMap<ContractAddress, ContractAddress>,
         delegated: LegacyMap<ContractAddress, u128>,
+        delegated_cumulative: LegacyMap<ContractAddress, DelegatedAccumulator>,
     }
 
     #[constructor]
@@ -82,10 +92,35 @@ mod Token {
         fn move_delegates(
             ref self: ContractState, from: ContractAddress, to: ContractAddress, amount: u128
         ) {
+            if (amount == 0) {
+                return ();
+            }
+
+            let timestamp = get_block_timestamp();
+
             if (from.is_non_zero()) {
+                self
+                    .delegated_cumulative
+                    .write(
+                        from,
+                        DelegatedAccumulator {
+                            timestamp_last: timestamp,
+                            delegated_cumulative: self.get_delegated_cumulative(from),
+                        }
+                    );
                 self.delegated.write(from, self.delegated.read(from) - amount);
             }
+
             if (to.is_non_zero()) {
+                self
+                    .delegated_cumulative
+                    .write(
+                        to,
+                        DelegatedAccumulator {
+                            timestamp_last: timestamp,
+                            delegated_cumulative: self.get_delegated_cumulative(to),
+                        }
+                    );
                 self.delegated.write(to, self.delegated.read(to) + amount);
             }
         }
@@ -166,6 +201,22 @@ mod Token {
 
             self.delegates.write(caller, to);
             self.move_delegates(old, to, self.balances.read(caller));
+        }
+
+        fn get_delegated(self: @ContractState, delegate: ContractAddress) -> u128 {
+            self.delegated.read(delegate)
+        }
+
+        fn get_delegated_cumulative(self: @ContractState, delegate: ContractAddress) -> u256 {
+            let accumulator = self.delegated_cumulative.read(delegate);
+            let timestamp = get_block_timestamp();
+            if (timestamp == accumulator.timestamp_last) {
+                accumulator.delegated_cumulative
+            } else {
+                accumulator.delegated_cumulative
+                    + ((timestamp - accumulator.timestamp_last).into()
+                        * self.delegated.read(delegate).into())
+            }
         }
     }
 }
