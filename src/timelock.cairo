@@ -6,6 +6,8 @@ use governance::types::{Call};
 trait ITimelock<TStorage> {
     // Queue a list of calls to be executed after the delay
     fn queue(ref self: TStorage, calls: Array<Call>) -> felt252;
+
+    fn cancel(ref self: TStorage, id: felt252);
     // Execute a list of calls that have previously been queued
     fn execute(ref self: TStorage, calls: Array<Call>) -> Array<Span<felt252>>;
 
@@ -45,6 +47,7 @@ mod Timelock {
         window: u64,
         execution_started: LegacyMap<felt252, u64>,
         executed: LegacyMap<felt252, u64>,
+        canceled: LegacyMap<felt252, u64>,
     }
 
     #[constructor]
@@ -74,6 +77,10 @@ mod Timelock {
 
     #[generate_trait]
     impl TimelockInternal of TimelockInternalTrait {
+        fn check_owner(self: @ContractState) {
+            assert(get_caller_address() == self.owner.read(), 'OWNER_ONLY');
+        }
+
         fn check_self_call(self: @ContractState) {
             assert(get_caller_address() == get_contract_address(), 'SELF_CALL_ONLY');
         }
@@ -82,10 +89,22 @@ mod Timelock {
     #[external(v0)]
     impl TimelockImpl of ITimelock<ContractState> {
         fn queue(ref self: ContractState, calls: Array<Call>) -> felt252 {
-            assert(get_caller_address() == self.owner.read(), 'OWNER_ONLY');
+            self.check_owner();
+
             let id = to_id(@calls);
-            self.execution_started.write(to_id(@calls), get_block_timestamp());
+
+            assert(self.execution_started.read(id).is_zero(), 'ALREADY_QUEUED');
+
+            self.execution_started.write(id, get_block_timestamp());
             id
+        }
+
+        fn cancel(ref self: ContractState, id: felt252) {
+            self.check_owner();
+            assert(self.execution_started.read(id).is_non_zero(), 'DOES_NOT_EXIST');
+            assert(self.executed.read(id).is_zero(), 'ALREADY_EXECUTED');
+
+            self.execution_started.write(id, 0);
         }
 
         fn execute(ref self: ContractState, calls: Array<Call>) -> Array<Span<felt252>> {
@@ -101,11 +120,9 @@ mod Timelock {
 
             self.executed.write(id, time_current);
 
-            // now do the execution
-
-            let mut call_span = calls.span();
             let mut results: Array<Span<felt252>> = ArrayTrait::new();
 
+            let mut call_span = calls.span();
             loop {
                 match call_span.pop_front() {
                     Option::Some(call) => {
@@ -123,9 +140,10 @@ mod Timelock {
         fn get_execution_window(self: @ContractState, id: felt252) -> (u64, u64) {
             let start_time = self.execution_started.read(id);
 
-            assert(start_time != 0, 'INVALID_ID');
+            // this is how we prevent the 0 timestamp from being considered valid
+            assert(start_time != 0, 'DOES_NOT_EXIST');
 
-            let (window, delay) = (self.get_configuration());
+            let (delay, window) = (self.get_configuration());
 
             let earliest = start_time + delay;
             let latest = earliest + window;
