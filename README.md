@@ -23,3 +23,6 @@ The structure is as follows:
 - Airdrop can be used to distribute Token
     - Compute a merkle root by computing a list of amounts and recipients, pedersen hashing them, and arranging them into a merkle binary tree
 
+## Disclaimer
+
+These contracts are unaudited. Use at your own risk. Additional review is greatly appreciated.
