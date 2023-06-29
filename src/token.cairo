@@ -31,14 +31,15 @@ mod Token {
     struct Storage {
         name: felt252,
         symbol: felt252,
-        decimals: u8,
         total_supply: u128,
         balances: LegacyMap<ContractAddress, u128>,
         allowances: LegacyMap<(ContractAddress, ContractAddress), u128>,
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, total_supply: u128) {
+    fn constructor(ref self: ContractState, name: felt252, symbol: felt252, total_supply: u128) {
+        self.name.write(name);
+        self.symbol.write(symbol);
         self.total_supply.write(total_supply);
         self.balances.write(get_caller_address(), total_supply);
     }
@@ -73,7 +74,7 @@ mod Token {
             self.symbol.read()
         }
         fn decimals(self: @ContractState) -> u8 {
-            self.decimals.read()
+            18_u8
         }
         fn total_supply(self: @ContractState) -> u256 {
             self.total_supply.read().into()
@@ -104,6 +105,7 @@ mod Token {
                 assert(allowance >= amount_small, 'TRANSFER_FROM_ALLOWANCE');
                 self.allowances.write((sender, caller), allowance - amount_small);
             }
+
             let sender_balance = self.balances.read(sender);
             assert(amount_small <= sender_balance, 'TRANSFER_INSUFFICIENT_BALANCE');
             self.balances.write(sender, sender_balance - amount_small);
