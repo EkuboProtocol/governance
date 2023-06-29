@@ -8,19 +8,23 @@ struct Claim {
 }
 
 #[starknet::interface]
+trait IERC20<TStorage> {
+    fn transfer(ref self: TStorage, recipient: ContractAddress, amount: u256);
+}
+
+#[starknet::interface]
 trait IAirdrop<TStorage> {
     fn claim(ref self: TStorage, claim: Claim, proof: Array::<felt252>);
 }
 
 #[starknet::contract]
 mod Airdrop {
-    use super::{IAirdrop, ContractAddress, Claim};
+    use super::{IAirdrop, ContractAddress, Claim, IERC20Dispatcher, IERC20DispatcherTrait};
     use array::{ArrayTrait, SpanTrait};
     use hash::{pedersen};
     use traits::{Into, TryInto};
     use starknet::ContractAddressIntoFelt252;
 
-    use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 
     fn felt252_lt(lhs: @felt252, rhs: @felt252) -> bool {
         let a: u256 = (*lhs).into();

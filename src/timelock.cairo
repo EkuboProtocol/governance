@@ -1,16 +1,12 @@
 use core::result::ResultTrait;
 use starknet::{ContractAddress};
-
-#[derive(Drop, Serde)]
-struct Call {
-    address: ContractAddress,
-    entry_point_selector: felt252,
-    calldata: Array<felt252>,
-}
+use governance::types::{Call};
 
 #[starknet::interface]
 trait ITimelock<TStorage> {
+    // Queue a list of calls to be executed after the delay
     fn queue(ref self: TStorage, calls: Array<Call>) -> felt252;
+    // Execute a list of calls that have previously been queued
     fn execute(ref self: TStorage, calls: Array<Call>);
 
     // Return the execution window, i.e. the start and end timestamp in which the call can be executed
@@ -30,6 +26,7 @@ trait ITimelock<TStorage> {
 #[starknet::contract]
 mod Timelock {
     use super::{ITimelock, ContractAddress, Call};
+    use governance::types::{CallTrait};
     use hash::LegacyHash;
     use array::{ArrayTrait, SpanTrait};
     use starknet::{
@@ -39,6 +36,7 @@ mod Timelock {
     use result::{ResultTrait};
     use traits::{Into};
     use zeroable::{Zeroable};
+
 
     #[storage]
     struct Storage {
@@ -65,28 +63,7 @@ mod Timelock {
         loop {
             match span.pop_front() {
                 Option::Some(call) => {
-                    let mut data_hash = 0;
-
-                    let mut data_span = call.calldata.span();
-                    loop {
-                        match data_span.pop_front() {
-                            Option::Some(word) => {
-                                data_hash = pedersen(state, *word);
-                            },
-                            Option::None(_) => {
-                                break;
-                            }
-                        };
-                    };
-
-                    state =
-                        pedersen(
-                            state,
-                            pedersen(
-                                pedersen((*call.address).into(), *call.entry_point_selector),
-                                data_hash
-                            )
-                        );
+                    state = pedersen(state, call.hash());
                 },
                 Option::None(_) => {
                     break state;

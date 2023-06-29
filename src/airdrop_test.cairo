@@ -4,12 +4,11 @@ use array::{ArrayTrait};
 use debug::PrintTrait;
 use governance::airdrop::{
     IAirdropDispatcher, IAirdropDispatcherTrait, Airdrop, Airdrop::compute_pedersen_root, Claim,
-    Airdrop::ClaimToLeaf, Airdrop::felt252_lt
+    Airdrop::ClaimToLeaf, Airdrop::felt252_lt, IERC20Dispatcher, IERC20DispatcherTrait
 };
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress
 };
-use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::token::{Token, ITokenDispatcher};
 use governance::token_test::{deploy as deploy_token};
 use starknet::class_hash::Felt252TryIntoClassHash;
