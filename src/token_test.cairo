@@ -79,6 +79,44 @@ fn test_transfer_overflow() {
 
 #[test]
 #[available_gas(3000000)]
+#[should_panic(expected: ('ORDER', 'ENTRYPOINT_FAILED'))]
+fn test_get_average_delegated_order_same() {
+    let token = deploy('Governor Token', 'GT', 12345);
+
+    token.get_average_delegated(contract_address_const::<12345>(), 0, 0);
+}
+
+#[test]
+#[available_gas(3000000)]
+#[should_panic(expected: ('ORDER', 'ENTRYPOINT_FAILED'))]
+fn test_get_average_delegated_order_backwards() {
+    let token = deploy('Governor Token', 'GT', 12345);
+
+    token.get_average_delegated(contract_address_const::<12345>(), 1, 0);
+}
+
+#[test]
+#[available_gas(3000000)]
+#[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
+fn test_get_average_delegated_future() {
+    let token = deploy('Governor Token', 'GT', 12345);
+
+    token.get_average_delegated(contract_address_const::<12345>(), 0, 1);
+}
+
+#[test]
+#[available_gas(3000000)]
+#[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
+fn test_get_average_delegated_future_non_zero() {
+    let token = deploy('Governor Token', 'GT', 12345);
+
+    set_block_timestamp(5);
+
+    token.get_average_delegated(contract_address_const::<12345>(), 4, 6);
+}
+
+#[test]
+#[available_gas(3000000)]
 fn test_approve_sets_allowance() {
     let token = deploy('Governor Token', 'GT', 12345);
 
@@ -139,11 +177,12 @@ fn test_delegate_count_lags() {
 
     assert(token.get_delegated_at(delegatee, 1) == 0, 'b second before');
     assert(token.get_delegated_at(delegatee, 2) == 0, 'b second of');
-    assert(token.get_delegated_at(delegatee, 3) == 0, 'b second after');
-    assert(token.get_delegated_at(delegatee, 4) == 0, 'b 2 seconds after');
     token.delegate(delegatee);
     assert(token.get_delegated_at(delegatee, 1) == 0, 'a second of');
     assert(token.get_delegated_at(delegatee, 2) == 0, 'a second of');
+
+    set_block_timestamp(4);
+
     assert(token.get_delegated_at(delegatee, 3) == 12345, 'a second after');
     assert(token.get_delegated_at(delegatee, 4) == 12345, 'a 2 seconds after');
 }
@@ -156,16 +195,13 @@ fn test_get_delegated_cumulative() {
     let delegatee = contract_address_const::<12345>();
 
     set_block_timestamp(2);
-
-    assert(token.get_delegated_cumulative(delegatee, 1) == 0, 'b second before');
-    assert(token.get_delegated_cumulative(delegatee, 2) == 0, 'b second of');
-    assert(token.get_delegated_cumulative(delegatee, 3) == 0, 'b second after');
-    assert(token.get_delegated_cumulative(delegatee, 4) == 0, 'b 2 seconds after');
     token.delegate(delegatee);
-    assert(token.get_delegated_cumulative(delegatee, 1) == 0, 'a second of');
-    assert(token.get_delegated_cumulative(delegatee, 2) == 0, 'a second of');
-    assert(token.get_delegated_cumulative(delegatee, 3) == 12345, 'a second after');
-    assert(token.get_delegated_cumulative(delegatee, 4) == 24690, 'a 2 seconds after');
+    set_block_timestamp(4);
+
+    assert(token.get_delegated_cumulative(delegatee, 1) == 0, 'second before');
+    assert(token.get_delegated_cumulative(delegatee, 2) == 0, 'second of');
+    assert(token.get_delegated_cumulative(delegatee, 3) == 12345, 'second after');
+    assert(token.get_delegated_cumulative(delegatee, 4) == 24690, '2 seconds after');
 }
 
 #[test]
@@ -174,19 +210,27 @@ fn test_get_average_delegated() {
     let token = deploy('Governor Token', 'GT', 12345);
     let delegatee = contract_address_const::<12345>();
 
+    set_block_timestamp(10);
+
+    assert(token.get_average_delegated(delegatee, 1, 2) == 0, '1-2');
+    assert(token.get_average_delegated(delegatee, 2, 3) == 0, '2-3');
+    assert(token.get_average_delegated(delegatee, 3, 4) == 0, '3-4');
+    assert(token.get_average_delegated(delegatee, 4, 5) == 0, '4-5');
+    assert(token.get_average_delegated(delegatee, 4, 10) == 0, '4-10');
+    assert(token.get_average_delegated(delegatee, 0, 10) == 0, '4-10');
+
+    // rewind to delegate at ts 2
     set_block_timestamp(2);
-
-    assert(token.get_average_delegated(delegatee, 1, 2) == 0, 'b second before');
-    assert(token.get_average_delegated(delegatee, 2, 3) == 0, 'b second of');
-    assert(token.get_average_delegated(delegatee, 3, 4) == 0, 'b second after');
-    assert(token.get_average_delegated(delegatee, 4, 5) == 0, 'b 2 seconds after');
     token.delegate(delegatee);
-    assert(token.get_average_delegated(delegatee, 1, 2) == 0, 'a second of');
-    assert(token.get_average_delegated(delegatee, 2, 3) == 12345, 'a second of');
-    assert(token.get_average_delegated(delegatee, 3, 4) == 12345, 'a second after');
-    assert(token.get_average_delegated(delegatee, 4, 5) == 12345, 'a 2 seconds after');
-    assert(token.get_average_delegated(delegatee, 4, 10) == 12345, 'a 2 seconds after');
+    set_block_timestamp(10);
 
+    assert(token.get_average_delegated(delegatee, 1, 2) == 0, '1-2 after');
+    assert(token.get_average_delegated(delegatee, 2, 3) == 12345, '2-3 after');
+    assert(token.get_average_delegated(delegatee, 3, 4) == 12345, '3-4 after');
+    assert(token.get_average_delegated(delegatee, 4, 5) == 12345, '4-5 after');
+    assert(token.get_average_delegated(delegatee, 4, 10) == 12345, '4-10 after');
+
+    // rewind to undelegate at 8
     set_block_timestamp(8);
     token.delegate(contract_address_const::<0>());
 
@@ -197,7 +241,7 @@ fn test_get_average_delegated() {
 
 #[test]
 #[available_gas(30000000)]
-fn transfer_delegates_moved() {
+fn test_transfer_delegates_moved() {
     let token = deploy('Governor Token', 'GT', 12345);
     let delegatee = contract_address_const::<12345>();
 
@@ -214,3 +258,20 @@ fn transfer_delegates_moved() {
     );
 }
 
+
+#[test]
+#[available_gas(30000000)]
+fn test_delegate_undelegate() {
+    let token = deploy('Governor Token', 'GT', 12345);
+    let delegatee = contract_address_const::<12345>();
+
+    set_block_timestamp(2);
+    token.delegate(delegatee);
+
+    set_block_timestamp(5);
+    token.delegate(Zeroable::zero());
+    set_block_timestamp(8);
+
+    assert(token.get_delegated(delegatee) == 0, 'delegated');
+    assert(token.get_average_delegated(delegatee, 0, 8) == ((3 * 12345) / 8), 'average');
+}

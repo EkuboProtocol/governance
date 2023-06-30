@@ -31,9 +31,14 @@ trait IToken<TStorage> {
     // Get the cumulative delegated amount * seconds for an address at a certain timestamp.
     fn get_delegated_cumulative(self: @TStorage, delegate: ContractAddress, timestamp: u64) -> u256;
 
-    // Get the average amount delegated over the given period of time
+    // Get the average amount delegated over the given period, where end > start and end <= current time
     fn get_average_delegated(
         self: @TStorage, delegate: ContractAddress, start: u64, end: u64
+    ) -> u128;
+
+    // Get the average amount delegated over the last period seconds
+    fn get_average_delegated_over_last(
+        self: @TStorage, delegate: ContractAddress, period: u64
     ) -> u128;
 }
 
@@ -44,7 +49,6 @@ mod Token {
     use option::{OptionTrait};
     use starknet::{get_caller_address, get_block_timestamp};
     use zeroable::{Zeroable};
-    use debug::PrintTrait;
 
     #[derive(Copy, Drop, storage_access::StorageAccess)]
     struct DelegatedSnapshot {
@@ -295,6 +299,8 @@ mod Token {
         fn get_delegated_at(
             self: @ContractState, delegate: ContractAddress, timestamp: u64
         ) -> u128 {
+            assert(timestamp <= get_block_timestamp(), 'FUTURE');
+
             (self.get_delegated_cumulative(delegate, timestamp)
                 - self.get_delegated_cumulative(delegate, timestamp - 1))
                 .try_into()
@@ -304,6 +310,8 @@ mod Token {
         fn get_delegated_cumulative(
             self: @ContractState, delegate: ContractAddress, timestamp: u64
         ) -> u256 {
+            assert(timestamp <= get_block_timestamp(), 'FUTURE');
+
             let num_snapshots = self.delegated_cumulative_num_snapshots.read(delegate);
             return if (num_snapshots.is_zero()) {
                 0
@@ -315,10 +323,20 @@ mod Token {
         fn get_average_delegated(
             self: @ContractState, delegate: ContractAddress, start: u64, end: u64
         ) -> u128 {
+            assert(end > start, 'ORDER');
+            assert(end <= get_block_timestamp(), 'FUTURE');
+
             let start_snapshot = self.get_delegated_cumulative(delegate, start);
             let end_snapshot = self.get_delegated_cumulative(delegate, end);
 
             ((end_snapshot - start_snapshot) / (end - start).into()).try_into().unwrap()
+        }
+
+        fn get_average_delegated_over_last(
+            self: @ContractState, delegate: ContractAddress, period: u64
+        ) -> u128 {
+            let now = get_block_timestamp();
+            self.get_average_delegated(delegate, now - period, now)
         }
     }
 }

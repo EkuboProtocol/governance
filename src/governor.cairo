@@ -80,14 +80,15 @@ mod Governor {
             let config = self.config.read();
 
             let timestamp_current = get_block_timestamp();
-            let start = timestamp_current - config.voting_weight_smoothing_duration;
 
             let proposer = get_caller_address();
 
             assert(
                 config
                     .voting_token
-                    .get_average_delegated(proposer, start, timestamp_current) >= config
+                    .get_average_delegated_over_last(
+                        delegate: proposer, period: config.voting_weight_smoothing_duration
+                    ) >= config
                     .proposal_creation_threshold,
                 'THRESHOLD'
             );
@@ -119,10 +120,8 @@ mod Governor {
 
             let weight = config
                 .voting_token
-                .get_average_delegated(
-                    voter,
-                    proposal.creation_timestamp - config.voting_weight_smoothing_duration,
-                    proposal.creation_timestamp
+                .get_average_delegated_over_last(
+                    delegate: voter, period: config.voting_weight_smoothing_duration
                 );
 
             self
@@ -157,12 +156,14 @@ mod Governor {
             let timestamp_current = get_block_timestamp();
 
             if (proposal.proposer != get_caller_address()) {
-                let start = timestamp_current - config.voting_weight_smoothing_duration;
                 // if at any point the average voting weight is below the proposal_creation_threshold for the proposer, it can be canceled
                 assert(
                     config
                         .voting_token
-                        .get_average_delegated(proposal.proposer, start, timestamp_current) < config
+                        .get_average_delegated_over_last(
+                            delegate: proposal.proposer,
+                            period: config.voting_weight_smoothing_duration
+                        ) < config
                         .proposal_creation_threshold,
                     'THRESHOLD_NOT_BREACHED'
                 );
