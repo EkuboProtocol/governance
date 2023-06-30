@@ -79,3 +79,81 @@ fn test_queue_execute() {
     timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
     assert(token.balance_of(recipient) == 500_u256, 'balance');
 }
+
+#[test]
+#[available_gas(3000000)]
+#[should_panic(expected: ('DOES_NOT_EXIST', 'ENTRYPOINT_FAILED'))]
+fn test_queue_cancel() {
+    set_block_timestamp(1);
+    let timelock = deploy(get_contract_address(), 86400, 3600);
+
+    let token = deploy_token('TIMELOCK', 'TL', 12345);
+    token.transfer(timelock.contract_address, 12345);
+
+    let recipient = contract_address_const::<12345>();
+
+    let id = timelock.queue(single_call(transfer_call(token, recipient, 500_u256)));
+
+    set_block_timestamp(86401);
+    timelock.cancel(id);
+
+    timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
+}
+
+#[test]
+#[available_gas(3000000)]
+#[should_panic(expected: ('ALREADY_EXECUTED', 'ENTRYPOINT_FAILED'))]
+fn test_queue_execute_twice() {
+    set_block_timestamp(1);
+    let timelock = deploy(get_contract_address(), 86400, 3600);
+
+    let token = deploy_token('TIMELOCK', 'TL', 12345);
+    token.transfer(timelock.contract_address, 12345);
+
+    let recipient = contract_address_const::<12345>();
+
+    let id = timelock.queue(single_call(transfer_call(token, recipient, 500_u256)));
+
+    set_block_timestamp(86401);
+
+    timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
+    timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
+}
+
+#[test]
+#[available_gas(3000000)]
+#[should_panic(expected: ('TOO_EARLY', 'ENTRYPOINT_FAILED'))]
+fn test_queue_executed_too_early() {
+    set_block_timestamp(1);
+    let timelock = deploy(get_contract_address(), 86400, 3600);
+
+    let token = deploy_token('TIMELOCK', 'TL', 12345);
+    token.transfer(timelock.contract_address, 12345);
+
+    let recipient = contract_address_const::<12345>();
+
+    let id = timelock.queue(single_call(transfer_call(token, recipient, 500_u256)));
+
+    let (earliest, latest) = timelock.get_execution_window(id);
+    set_block_timestamp(earliest - 1);
+    timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
+}
+
+#[test]
+#[available_gas(3000000)]
+#[should_panic(expected: ('TOO_LATE', 'ENTRYPOINT_FAILED'))]
+fn test_queue_executed_too_late() {
+    set_block_timestamp(1);
+    let timelock = deploy(get_contract_address(), 86400, 3600);
+
+    let token = deploy_token('TIMELOCK', 'TL', 12345);
+    token.transfer(timelock.contract_address, 12345);
+
+    let recipient = contract_address_const::<12345>();
+
+    let id = timelock.queue(single_call(transfer_call(token, recipient, 500_u256)));
+
+    let (earliest, latest) = timelock.get_execution_window(id);
+    set_block_timestamp(latest);
+    timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
+}
