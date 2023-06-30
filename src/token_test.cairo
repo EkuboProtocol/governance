@@ -5,7 +5,7 @@ use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress,
 };
 use starknet::class_hash::Felt252TryIntoClassHash;
-use starknet::testing::{set_contract_address};
+use starknet::testing::{set_contract_address, set_block_timestamp};
 use traits::{TryInto};
 
 use result::{Result, ResultTrait};
@@ -128,3 +128,69 @@ fn test_approve_overflow() {
     let recipient = contract_address_const::<12346>();
     token.approve(spender, u256 { high: 1, low: 0 });
 }
+
+#[test]
+#[available_gas(30000000)]
+fn test_delegate_count_lags() {
+    let token = deploy('Governor Token', 'GT', 12345);
+    let delegatee = contract_address_const::<12345>();
+
+    set_block_timestamp(2);
+
+    assert(token.get_delegated(delegatee, 1) == 0, 'b second before');
+    assert(token.get_delegated(delegatee, 2) == 0, 'b second of');
+    assert(token.get_delegated(delegatee, 3) == 0, 'b second after');
+    assert(token.get_delegated(delegatee, 4) == 0, 'b 2 seconds after');
+    token.delegate(delegatee);
+    assert(token.get_delegated(delegatee, 1) == 0, 'a second of');
+    assert(token.get_delegated(delegatee, 2) == 0, 'a second of');
+    assert(token.get_delegated(delegatee, 3) == 12345, 'a second after');
+    assert(token.get_delegated(delegatee, 4) == 12345, 'a 2 seconds after');
+}
+
+
+#[test]
+#[available_gas(30000000)]
+fn test_get_delegated_cumulative() {
+    let token = deploy('Governor Token', 'GT', 12345);
+    let delegatee = contract_address_const::<12345>();
+
+    set_block_timestamp(2);
+
+    assert(token.get_delegated_cumulative(delegatee, 1) == 0, 'b second before');
+    assert(token.get_delegated_cumulative(delegatee, 2) == 0, 'b second of');
+    assert(token.get_delegated_cumulative(delegatee, 3) == 0, 'b second after');
+    assert(token.get_delegated_cumulative(delegatee, 4) == 0, 'b 2 seconds after');
+    token.delegate(delegatee);
+    assert(token.get_delegated_cumulative(delegatee, 1) == 0, 'a second of');
+    assert(token.get_delegated_cumulative(delegatee, 2) == 0, 'a second of');
+    assert(token.get_delegated_cumulative(delegatee, 3) == 12345, 'a second after');
+    assert(token.get_delegated_cumulative(delegatee, 4) == 24690, 'a 2 seconds after');
+}
+
+#[test]
+#[available_gas(30000000)]
+fn test_get_average_delegated() {
+    let token = deploy('Governor Token', 'GT', 12345);
+    let delegatee = contract_address_const::<12345>();
+
+    set_block_timestamp(2);
+
+    assert(token.get_average_delegated(delegatee, 1, 2) == 0, 'b second before');
+    assert(token.get_average_delegated(delegatee, 2, 3) == 0, 'b second of');
+    assert(token.get_average_delegated(delegatee, 3, 4) == 0, 'b second after');
+    assert(token.get_average_delegated(delegatee, 4, 5) == 0, 'b 2 seconds after');
+    token.delegate(delegatee);
+    assert(token.get_average_delegated(delegatee, 1, 2) == 0, 'a second of');
+    assert(token.get_average_delegated(delegatee, 2, 3) == 12345, 'a second of');
+    assert(token.get_average_delegated(delegatee, 3, 4) == 12345, 'a second after');
+    assert(token.get_average_delegated(delegatee, 4, 5) == 12345, 'a 2 seconds after');
+    assert(token.get_average_delegated(delegatee, 4, 10) == 12345, 'a 2 seconds after');
+
+    set_block_timestamp(8);
+    token.delegate(contract_address_const::<0>());
+
+    set_block_timestamp(12);
+    assert(token.get_average_delegated(delegatee, 4, 10) == 8230, 'average (4 sec * 12345)/6');
+}
+
