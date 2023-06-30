@@ -299,8 +299,6 @@ mod Token {
         fn get_delegated_at(
             self: @ContractState, delegate: ContractAddress, timestamp: u64
         ) -> u128 {
-            assert(timestamp <= get_block_timestamp(), 'FUTURE');
-
             (self.get_delegated_cumulative(delegate, timestamp)
                 - self.get_delegated_cumulative(delegate, timestamp - 1))
                 .try_into()

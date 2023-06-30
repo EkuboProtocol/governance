@@ -206,6 +206,46 @@ fn test_get_delegated_cumulative() {
 
 #[test]
 #[available_gas(30000000)]
+#[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
+fn test_get_delegated_cumulative_fails_future() {
+    let token = deploy('Governor Token', 'GT', 12345);
+
+    token.get_delegated_cumulative(delegate: contract_address_const::<12345>(), timestamp: 1);
+}
+
+#[test]
+#[available_gas(30000000)]
+#[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
+fn test_get_delegated_cumulative_fails_future_non_zero_ts() {
+    let token = deploy('Governor Token', 'GT', 12345);
+
+    set_block_timestamp(5);
+
+    token.get_delegated_cumulative(delegate: contract_address_const::<12345>(), timestamp: 6);
+}
+
+#[test]
+#[available_gas(30000000)]
+#[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
+fn test_get_delegated_at_fails_future() {
+    let token = deploy('Governor Token', 'GT', 12345);
+
+    token.get_delegated_at(delegate: contract_address_const::<12345>(), timestamp: 1);
+}
+
+#[test]
+#[available_gas(30000000)]
+#[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
+fn test_get_delegated_at_fails_future_non_zero_ts() {
+    let token = deploy('Governor Token', 'GT', 12345);
+
+    set_block_timestamp(5);
+
+    token.get_delegated_at(delegate: contract_address_const::<12345>(), timestamp: 6);
+}
+
+#[test]
+#[available_gas(30000000)]
 fn test_get_average_delegated() {
     let token = deploy('Governor Token', 'GT', 12345);
     let delegatee = contract_address_const::<12345>();
