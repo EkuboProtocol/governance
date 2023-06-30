@@ -137,15 +137,15 @@ fn test_delegate_count_lags() {
 
     set_block_timestamp(2);
 
-    assert(token.get_delegated(delegatee, 1) == 0, 'b second before');
-    assert(token.get_delegated(delegatee, 2) == 0, 'b second of');
-    assert(token.get_delegated(delegatee, 3) == 0, 'b second after');
-    assert(token.get_delegated(delegatee, 4) == 0, 'b 2 seconds after');
+    assert(token.get_delegated_at(delegatee, 1) == 0, 'b second before');
+    assert(token.get_delegated_at(delegatee, 2) == 0, 'b second of');
+    assert(token.get_delegated_at(delegatee, 3) == 0, 'b second after');
+    assert(token.get_delegated_at(delegatee, 4) == 0, 'b 2 seconds after');
     token.delegate(delegatee);
-    assert(token.get_delegated(delegatee, 1) == 0, 'a second of');
-    assert(token.get_delegated(delegatee, 2) == 0, 'a second of');
-    assert(token.get_delegated(delegatee, 3) == 12345, 'a second after');
-    assert(token.get_delegated(delegatee, 4) == 12345, 'a 2 seconds after');
+    assert(token.get_delegated_at(delegatee, 1) == 0, 'a second of');
+    assert(token.get_delegated_at(delegatee, 2) == 0, 'a second of');
+    assert(token.get_delegated_at(delegatee, 3) == 12345, 'a second after');
+    assert(token.get_delegated_at(delegatee, 4) == 12345, 'a 2 seconds after');
 }
 
 
@@ -192,5 +192,25 @@ fn test_get_average_delegated() {
 
     set_block_timestamp(12);
     assert(token.get_average_delegated(delegatee, 4, 10) == 8230, 'average (4 sec * 12345)/6');
+}
+
+
+#[test]
+#[available_gas(30000000)]
+fn transfer_delegates_moved() {
+    let token = deploy('Governor Token', 'GT', 12345);
+    let delegatee = contract_address_const::<12345>();
+
+    set_block_timestamp(2);
+    token.delegate(delegatee);
+
+    token.transfer(contract_address_const::<3456>(), 500);
+    set_block_timestamp(5);
+
+    assert(token.get_delegated(delegatee) == (12345 - 500), 'delegated');
+    assert(
+        token.get_average_delegated(delegatee, 0, 5) == ((3 * (12345 - 500)) / 5),
+        'average 3/5 seconds'
+    );
 }
 

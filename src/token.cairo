@@ -23,8 +23,11 @@ trait IToken<TStorage> {
     // Delegate tokens from the caller to the given delegate address
     fn delegate(ref self: TStorage, to: ContractAddress);
 
+    // Get the currently delegated amount of token. Note this is not flash-loan resistant.
+    fn get_delegated(self: @TStorage, delegate: ContractAddress) -> u128;
+
     // Get how much delegated tokens an address has at a certain timestamp.
-    fn get_delegated(self: @TStorage, delegate: ContractAddress, timestamp: u64) -> u128;
+    fn get_delegated_at(self: @TStorage, delegate: ContractAddress, timestamp: u64) -> u128;
     // Get the cumulative delegated amount * seconds for an address at a certain timestamp.
     fn get_delegated_cumulative(self: @TStorage, delegate: ContractAddress, timestamp: u64) -> u256;
 
@@ -248,6 +251,11 @@ mod Token {
             self.balances.write(sender, sender_balance - amount_small);
             self.balances.write(recipient, self.balances.read(recipient) + amount_small);
 
+            self
+                .move_delegates(
+                    self.delegates.read(sender), self.delegates.read(recipient), amount_small
+                );
+
             self.emit(Event::Transfer(Transfer { from: sender, to: recipient, value: amount }));
             true
         }
@@ -280,7 +288,13 @@ mod Token {
             self.emit(Event::Delegate(Delegate { from: caller, to: to }));
         }
 
-        fn get_delegated(self: @ContractState, delegate: ContractAddress, timestamp: u64) -> u128 {
+        fn get_delegated(self: @ContractState, delegate: ContractAddress) -> u128 {
+            self.delegated.read(delegate)
+        }
+
+        fn get_delegated_at(
+            self: @ContractState, delegate: ContractAddress, timestamp: u64
+        ) -> u128 {
             (self.get_delegated_cumulative(delegate, timestamp)
                 - self.get_delegated_cumulative(delegate, timestamp - 1))
                 .try_into()

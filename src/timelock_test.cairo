@@ -58,7 +58,7 @@ fn single_call(call: Call) -> Array<Call> {
 }
 
 #[test]
-#[available_gas(3000000)]
+#[available_gas(30000000)]
 fn test_queue_execute() {
     set_block_timestamp(1);
     let timelock = deploy(get_contract_address(), 86400, 3600);
@@ -101,7 +101,7 @@ fn test_queue_cancel() {
 }
 
 #[test]
-#[available_gas(3000000)]
+#[available_gas(30000000)]
 #[should_panic(expected: ('ALREADY_EXECUTED', 'ENTRYPOINT_FAILED'))]
 fn test_queue_execute_twice() {
     set_block_timestamp(1);
@@ -121,7 +121,7 @@ fn test_queue_execute_twice() {
 }
 
 #[test]
-#[available_gas(3000000)]
+#[available_gas(30000000)]
 #[should_panic(expected: ('TOO_EARLY', 'ENTRYPOINT_FAILED'))]
 fn test_queue_executed_too_early() {
     set_block_timestamp(1);

@@ -166,7 +166,7 @@ fn test_invalid_proof_fake_entry() {
 
 
 #[test]
-#[available_gas(3000000)]
+#[available_gas(30000000)]
 fn test_claim_two_claims() {
     let token = deploy_token('AIRDROP', 'AD', 1234567);
 

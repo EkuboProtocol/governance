@@ -43,7 +43,7 @@ trait IGovernor<TStorage> {
     fn cancel(ref self: TStorage, id: felt252);
 
     // Execute the given proposal.
-    fn execute(ref self: TStorage, call: Call);
+    fn execute(ref self: TStorage, call: Call) -> Span<felt252>;
 
     // Get the configuration for this governor contract.
     fn get_config(self: @TStorage) -> Config;
@@ -188,7 +188,7 @@ mod Governor {
                 );
         }
 
-        fn execute(ref self: ContractState, call: Call) {
+        fn execute(ref self: ContractState, call: Call) -> Span<felt252> {
             let id = call.hash();
 
             let config = self.config.read();
@@ -211,7 +211,7 @@ mod Governor {
 
             self.executed.write(id, true);
 
-            call.execute();
+            call.execute()
         }
 
         fn get_config(self: @ContractState) -> Config {
