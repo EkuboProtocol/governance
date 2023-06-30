@@ -277,6 +277,7 @@ mod Token {
 
             self.delegates.write(caller, to);
             self.move_delegates(old, to, self.balances.read(caller));
+            self.emit(Event::Delegate(Delegate { from: caller, to: to }));
         }
 
         fn get_delegated(self: @ContractState, delegate: ContractAddress, timestamp: u64) -> u128 {
