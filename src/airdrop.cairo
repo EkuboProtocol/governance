@@ -70,7 +70,7 @@ mod Airdrop {
         claim: Claim
     }
 
-    #[derive(Drop)]
+    #[derive(starknet::Event, Drop)]
     #[event]
     enum Event {
         Claimed: Claimed, 
@@ -93,7 +93,7 @@ mod Airdrop {
 
             self.token.read().transfer(claim.claimee, u256 { high: 0, low: claim.amount });
 
-            self.emit(Claimed { claim });
+            self.emit(Event::Claimed(Claimed { claim }));
         }
     }
 }

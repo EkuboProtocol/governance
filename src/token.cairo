@@ -77,27 +77,27 @@ mod Token {
         self.balances.write(get_caller_address(), total_supply);
     }
 
-    #[derive(Drop)]
+    #[derive(starknet::Event, Drop)]
     struct Transfer {
         from: ContractAddress,
         to: ContractAddress,
         value: u256,
     }
 
-    #[derive(Drop)]
+    #[derive(starknet::Event, Drop)]
     struct Approval {
         owner: ContractAddress,
         spender: ContractAddress,
         value: u256
     }
 
-    #[derive(Drop)]
+    #[derive(starknet::Event, Drop)]
     struct Delegate {
         from: ContractAddress,
         to: ContractAddress,
     }
 
-    #[derive(Drop)]
+    #[derive(starknet::Event, Drop)]
     #[event]
     enum Event {
         Transfer: Transfer,
@@ -260,7 +260,7 @@ mod Token {
                     self.delegates.read(sender), self.delegates.read(recipient), amount_small
                 );
 
-            self.emit(Transfer { from: sender, to: recipient, value: amount });
+            self.emit(Event::Transfer(Transfer { from: sender, to: recipient, value: amount }));
             true
         }
         fn approve(ref self: ContractState, spender: ContractAddress, amount: u256) -> bool {
@@ -268,7 +268,7 @@ mod Token {
             self
                 .allowances
                 .write((owner, spender), amount.try_into().expect('APPROVE_AMOUNT_OVERFLOW'));
-            self.emit(Approval { owner, spender, value: amount });
+            self.emit(Event::Approval(Approval { owner, spender, value: amount }));
             true
         }
 
@@ -289,7 +289,7 @@ mod Token {
 
             self.delegates.write(caller, to);
             self.move_delegates(old, to, self.balances.read(caller));
-            self.emit(Delegate { from: caller, to: to });
+            self.emit(Event::Delegate(Delegate { from: caller, to: to }));
         }
 
         fn get_delegated(self: @ContractState, delegate: ContractAddress) -> u128 {
