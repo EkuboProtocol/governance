@@ -9,4 +9,4 @@ cairo-version = "2.0.0"
 starknet = ">=2.0.0"
 
 [[target.starknet-contract]]
-allowed-libfuncs-list.name = "experimental_v0.1.0"
+allowed-libfuncs-list.name = "audited"
