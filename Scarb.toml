@@ -3,7 +3,7 @@ name = "governance"
 version = "0.1.0"
 description = "Contracts for governance of Starknet-native protocols"
 homepage = "https://ekubo.org"
-cairo-version = "2.0.0"
+cairo-version = "2.0.1"
 
 [dependencies]
 starknet = ">=2.0.0"
