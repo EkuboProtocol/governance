@@ -232,7 +232,7 @@ mod Governor {
             assert((proposal.yes + proposal.no) >= config.quorum, 'QUORUM_NOT_MET');
             assert(proposal.yes >= proposal.no, 'NO_MAJORITY');
 
-            0
+            starknet::VALIDATED
         }
 
         fn __execute__(ref self: ContractState, mut calls: Array<Call>) -> Span<felt252> {
