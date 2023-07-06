@@ -2,7 +2,7 @@ use governance::token::ITokenDispatcherTrait;
 use starknet::{ContractAddress};
 use array::{Array};
 use governance::token::{ITokenDispatcher};
-use governance::types::{Call};
+use starknet::account::{Call};
 
 #[derive(Copy, Drop, Serde, storage_access::StorageAccess)]
 struct ProposalInfo {
@@ -53,7 +53,7 @@ trait IGovernor<TStorage> {
 mod Governor {
     use super::{ContractAddress, Array, IGovernor, ITokenDispatcher, Config, ProposalInfo, Call};
     use starknet::{get_block_timestamp, get_caller_address, contract_address_const};
-    use governance::types::{CallTrait};
+    use governance::call_trait::{CallTrait};
     use governance::token::{ITokenDispatcherTrait};
     use zeroable::{Zeroable};
 

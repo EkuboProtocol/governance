@@ -3,7 +3,8 @@ use array::{ArrayTrait};
 use debug::PrintTrait;
 use governance::governor::{IGovernorDispatcher, IGovernorDispatcherTrait, Governor, Config};
 use governance::token::{ITokenDispatcher, ITokenDispatcherTrait};
-use governance::types::{Call};
+use governance::call_trait::{CallTrait};
+use starknet::account::{Call};
 use governance::timelock_test::{single_call, transfer_call, deploy as deploy_timelock};
 use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait};
 use starknet::{
@@ -58,9 +59,9 @@ fn queue_with_timelock_call(timelock: ITimelockDispatcher, calls: @Array<Call>) 
     let mut calldata: Array<felt252> = ArrayTrait::new();
     Serde::serialize(calls, ref calldata);
     Call {
-        address: timelock.contract_address,
+        to: timelock.contract_address,
         // queue
-        entry_point_selector: 0x2c5ecd2faa027574e2101f9b6bdc19dec3f76beff12aa506ac3391be0022e46,
+        selector: 0x2c5ecd2faa027574e2101f9b6bdc19dec3f76beff12aa506ac3391be0022e46,
         calldata: calldata
     }
 }

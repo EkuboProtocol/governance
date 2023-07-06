@@ -1,6 +1,6 @@
 use core::result::ResultTrait;
 use starknet::{ContractAddress};
-use governance::types::{Call};
+use starknet::account::{Call};
 
 #[starknet::interface]
 trait ITimelock<TStorage> {
@@ -31,7 +31,7 @@ trait ITimelock<TStorage> {
 #[starknet::contract]
 mod Timelock {
     use super::{ITimelock, ContractAddress, Call};
-    use governance::types::{CallTrait};
+    use governance::call_trait::{CallTrait};
     use hash::LegacyHash;
     use array::{ArrayTrait, SpanTrait};
     use starknet::{

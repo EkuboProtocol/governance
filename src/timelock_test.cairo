@@ -8,7 +8,7 @@ use starknet::{
     get_block_timestamp, testing::set_block_timestamp
 };
 use starknet::class_hash::Felt252TryIntoClassHash;
-use governance::types::{Call};
+use starknet::account::{Call};
 use traits::{TryInto};
 use result::{Result, ResultTrait};
 use option::{OptionTrait};
@@ -44,9 +44,9 @@ fn transfer_call(token: ITokenDispatcher, recipient: ContractAddress, amount: u2
     Serde::serialize(@amount, ref calldata);
 
     Call {
-        address: token.contract_address,
+        to: token.contract_address,
         // transfer
-        entry_point_selector: 0x83afd3f4caedc6eebf44246fe54e38c95e3179a5ec9ea81740eca5b482d12e,
+        selector: 0x83afd3f4caedc6eebf44246fe54e38c95e3179a5ec9ea81740eca5b482d12e,
         calldata: calldata
     }
 }
