@@ -1,3 +1,4 @@
+use core::array::ArrayTrait;
 use governance::token::ITokenDispatcherTrait;
 use starknet::{ContractAddress};
 use array::{Array};
@@ -42,9 +43,6 @@ trait IGovernor<TStorage> {
     // Cancel the given proposal. Cancellation can happen by any address if the average voting weight is below the proposal_creation_threshold.
     fn cancel(ref self: TStorage, id: felt252);
 
-    // Execute the given proposal.
-    fn execute(ref self: TStorage, call: Call) -> Span<felt252>;
-
     // Get the configuration for this governor contract.
     fn get_config(self: @TStorage) -> Config;
 }
@@ -52,10 +50,14 @@ trait IGovernor<TStorage> {
 #[starknet::contract]
 mod Governor {
     use super::{ContractAddress, Array, IGovernor, ITokenDispatcher, Config, ProposalInfo, Call};
-    use starknet::{get_block_timestamp, get_caller_address, contract_address_const};
+    use starknet::{
+        get_block_timestamp, get_caller_address, contract_address_const, account::AccountContract
+    };
     use governance::call_trait::{CallTrait};
     use governance::token::{ITokenDispatcherTrait};
     use zeroable::{Zeroable};
+    use option::{OptionTrait};
+    use array::{ArrayTrait};
 
     #[storage]
     struct Storage {
@@ -189,7 +191,27 @@ mod Governor {
                 );
         }
 
-        fn execute(ref self: ContractState, call: Call) -> Span<felt252> {
+
+        fn get_config(self: @ContractState) -> Config {
+            self.config.read()
+        }
+    }
+
+    #[external(v0)]
+    impl GovernorAccount of AccountContract<ContractState> {
+        fn __validate_declare__(self: @ContractState, class_hash: felt252) -> felt252 {
+            0
+        }
+
+        fn __validate__(
+            ref self: ContractState,
+            contract_address: ContractAddress,
+            entry_point_selector: felt252,
+            calldata: Array<felt252>
+        ) -> felt252 {
+            let call = Call {
+                to: contract_address, selector: entry_point_selector, calldata: calldata
+            };
             let id = call.hash();
 
             let config = self.config.read();
@@ -210,13 +232,13 @@ mod Governor {
             assert((proposal.yes + proposal.no) >= config.quorum, 'QUORUM_NOT_MET');
             assert(proposal.yes >= proposal.no, 'NO_MAJORITY');
 
-            self.executed.write(id, true);
-
-            call.execute()
+            0
         }
 
-        fn get_config(self: @ContractState) -> Config {
-            self.config.read()
+        fn __execute__(ref self: ContractState, mut calls: Array<Call>) -> Span<felt252> {
+            let call = calls.pop_front().unwrap();
+            self.executed.write(call.hash(), true);
+            call.execute()
         }
     }
 }
