@@ -122,9 +122,9 @@ fn test_proposal_e2e() {
     assert(result.len() == 1, '1 result');
     let queued_call_id = result.pop_front();
     set_block_timestamp(start_time + 5 + 3600 + 60 + 60);
-    assert(token.balance_of(timelock.contract_address) == 200, 'balance before t');
-    assert(token.balance_of(recipient) == 0, 'balance before r');
+    assert(token.balanceOf(timelock.contract_address) == 200, 'balance before t');
+    assert(token.balanceOf(recipient) == 0, 'balance before r');
     timelock.execute(timelock_calls);
-    assert(token.balance_of(timelock.contract_address) == 100, 'balance after t');
-    assert(token.balance_of(recipient) == 100, 'balance before r');
+    assert(token.balanceOf(timelock.contract_address) == 100, 'balance after t');
+    assert(token.balanceOf(recipient) == 100, 'balance before r');
 }

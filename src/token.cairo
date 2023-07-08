@@ -8,7 +8,7 @@ trait IToken<TStorage> {
     fn symbol(self: @TStorage) -> felt252;
     fn decimals(self: @TStorage) -> u8;
     fn total_supply(self: @TStorage) -> u256;
-    fn balance_of(self: @TStorage, account: ContractAddress) -> u256;
+    fn balanceOf(self: @TStorage, account: ContractAddress) -> u256;
     fn allowance(self: @TStorage, owner: ContractAddress, spender: ContractAddress) -> u256;
     fn transfer(ref self: TStorage, recipient: ContractAddress, amount: u256) -> bool;
     fn transfer_from(
@@ -223,7 +223,7 @@ mod Token {
         fn total_supply(self: @ContractState) -> u256 {
             self.total_supply.read().into()
         }
-        fn balance_of(self: @ContractState, account: ContractAddress) -> u256 {
+        fn balanceOf(self: @ContractState, account: ContractAddress) -> u256 {
             self.balances.read(account).into()
         }
         fn allowance(

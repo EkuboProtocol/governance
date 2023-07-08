@@ -188,12 +188,12 @@ fn test_claim_two_claims() {
     let mut proof_a = ArrayTrait::new();
     proof_a.append(leaf_b);
     airdrop.claim(claim_a, proof_a);
-    assert(token.balance_of(airdrop.contract_address) == (789 + 1), 'claim a taken');
-    assert(token.balance_of(claim_a.claimee) == 6789, 'received');
+    assert(token.balanceOf(airdrop.contract_address) == (789 + 1), 'claim a taken');
+    assert(token.balanceOf(claim_a.claimee) == 6789, 'received');
 
     let mut proof_b = ArrayTrait::new();
     proof_b.append(leaf_a);
     airdrop.claim(claim_b, proof_b);
-    assert(token.balance_of(airdrop.contract_address) == 1, 'claim b taken');
-    assert(token.balance_of(claim_b.claimee) == 789, 'received');
+    assert(token.balanceOf(airdrop.contract_address) == 1, 'claim b taken');
+    assert(token.balanceOf(claim_b.claimee) == 789, 'received');
 }
