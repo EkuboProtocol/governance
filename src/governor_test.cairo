@@ -20,6 +20,19 @@ use governance::token_test::{deploy as deploy_token};
 use serde::Serde;
 
 
+#[starknet::interface]
+trait AccountContract<TContractState> {
+    fn __validate_declare__(self: @TContractState, class_hash: felt252) -> felt252;
+    fn __validate__(
+        ref self: TContractState,
+        contract_address: ContractAddress,
+        entry_point_selector: felt252,
+        calldata: Array<felt252>
+    ) -> felt252;
+    fn __execute__(ref self: TContractState, calls: Array<Call>) -> Span<felt252>;
+}
+
+
 fn deploy(config: Config) -> IGovernorDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
     Serde::serialize(@config, ref constructor_args);
@@ -103,13 +116,15 @@ fn test_proposal_e2e() {
     set_block_timestamp(start_time + 5 + 3600);
     governance.vote(id, true);
     set_block_timestamp(start_time + 5 + 3600 + 60);
-    let mut result = governance.execute(queue_with_timelock_call(timelock, @timelock_calls));
+    let mut result = AccountContractDispatcher {
+        contract_address: governance.contract_address
+    }.__execute__(single_call(queue_with_timelock_call(timelock, @timelock_calls)));
     assert(result.len() == 1, '1 result');
     let queued_call_id = result.pop_front();
     set_block_timestamp(start_time + 5 + 3600 + 60 + 60);
-    assert(token.balance_of(timelock.contract_address) == 200, 'balance before t');
-    assert(token.balance_of(recipient) == 0, 'balance before r');
+    assert(token.balanceOf(timelock.contract_address) == 200, 'balance before t');
+    assert(token.balanceOf(recipient) == 0, 'balance before r');
     timelock.execute(timelock_calls);
-    assert(token.balance_of(timelock.contract_address) == 100, 'balance after t');
-    assert(token.balance_of(recipient) == 100, 'balance before r');
+    assert(token.balanceOf(timelock.contract_address) == 100, 'balance after t');
+    assert(token.balanceOf(recipient) == 100, 'balance before r');
 }

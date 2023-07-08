@@ -77,7 +77,7 @@ fn test_queue_execute() {
     set_block_timestamp(86401);
 
     timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
-    assert(token.balance_of(recipient) == 500_u256, 'balance');
+    assert(token.balanceOf(recipient) == 500_u256, 'balance');
 }
 
 #[test]

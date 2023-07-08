@@ -30,8 +30,8 @@ fn test_deploy_constructor() {
     let token = deploy('Governor Token', 'GT', 12345);
     assert(token.name() == 'Governor Token', 'name');
     assert(token.symbol() == 'GT', 'symbol');
-    assert(token.balance_of(get_contract_address()) == 12345, 'deployer balance');
-    assert(token.balance_of(contract_address_const::<1234512345>()) == 0, 'random balance');
+    assert(token.balanceOf(get_contract_address()) == 12345, 'deployer balance');
+    assert(token.balanceOf(contract_address_const::<1234512345>()) == 0, 'random balance');
     assert(token.total_supply() == 12345, 'total supply');
 }
 
@@ -42,8 +42,8 @@ fn test_transfer_entire_balance() {
 
     let recipient = contract_address_const::<12345>();
     token.transfer(recipient, 12345);
-    assert(token.balance_of(get_contract_address()) == 0, 'zero after');
-    assert(token.balance_of(recipient) == 12345, '12345 after');
+    assert(token.balanceOf(get_contract_address()) == 0, 'zero after');
+    assert(token.balanceOf(recipient) == 12345, '12345 after');
 }
 
 #[test]
@@ -53,8 +53,8 @@ fn test_transfer_lt_total_balance() {
 
     let recipient = contract_address_const::<12345>();
     token.transfer(recipient, 45);
-    assert(token.balance_of(get_contract_address()) == 12300, 'remaining');
-    assert(token.balance_of(recipient) == 45, '45 transferred');
+    assert(token.balanceOf(get_contract_address()) == 12300, 'remaining');
+    assert(token.balanceOf(recipient) == 45, '45 transferred');
 }
 
 #[test]
@@ -137,9 +137,9 @@ fn test_approve_allows_transfer_from() {
     set_contract_address(spender);
 
     assert(token.transfer_from(owner, recipient, 12345), 'transfer_from');
-    assert(token.balance_of(owner) == 0, 'balance_of(from)');
-    assert(token.balance_of(recipient) == 12345, 'balance_of(to)');
-    assert(token.balance_of(spender) == 0, 'balance_of(spender)');
+    assert(token.balanceOf(owner) == 0, 'balanceOf(from)');
+    assert(token.balanceOf(recipient) == 12345, 'balanceOf(to)');
+    assert(token.balanceOf(spender) == 0, 'balanceOf(spender)');
 }
 
 #[test]
