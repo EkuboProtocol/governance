@@ -1,11 +1,14 @@
 use core::array::SpanTrait;
 use array::{ArrayTrait};
 use debug::PrintTrait;
-use governance::governor::{IGovernorDispatcher, IGovernorDispatcherTrait, Governor, Config};
+use governance::governor::{
+    IGovernorDispatcher, IGovernorDispatcherTrait, Governor, Config, ProposalInfo
+};
 use governance::token::{ITokenDispatcher, ITokenDispatcherTrait};
 use governance::call_trait::{CallTrait};
 use starknet::account::{Call};
 use governance::tests::timelock_test::{single_call, transfer_call, deploy as deploy_timelock};
+use governance::tests::utils;
 use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait};
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress,
@@ -31,6 +34,21 @@ fn deploy(config: Config) -> IGovernorDispatcher {
     return IGovernorDispatcher { contract_address: address };
 }
 
+fn create_proposal(governance: IGovernorDispatcher, token: ITokenDispatcher) -> felt252 {
+    let recipient = utils::recipient();
+    let proposer = utils::proposer();
+    let start_time = utils::timestamp();
+    let transfer_call = transfer_call(token: token, recipient: recipient, amount: 100);
+
+    // Delegate token to the proposer so that he reaches threshold.
+    token.delegate(proposer);
+
+    set_block_timestamp(start_time);
+    set_contract_address(proposer);
+    governance.propose(transfer_call)
+}
+
+
 #[test]
 #[available_gas(3000000)]
 fn test_governance_deploy() {
@@ -53,6 +71,82 @@ fn test_governance_deploy() {
     assert(config.voting_weight_smoothing_duration == 30, 'smoothing');
     assert(config.quorum == 100, 'quorum');
     assert(config.proposal_creation_threshold == 50, 'proposal_creation_threshold');
+}
+
+#[test]
+#[available_gas(3000000)]
+fn test_propose_should_work() {
+    let token = deploy_token('Governor', 'GT', 1000);
+    let governance = deploy(
+        Config {
+            voting_token: token,
+            voting_start_delay: 3600,
+            voting_period: 60,
+            voting_weight_smoothing_duration: 30,
+            quorum: 100,
+            proposal_creation_threshold: 50,
+        }
+    );
+    let id = create_proposal(governance, token);
+
+    let proposal = governance.get_proposal(id);
+    let proposer = utils::proposer();
+    let start_time = utils::timestamp();
+    assert(
+        proposal == ProposalInfo {
+            proposer, creation_timestamp: start_time, yes: 0, no: 0, executed: false
+        },
+        'proposal doesnt match'
+    );
+}
+
+
+#[test]
+#[available_gas(3000000)]
+#[should_panic(expected: ('ALREADY_PROPOSED', 'ENTRYPOINT_FAILED'))]
+fn test_propose_already_exists() {
+    let token = deploy_token('Governor', 'GT', 1000);
+    let governance = deploy(
+        Config {
+            voting_token: token,
+            voting_start_delay: 3600,
+            voting_period: 60,
+            voting_weight_smoothing_duration: 30,
+            quorum: 100,
+            proposal_creation_threshold: 50,
+        }
+    );
+    create_proposal(governance, token);
+    // Trying to propose again with the same call should fail.
+    create_proposal(governance, token);
+}
+
+#[test]
+#[available_gas(3000000)]
+#[should_panic(expected: ('THRESHOLD', 'ENTRYPOINT_FAILED'))]
+fn test_propose_below_threshold() {
+    let token = deploy_token('Governor', 'GT', 1000);
+    let governance = deploy(
+        Config {
+            voting_token: token,
+            voting_start_delay: 3600,
+            voting_period: 60,
+            voting_weight_smoothing_duration: 30,
+            quorum: 100,
+            proposal_creation_threshold: 50,
+        }
+    );
+
+    let recipient = utils::recipient();
+    let proposer = utils::proposer();
+    let start_time = utils::timestamp();
+    let transfer_call = transfer_call(token: token, recipient: recipient, amount: 100);
+
+    // Don't delegate tokens to the proposer so that he doesn't reach threshold.
+
+    set_block_timestamp(start_time);
+    set_contract_address(proposer);
+    governance.propose(transfer_call);
 }
 
 fn queue_with_timelock_call(timelock: ITimelockDispatcher, calls: Span<Call>) -> Call {
@@ -83,17 +177,17 @@ fn test_proposal_e2e() {
     let timelock = deploy_timelock(governance.contract_address, 60, 30);
 
     // must do this because timestamp 0 cannot get voting weights 30 seconds in the past
-    let start_time = 1688122125;
+    let start_time = utils::timestamp();
     set_block_timestamp(start_time);
 
-    let delegate = contract_address_const::<12345>();
+    let delegate = utils::delegate();
     token.delegate(delegate);
 
     // so the average delegation is sufficient
     set_block_timestamp(start_time + 5);
 
     token.transfer(timelock.contract_address, 200);
-    let recipient = contract_address_const::<12345>();
+    let recipient = utils::recipient();
     let timelock_calls = single_call(
         call: transfer_call(token: token, recipient: recipient, amount: 100)
     );

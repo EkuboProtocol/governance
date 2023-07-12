@@ -8,3 +8,5 @@ mod token_test;
 mod timelock_test;
 #[cfg(test)]
 mod call_trait_test;
+#[cfg(test)]
+mod utils;

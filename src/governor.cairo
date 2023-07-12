@@ -4,7 +4,7 @@ use array::{Array};
 use governance::token::{ITokenDispatcher};
 use starknet::account::{Call};
 
-#[derive(Copy, Drop, Serde, storage_access::StorageAccess)]
+#[derive(Copy, Drop, Serde, storage_access::StorageAccess, PartialEq)]
 struct ProposalInfo {
     proposer: ContractAddress,
     // when the proposal was created
@@ -13,6 +13,8 @@ struct ProposalInfo {
     yes: u128,
     // how many no votes has been collected
     no: u128,
+    // whether the proposal has been executed
+    executed: bool
 }
 
 #[derive(Copy, Drop, Serde, storage_access::StorageAccess)]
@@ -47,6 +49,9 @@ trait IGovernor<TStorage> {
 
     // Get the configuration for this governor contract.
     fn get_config(self: @TStorage) -> Config;
+
+    // Get the proposal info for the given proposal id.
+    fn get_proposal(self: @TStorage, id: felt252) -> ProposalInfo;
 }
 
 #[starknet::contract]
@@ -62,7 +67,6 @@ mod Governor {
         config: Config,
         proposals: LegacyMap<felt252, ProposalInfo>,
         voted: LegacyMap<(ContractAddress, felt252), bool>,
-        executed: LegacyMap<felt252, bool>,
     }
 
     #[constructor]
@@ -98,7 +102,11 @@ mod Governor {
                 .write(
                     id,
                     ProposalInfo {
-                        proposer, creation_timestamp: timestamp_current, yes: 0, no: 0, 
+                        proposer,
+                        creation_timestamp: timestamp_current,
+                        yes: 0,
+                        no: 0,
+                        executed: false
                     }
                 );
 
@@ -163,7 +171,11 @@ mod Governor {
             );
 
             proposal = ProposalInfo {
-                proposer: contract_address_const::<0>(), creation_timestamp: 0, yes: 0, no: 0, 
+                proposer: contract_address_const::<0>(),
+                creation_timestamp: 0,
+                yes: 0,
+                no: 0,
+                executed: false
             };
 
             self.proposals.write(id, proposal);
@@ -173,10 +185,10 @@ mod Governor {
             let id = call.hash();
 
             let config = self.config.read();
-            let proposal = self.proposals.read(id);
+            let mut proposal = self.proposals.read(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
-            assert(!self.executed.read(id), 'ALREADY_EXECUTED');
+            assert(!proposal.executed, 'ALREADY_EXECUTED');
 
             let timestamp_current = get_block_timestamp();
 
@@ -190,13 +202,19 @@ mod Governor {
             assert((proposal.yes + proposal.no) >= config.quorum, 'QUORUM_NOT_MET');
             assert(proposal.yes >= proposal.no, 'NO_MAJORITY');
 
-            self.executed.write(id, true);
+            proposal.executed = true;
+
+            self.proposals.write(id, proposal);
 
             call.execute()
         }
 
         fn get_config(self: @ContractState) -> Config {
             self.config.read()
+        }
+
+        fn get_proposal(self: @ContractState, id: felt252) -> ProposalInfo {
+            self.proposals.read(id)
         }
     }
 }
