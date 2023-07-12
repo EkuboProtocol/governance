@@ -121,10 +121,11 @@ mod Governor {
             let timestamp_current = get_block_timestamp();
             let voting_start_time = (proposal.creation_timestamp + config.voting_start_delay);
             let voter = get_caller_address();
+            let mut voted = self.voted.read((voter, id));
 
             assert(timestamp_current >= voting_start_time, 'VOTING_NOT_STARTED');
             assert(timestamp_current < (voting_start_time + config.voting_period), 'VOTING_ENDED');
-            assert(!self.voted.read((voter, id)), 'ALREADY_VOTED');
+            assert(!voted, 'ALREADY_VOTED');
 
             let weight = config
                 .voting_token
@@ -138,6 +139,7 @@ mod Governor {
                 proposal.no = proposal.no + weight;
             }
             self.proposals.write(id, proposal);
+            self.voted.write((voter, id), true);
         }
 
 

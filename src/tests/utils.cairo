@@ -13,6 +13,10 @@ fn delegate() -> ContractAddress {
     contract_address_try_from_felt252('delegate').unwrap()
 }
 
+fn voter() -> ContractAddress {
+    contract_address_try_from_felt252('voter').unwrap()
+}
+
 fn timestamp() -> u64 {
     1688122125
 }

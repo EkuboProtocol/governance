@@ -75,7 +75,7 @@ fn test_governance_deploy() {
 
 #[test]
 #[available_gas(3000000)]
-fn test_propose_should_work() {
+fn test_propose() {
     let token = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
@@ -102,9 +102,9 @@ fn test_propose_should_work() {
 
 
 #[test]
-#[available_gas(3000000)]
+#[available_gas(4000000)]
 #[should_panic(expected: ('ALREADY_PROPOSED', 'ENTRYPOINT_FAILED'))]
-fn test_propose_already_exists() {
+fn test_propose_already_exists_should_fail() {
     let token = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
@@ -124,7 +124,7 @@ fn test_propose_already_exists() {
 #[test]
 #[available_gas(3000000)]
 #[should_panic(expected: ('THRESHOLD', 'ENTRYPOINT_FAILED'))]
-fn test_propose_below_threshold() {
+fn test_propose_below_threshold_should_fail() {
     let token = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
@@ -147,6 +147,168 @@ fn test_propose_below_threshold() {
     set_block_timestamp(start_time);
     set_contract_address(proposer);
     governance.propose(transfer_call);
+}
+
+#[test]
+#[available_gas(4000000)]
+fn test_vote_yes() {
+    let token = deploy_token('Governor', 'GT', 1000);
+    let governance = deploy(
+        Config {
+            voting_token: token,
+            voting_start_delay: 3600,
+            voting_period: 60,
+            voting_weight_smoothing_duration: 30,
+            quorum: 100,
+            proposal_creation_threshold: 50,
+        }
+    );
+    let id = create_proposal(governance, token);
+
+    let start_time = utils::timestamp();
+    let voter = utils::voter();
+
+    // Fast forward to voting period
+    set_block_timestamp(start_time + 3600);
+
+    // Delegate token to the voter to give him voting power.
+    token.delegate(voter);
+
+    set_contract_address(voter);
+    governance.vote(id, true); // vote yes
+
+    let proposal = governance.get_proposal(id);
+    assert(
+        proposal.yes == token.get_average_delegated_over_last(voter, 30),
+        'Yes vote count does not match'
+    );
+
+    assert(proposal.no == 0, 'No vote count does not match');
+}
+
+#[test]
+#[available_gas(4000000)]
+fn test_vote_no() {
+    let token = deploy_token('Governor', 'GT', 1000);
+    let governance = deploy(
+        Config {
+            voting_token: token,
+            voting_start_delay: 3600,
+            voting_period: 60,
+            voting_weight_smoothing_duration: 30,
+            quorum: 100,
+            proposal_creation_threshold: 50,
+        }
+    );
+    let id = create_proposal(governance, token);
+
+    let start_time = utils::timestamp();
+    let voter = utils::voter();
+
+    // Fast forward to voting period
+    set_block_timestamp(start_time + 3600);
+
+    // Delegate token to the voter to give him voting power.
+    token.delegate(voter);
+
+    set_contract_address(voter);
+    governance.vote(id, false); // vote no
+
+    let proposal = governance.get_proposal(id);
+    assert(
+        proposal.no == token.get_average_delegated_over_last(voter, 30),
+        'No vote count does not match'
+    );
+
+    assert(proposal.yes == 0, 'Yes vote count should be 0');
+}
+
+#[test]
+#[available_gas(4000000)]
+#[should_panic(expected: ('VOTING_NOT_STARTED', 'ENTRYPOINT_FAILED'))]
+fn test_vote_before_voting_start_should_fail() {
+    // Initial setup similar to propose test
+    let token = deploy_token('Governor', 'GT', 1000);
+    let governance = deploy(
+        Config {
+            voting_token: token,
+            voting_start_delay: 3600,
+            voting_period: 60,
+            voting_weight_smoothing_duration: 30,
+            quorum: 100,
+            proposal_creation_threshold: 50,
+        }
+    );
+    let id = create_proposal(governance, token);
+    let start_time = utils::timestamp();
+    let voter = utils::voter();
+
+    // Delegate token to the voter to give him voting power.
+    token.delegate(voter);
+
+    // Do not fast forward to voting period this time
+    set_contract_address(voter);
+    governance.vote(id, true); // vote yes
+}
+
+#[test]
+#[available_gas(5000000)]
+#[should_panic(expected: ('ALREADY_VOTED', 'ENTRYPOINT_FAILED'))]
+fn test_vote_already_voted_should_fail() {
+    let token = deploy_token('Governor', 'GT', 1000);
+    let governance = deploy(
+        Config {
+            voting_token: token,
+            voting_start_delay: 3600,
+            voting_period: 60,
+            voting_weight_smoothing_duration: 30,
+            quorum: 100,
+            proposal_creation_threshold: 50,
+        }
+    );
+    let id = create_proposal(governance, token);
+
+    let start_time = utils::timestamp();
+    let voter = utils::voter();
+
+    // Fast forward to voting period
+    set_block_timestamp(start_time + 3600);
+
+    // Delegate token to the voter to give him voting power.
+    token.delegate(voter);
+
+    set_contract_address(voter);
+    governance.vote(id, true); // vote yes
+
+    // Trying to vote again should fail
+    governance.vote(id, true); // vote yes
+}
+
+#[test]
+#[available_gas(3000000)]
+#[should_panic(expected: ('VOTING_ENDED', 'ENTRYPOINT_FAILED'))]
+fn test_vote_after_voting_period() {
+    let token = deploy_token('Governor', 'GT', 1000);
+    let governance = deploy(
+        Config {
+            voting_token: token,
+            voting_start_delay: 3600,
+            voting_period: 60,
+            voting_weight_smoothing_duration: 30,
+            quorum: 100,
+            proposal_creation_threshold: 50,
+        }
+    );
+    let id = create_proposal(governance, token);
+
+    let start_time = utils::timestamp();
+    let voter = utils::voter();
+
+    // Fast forward to after the voting period
+    set_block_timestamp(start_time + 3600 + 60);
+    set_contract_address(voter);
+
+    governance.vote(id, true); // vote should fail
 }
 
 fn queue_with_timelock_call(timelock: ITimelockDispatcher, calls: Span<Call>) -> Call {
