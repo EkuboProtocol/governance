@@ -5,13 +5,13 @@ use starknet::account::{Call};
 #[starknet::interface]
 trait ITimelock<TStorage> {
     // Queue a list of calls to be executed after the delay. Only the owner may call this.
-    fn queue(ref self: TStorage, calls: Array<Call>) -> felt252;
+    fn queue(ref self: TStorage, calls: Span<Call>) -> felt252;
 
     // Cancel a queued proposal before it is executed. Only the owner may call this.
     fn cancel(ref self: TStorage, id: felt252);
 
     // Execute a list of calls that have previously been queued. Anyone may call this.
-    fn execute(ref self: TStorage, calls: Array<Call>) -> Array<Span<felt252>>;
+    fn execute(ref self: TStorage, calls: Span<Call>) -> Array<Span<felt252>>;
 
     // Return the execution window, i.e. the start and end timestamp in which the call can be executed
     fn get_execution_window(self: @TStorage, id: felt252) -> (u64, u64);
@@ -63,11 +63,10 @@ mod Timelock {
     // Take a list of calls and convert it to a unique identifier for the execution
     // Two lists of calls will always have the same ID if they are equivalent
     // A list of calls can only be queued and executed once. To make 2 different calls, add an empty call.
-    fn to_id(calls: @Array<Call>) -> felt252 {
+    fn to_id(mut calls: Span<Call>) -> felt252 {
         let mut state = 0;
-        let mut span = calls.span();
         loop {
-            match span.pop_front() {
+            match calls.pop_front() {
                 Option::Some(call) => {
                     state = pedersen(state, call.hash());
                 },
@@ -91,10 +90,10 @@ mod Timelock {
 
     #[external(v0)]
     impl TimelockImpl of ITimelock<ContractState> {
-        fn queue(ref self: ContractState, calls: Array<Call>) -> felt252 {
+        fn queue(ref self: ContractState, calls: Span<Call>) -> felt252 {
             self.check_owner();
 
-            let id = to_id(@calls);
+            let id = to_id(calls);
 
             assert(self.execution_started.read(id).is_zero(), 'ALREADY_QUEUED');
 
@@ -110,8 +109,8 @@ mod Timelock {
             self.execution_started.write(id, 0);
         }
 
-        fn execute(ref self: ContractState, calls: Array<Call>) -> Array<Span<felt252>> {
-            let id = to_id(@calls);
+        fn execute(ref self: ContractState, mut calls: Span<Call>) -> Array<Span<felt252>> {
+            let id = to_id(calls);
 
             assert(self.executed.read(id).is_zero(), 'ALREADY_EXECUTED');
 
@@ -125,9 +124,8 @@ mod Timelock {
 
             let mut results: Array<Span<felt252>> = ArrayTrait::new();
 
-            let mut call_span = calls.span();
             loop {
-                match call_span.pop_front() {
+                match calls.pop_front() {
                     Option::Some(call) => {
                         results.append(call.execute());
                     },

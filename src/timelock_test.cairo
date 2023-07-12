@@ -51,10 +51,10 @@ fn transfer_call(token: ITokenDispatcher, recipient: ContractAddress, amount: u2
     }
 }
 
-fn single_call(call: Call) -> Array<Call> {
+fn single_call(call: Call) -> Span<Call> {
     let mut calls: Array<Call> = ArrayTrait::new();
     calls.append(call);
-    return calls;
+    return calls.span();
 }
 
 #[test]

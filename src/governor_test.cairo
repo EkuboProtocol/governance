@@ -55,9 +55,9 @@ fn test_governance_deploy() {
     assert(config.proposal_creation_threshold == 50, 'proposal_creation_threshold');
 }
 
-fn queue_with_timelock_call(timelock: ITimelockDispatcher, calls: @Array<Call>) -> Call {
+fn queue_with_timelock_call(timelock: ITimelockDispatcher, calls: Span<Call>) -> Call {
     let mut calldata: Array<felt252> = ArrayTrait::new();
-    Serde::serialize(calls, ref calldata);
+    Serde::serialize(@calls, ref calldata);
     Call {
         to: timelock.contract_address,
         // queue
@@ -99,11 +99,11 @@ fn test_proposal_e2e() {
     );
 
     set_contract_address(delegate);
-    let id = governance.propose(queue_with_timelock_call(timelock, @timelock_calls));
+    let id = governance.propose(queue_with_timelock_call(timelock, timelock_calls));
     set_block_timestamp(start_time + 5 + 3600);
     governance.vote(id, true);
     set_block_timestamp(start_time + 5 + 3600 + 60);
-    let mut result = governance.execute(queue_with_timelock_call(timelock, @timelock_calls));
+    let mut result = governance.execute(queue_with_timelock_call(timelock, timelock_calls));
     assert(result.len() == 1, '1 result');
     let queued_call_id = result.pop_front();
     set_block_timestamp(start_time + 5 + 3600 + 60 + 60);
