@@ -111,7 +111,7 @@ mod Token {
             ref self: ContractState, address: ContractAddress, timestamp: u64
         ) -> u128 {
             let amount_delegated = self.delegated.read(address);
-            let num_snapshots = self.delegated_cumulative_num_snapshots.read(address);
+            let mut num_snapshots = self.delegated_cumulative_num_snapshots.read(address);
 
             if num_snapshots.is_non_zero() {
                 let last_snapshot = self
@@ -131,7 +131,8 @@ mod Token {
                                         * amount_delegated.into()),
                             }
                         );
-                    self.delegated_cumulative_num_snapshots.write(address, num_snapshots + 1);
+                    num_snapshots += 1;
+                    self.delegated_cumulative_num_snapshots.write(address, num_snapshots);
                 }
             } else {
                 // record this timestamp as the first snapshot
@@ -244,16 +245,21 @@ mod Token {
 
             let caller = get_caller_address();
             if (sender != caller) {
-                let allowance = self.allowances.read((sender, caller));
+                let mut allowance = self.allowances.read((sender, caller));
 
                 assert(allowance >= amount_small, 'TRANSFER_FROM_ALLOWANCE');
-                self.allowances.write((sender, caller), allowance - amount_small);
+                allowance -= amount_small;
+                self.allowances.write((sender, caller), allowance);
             }
 
-            let sender_balance = self.balances.read(sender);
+            let mut sender_balance = self.balances.read(sender);
             assert(amount_small <= sender_balance, 'TRANSFER_INSUFFICIENT_BALANCE');
-            self.balances.write(sender, sender_balance - amount_small);
-            self.balances.write(recipient, self.balances.read(recipient) + amount_small);
+            sender_balance -= amount_small;
+            self.balances.write(sender, sender_balance);
+
+            let mut recipient_balance = self.balances.read(recipient);
+            recipient_balance += amount_small;
+            self.balances.write(recipient, recipient_balance);
 
             self
                 .move_delegates(

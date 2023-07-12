@@ -107,7 +107,7 @@ mod Governor {
 
         fn vote(ref self: ContractState, id: felt252, vote: bool) {
             let config = self.config.read();
-            let proposal = self.proposals.read(id);
+            let mut proposal = self.proposals.read(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
             let timestamp_current = get_block_timestamp();
@@ -124,32 +124,18 @@ mod Governor {
                     delegate: voter, period: config.voting_weight_smoothing_duration
                 );
 
-            self
-                .proposals
-                .write(
-                    id,
-                    if vote {
-                        ProposalInfo {
-                            proposer: proposal.proposer,
-                            creation_timestamp: proposal.creation_timestamp,
-                            yes: proposal.yes + weight,
-                            no: proposal.no,
-                        }
-                    } else {
-                        ProposalInfo {
-                            proposer: proposal.proposer,
-                            creation_timestamp: proposal.creation_timestamp,
-                            yes: proposal.yes,
-                            no: proposal.no + weight,
-                        }
-                    }
-                );
+            if vote {
+                proposal.yes = proposal.yes + weight;
+            } else {
+                proposal.no = proposal.no + weight;
+            }
+            self.proposals.write(id, proposal);
         }
 
 
         fn cancel(ref self: ContractState, id: felt252) {
             let config = self.config.read();
-            let proposal = self.proposals.read(id);
+            let mut proposal = self.proposals.read(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
 
@@ -176,17 +162,11 @@ mod Governor {
                 'VOTING_ENDED'
             );
 
-            self
-                .proposals
-                .write(
-                    id,
-                    ProposalInfo {
-                        proposer: contract_address_const::<0>(),
-                        creation_timestamp: 0,
-                        yes: 0,
-                        no: 0,
-                    }
-                );
+            proposal = ProposalInfo {
+                proposer: contract_address_const::<0>(), creation_timestamp: 0, yes: 0, no: 0, 
+            };
+
+            self.proposals.write(id, proposal);
         }
 
         fn execute(ref self: ContractState, call: Call) -> Span<felt252> {
