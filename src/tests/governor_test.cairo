@@ -5,7 +5,7 @@ use governance::governor::{IGovernorDispatcher, IGovernorDispatcherTrait, Govern
 use governance::token::{ITokenDispatcher, ITokenDispatcherTrait};
 use governance::call_trait::{CallTrait};
 use starknet::account::{Call};
-use governance::timelock_test::{single_call, transfer_call, deploy as deploy_timelock};
+use governance::tests::timelock_test::{single_call, transfer_call, deploy as deploy_timelock};
 use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait};
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress,
@@ -16,7 +16,7 @@ use traits::{TryInto};
 
 use result::{Result, ResultTrait};
 use option::{OptionTrait};
-use governance::token_test::{deploy as deploy_token};
+use governance::tests::token_test::{deploy as deploy_token};
 use serde::Serde;
 
 

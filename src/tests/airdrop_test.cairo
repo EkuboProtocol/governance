@@ -10,7 +10,7 @@ use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress
 };
 use governance::token::{Token, ITokenDispatcher};
-use governance::token_test::{deploy as deploy_token};
+use governance::tests::token_test::{deploy as deploy_token};
 use starknet::class_hash::Felt252TryIntoClassHash;
 use traits::{TryInto, Into};
 

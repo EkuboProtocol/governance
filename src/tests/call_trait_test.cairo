@@ -2,7 +2,7 @@ use debug::PrintTrait;
 use governance::call_trait::{CallTrait};
 use starknet::{contract_address_const, account::{Call}};
 use array::{Array, ArrayTrait};
-use governance::token_test::{deploy as deploy_token};
+use governance::tests::token_test::{deploy as deploy_token};
 use serde::{Serde};
 
 #[test]
