@@ -45,9 +45,14 @@ fn create_proposal(governance: IGovernorDispatcher, token: ITokenDispatcher) -> 
 
     set_block_timestamp(start_time);
     set_contract_address(proposer);
-    governance.propose(transfer_call)
+    let id = governance.propose(transfer_call);
+    set_contract_address(utils::zero_address());
+    id
 }
 
+/////////////////////////////
+// DEPLOYMENT TESTS
+/////////////////////////////
 
 #[test]
 #[available_gas(3000000)]
@@ -73,6 +78,9 @@ fn test_governance_deploy() {
     assert(config.proposal_creation_threshold == 50, 'proposal_creation_threshold');
 }
 
+/////////////////////////////
+// PROPOSAL CREATION TESTS
+/////////////////////////////
 #[test]
 #[available_gas(3000000)]
 fn test_propose() {
@@ -149,8 +157,12 @@ fn test_propose_below_threshold_should_fail() {
     governance.propose(transfer_call);
 }
 
+////////////////////////////////
+// VOTING TESTS
+////////////////////////////////
+
 #[test]
-#[available_gas(4000000)]
+#[available_gas(5000000)]
 fn test_vote_yes() {
     let token = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
@@ -187,7 +199,7 @@ fn test_vote_yes() {
 }
 
 #[test]
-#[available_gas(4000000)]
+#[available_gas(5000000)]
 fn test_vote_no() {
     let token = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
@@ -287,7 +299,7 @@ fn test_vote_already_voted_should_fail() {
 #[test]
 #[available_gas(3000000)]
 #[should_panic(expected: ('VOTING_ENDED', 'ENTRYPOINT_FAILED'))]
-fn test_vote_after_voting_period() {
+fn test_vote_after_voting_period_should_fail() {
     let token = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
@@ -310,6 +322,332 @@ fn test_vote_after_voting_period() {
 
     governance.vote(id, true); // vote should fail
 }
+
+////////////////////////////////
+// CANCELLATION TESTS
+////////////////////////////////
+
+#[test]
+#[available_gas(3000000)]
+fn test_cancel_by_proposer() {
+    let token = deploy_token('Governor', 'GT', 1000);
+    let governance = deploy(
+        Config {
+            voting_token: token,
+            voting_start_delay: 3600,
+            voting_period: 60,
+            voting_weight_smoothing_duration: 30,
+            quorum: 100,
+            proposal_creation_threshold: 50,
+        }
+    );
+    let proposer = utils::proposer();
+    let start_time = utils::timestamp();
+
+    let id = create_proposal(governance, token);
+
+    set_contract_address(proposer);
+    governance.cancel(id); // Cancel the proposal
+
+    // Expect that proposal is no longer available
+    let proposal = governance.get_proposal(id);
+    assert(
+        proposal == ProposalInfo {
+            proposer: contract_address_const::<0>(),
+            creation_timestamp: 0,
+            yes: 0,
+            no: 0,
+            executed: false
+        },
+        'proposal not cancelled'
+    );
+}
+
+#[test]
+#[available_gas(6000000)]
+fn test_cancel_by_non_proposer() {
+    let token = deploy_token('Governor', 'GT', 1000);
+    let governance = deploy(
+        Config {
+            voting_token: token,
+            voting_start_delay: 3600,
+            voting_period: 60,
+            voting_weight_smoothing_duration: 30,
+            quorum: 100,
+            proposal_creation_threshold: 50,
+        }
+    );
+    let user = utils::user();
+    let proposer = utils::proposer();
+    let mut current_timestamp = utils::timestamp();
+
+    let id = create_proposal(governance, token);
+
+    // Delegate token to user so that proposer looses his threshold.
+    set_contract_address(utils::zero_address());
+    token.delegate(utils::zero_address());
+
+    // Fast forward one smoothing duration
+    current_timestamp += 30;
+    set_block_timestamp(current_timestamp);
+
+    // A random user can now cancel the proposal
+    set_contract_address(user);
+    governance.cancel(id);
+
+    // Expect that proposal is no longer available
+    let proposal = governance.get_proposal(id);
+    assert(
+        proposal == ProposalInfo {
+            proposer: contract_address_const::<0>(),
+            creation_timestamp: 0,
+            yes: 0,
+            no: 0,
+            executed: false
+        },
+        'proposal not cancelled'
+    );
+}
+
+#[test]
+#[available_gas(4000000)]
+#[should_panic(expected: ('THRESHOLD_NOT_BREACHED', 'ENTRYPOINT_FAILED'))]
+fn test_cancel_by_non_proposer_threshold_not_breached_should_fail() {
+    let token = deploy_token('Governor', 'GT', 1000);
+    let governance = deploy(
+        Config {
+            voting_token: token,
+            voting_start_delay: 3600,
+            voting_period: 60,
+            voting_weight_smoothing_duration: 30,
+            quorum: 100,
+            proposal_creation_threshold: 50,
+        }
+    );
+    let user = utils::user();
+    let proposer = utils::proposer();
+    let mut current_timestamp = utils::timestamp();
+
+    let id = create_proposal(governance, token);
+
+    // A random user can't now cancel the proposal because
+    // the proposer's voting power is still above threshold
+    set_contract_address(user);
+    governance.cancel(id);
+}
+
+#[test]
+#[available_gas(3000000)]
+#[should_panic(expected: ('VOTING_ENDED', 'ENTRYPOINT_FAILED'))]
+fn test_cancel_after_voting_end_should_fail() {
+    let token = deploy_token('Governor', 'GT', 1000);
+    let governance = deploy(
+        Config {
+            voting_token: token,
+            voting_start_delay: 3600,
+            voting_period: 60,
+            voting_weight_smoothing_duration: 30,
+            quorum: 100,
+            proposal_creation_threshold: 50,
+        }
+    );
+    let proposer = utils::proposer();
+    let start_time = utils::timestamp();
+
+    let id = create_proposal(governance, token);
+
+    // Fast forward to after the voting ended
+    set_block_timestamp(start_time + 3661);
+    set_contract_address(proposer);
+
+    governance.cancel(id); // Try to cancel the proposal after voting started
+}
+
+////////////////////////////////
+// EXECUTION TESTS
+////////////////////////////////
+
+#[test]
+#[available_gas(6000000)]
+fn test_execute_valid_proposal() {
+    let token = deploy_token('Governor', 'GT', 1000);
+    let governance = deploy(
+        Config {
+            voting_token: token,
+            voting_start_delay: 3600,
+            voting_period: 60,
+            voting_weight_smoothing_duration: 30,
+            quorum: 100,
+            proposal_creation_threshold: 50,
+        }
+    );
+    let id = create_proposal(governance, token);
+    let mut current_timestamp = utils::timestamp();
+
+    current_timestamp += 3601;
+    set_block_timestamp(current_timestamp); // voting period starts
+    set_contract_address(utils::proposer());
+    governance.vote(id, true); // vote so that proposal reaches quorum
+    current_timestamp += 60;
+    set_block_timestamp(current_timestamp); // voting period ends
+
+    // Execute the proposal. Caller address should be 0.
+    set_contract_address(utils::zero_address());
+
+    // Send 100 tokens to the gov contract - this is because
+    // the proposal calls transfer() which requires gov to have tokens.
+    token.transfer(governance.contract_address, 100);
+    // set_caller_address(utils::zero_address());
+
+    let transfer_call = transfer_call(token: token, recipient: utils::recipient(), amount: 100);
+    governance.execute(transfer_call);
+
+    let proposal = governance.get_proposal(id);
+    assert(proposal.executed, 'execute failed');
+    assert(token.balance_of(utils::recipient()) == 100, 'balance after execute');
+}
+
+#[test]
+#[available_gas(3000000)]
+#[should_panic(expected: ('VOTING_NOT_ENDED', 'ENTRYPOINT_FAILED'))]
+fn test_execute_before_voting_ends_should_fail() {
+    let token = deploy_token('Governor', 'GT', 1000);
+    let governance = deploy(
+        Config {
+            voting_token: token,
+            voting_start_delay: 3600,
+            voting_period: 60,
+            voting_weight_smoothing_duration: 30,
+            quorum: 100,
+            proposal_creation_threshold: 50,
+        }
+    );
+    let id = create_proposal(governance, token);
+    let mut current_timestamp = utils::timestamp();
+
+    current_timestamp += 3601;
+    set_block_timestamp(current_timestamp); // voting period starts
+
+    // Execute the proposal. The vote is still active, this should fail.
+    let transfer_call = transfer_call(token: token, recipient: utils::recipient(), amount: 100);
+    governance.execute(transfer_call);
+}
+
+
+#[test]
+#[available_gas(3000000)]
+#[should_panic(expected: ('QUORUM_NOT_MET', 'ENTRYPOINT_FAILED'))]
+fn test_execute_quorum_not_met_should_fail() {
+    let token = deploy_token('Governor', 'GT', 1000);
+    let governance = deploy(
+        Config {
+            voting_token: token,
+            voting_start_delay: 3600,
+            voting_period: 60,
+            voting_weight_smoothing_duration: 30,
+            quorum: 100,
+            proposal_creation_threshold: 50,
+        }
+    );
+    let id = create_proposal(governance, token);
+    let mut current_timestamp = utils::timestamp();
+
+    current_timestamp += 3661;
+    set_block_timestamp(current_timestamp); // voting period ends
+    set_contract_address(utils::proposer());
+
+    // Execute the proposal. The quorum was not met, this should fail.
+    let transfer_call = transfer_call(token: token, recipient: utils::recipient(), amount: 100);
+    governance.execute(transfer_call);
+}
+
+#[test]
+#[available_gas(100000000)]
+#[should_panic(expected: ('NO_MAJORITY', 'ENTRYPOINT_FAILED'))]
+fn test_execute_no_majority_should_fail() {
+    let token = deploy_token('Governor', 'GT', 1000);
+    let governance = deploy(
+        Config {
+            voting_token: token,
+            voting_start_delay: 3600,
+            voting_period: 60,
+            voting_weight_smoothing_duration: 30,
+            quorum: 100,
+            proposal_creation_threshold: 50,
+        }
+    );
+    let id = create_proposal(governance, token);
+    let voter = utils::voter();
+    let voter2 = utils::voter2();
+    let mut current_timestamp = utils::timestamp();
+    token.transfer(voter, 49);
+    token.transfer(voter2, 51);
+    set_contract_address(voter);
+    token.delegate(voter);
+    set_contract_address(voter2);
+    token.delegate(voter2);
+
+    // self-delegate tokens to get voting power
+
+    current_timestamp += 3601;
+    set_block_timestamp(current_timestamp); // voting period starts
+
+    // vote exactly at the quorum but 'no' votes are the majority
+    set_contract_address(voter);
+    governance.vote(id, true);
+    set_contract_address(voter2);
+    governance.vote(id, false);
+
+    current_timestamp += 60;
+    set_block_timestamp(current_timestamp); // voting period ends
+
+    // Execute the proposal. The quorum was not met, this should fail.
+    let transfer_call = transfer_call(token: token, recipient: utils::recipient(), amount: 100);
+    governance.execute(transfer_call);
+}
+
+#[test]
+#[available_gas(100000000)]
+#[should_panic(expected: ('ALREADY_EXECUTED', 'ENTRYPOINT_FAILED'))]
+fn test_execute_already_executed_should_fail() {
+    let token = deploy_token('Governor', 'GT', 1000);
+    let governance = deploy(
+        Config {
+            voting_token: token,
+            voting_start_delay: 3600,
+            voting_period: 60,
+            voting_weight_smoothing_duration: 30,
+            quorum: 100,
+            proposal_creation_threshold: 50,
+        }
+    );
+    let id = create_proposal(governance, token);
+    let mut current_timestamp = utils::timestamp();
+
+    current_timestamp += 3601;
+    set_block_timestamp(current_timestamp); // voting period starts
+    set_contract_address(utils::proposer());
+    governance.vote(id, true); // vote so that proposal reaches quorum
+    current_timestamp += 60;
+    set_block_timestamp(current_timestamp); // voting period ends
+
+    // Execute the proposal. Caller address should be 0.
+    set_contract_address(utils::zero_address());
+
+    // Send 100 tokens to the gov contract - this is because
+    // the proposal calls transfer() which requires gov to have tokens.
+    token.transfer(governance.contract_address, 100);
+    // set_caller_address(utils::zero_address());
+
+    let transfer_call = transfer_call(token: token, recipient: utils::recipient(), amount: 100);
+    governance.execute(transfer_call);
+    let transfer_call = transfer_call(token: token, recipient: utils::recipient(), amount: 100);
+    governance.execute(transfer_call); // Try to execute again
+}
+
+////////////////////////////////
+// END TO END TESTS
+////////////////////////////////
 
 fn queue_with_timelock_call(timelock: ITimelockDispatcher, calls: Span<Call>) -> Call {
     let mut calldata: Array<felt252> = ArrayTrait::new();
