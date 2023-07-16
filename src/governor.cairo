@@ -121,7 +121,7 @@ mod Governor {
             let timestamp_current = get_block_timestamp();
             let voting_start_time = (proposal.creation_timestamp + config.voting_start_delay);
             let voter = get_caller_address();
-            let mut voted = self.voted.read((voter, id));
+            let voted = self.voted.read((voter, id));
 
             assert(timestamp_current >= voting_start_time, 'VOTING_NOT_STARTED');
             assert(timestamp_current < (voting_start_time + config.voting_period), 'VOTING_ENDED');
