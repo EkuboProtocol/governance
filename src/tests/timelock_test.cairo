@@ -1,7 +1,7 @@
 use array::{Array, ArrayTrait, SpanTrait};
 use debug::PrintTrait;
 use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait, Timelock};
-use governance::token_test::{deploy as deploy_token};
+use governance::tests::token_test::{deploy as deploy_token};
 use governance::token::{ITokenDispatcher, ITokenDispatcherTrait};
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress,
