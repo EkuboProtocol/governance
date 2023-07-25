@@ -108,7 +108,7 @@ fn test_claim_single_recipient() {
 
 
 #[test]
-#[available_gas(3000000)]
+#[available_gas(4000000)]
 #[should_panic(expected: ('ALREADY_CLAIMED', 'ENTRYPOINT_FAILED'))]
 fn test_double_claim() {
     let token = deploy_token('AIRDROP', 'AD', 1234567);

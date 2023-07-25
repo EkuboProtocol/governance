@@ -9,7 +9,7 @@ on:
       - main
 
 env:
-  SCARB_VERSION: v0.5.1
+  SCARB_VERSION: v0.6.0-alpha.1
 
 jobs:
   main:

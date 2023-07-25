@@ -50,7 +50,7 @@ mod Token {
     use starknet::{get_caller_address, get_block_timestamp};
     use zeroable::{Zeroable};
 
-    #[derive(Copy, Drop, storage_access::StorageAccess)]
+    #[derive(Copy, Drop, starknet::Store)]
     struct DelegatedSnapshot {
         timestamp: u64,
         delegated_cumulative: u256,

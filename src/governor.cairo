@@ -4,7 +4,7 @@ use array::{Array};
 use governance::token::{ITokenDispatcher};
 use starknet::account::{Call};
 
-#[derive(Copy, Drop, Serde, storage_access::StorageAccess, PartialEq)]
+#[derive(Copy, Drop, Serde, starknet::Store, PartialEq)]
 struct ProposalInfo {
     proposer: ContractAddress,
     // when the proposal was created
@@ -17,7 +17,7 @@ struct ProposalInfo {
     executed: bool
 }
 
-#[derive(Copy, Drop, Serde, storage_access::StorageAccess)]
+#[derive(Copy, Drop, Serde, starknet::Store)]
 struct Config {
     // the token used for voting
     voting_token: ITokenDispatcher,
