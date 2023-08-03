@@ -34,7 +34,9 @@ The structure is as follows:
 
 ## Testing
 
-This code uses the version of Scarb specified in [.github/workflows/test.yaml](./.github/workflows/test.yaml). To run unit tests, simply run:
+Make sure you have [Scarb with asdf](https://docs.swmansion.com/scarb/download#install-via-asdf) installed.
+
+To run unit tests:
 
 ```
 scarb test
