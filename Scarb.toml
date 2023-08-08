@@ -3,10 +3,10 @@ name = "governance"
 version = "0.1.0"
 description = "Contracts for governance of Starknet-native protocols"
 homepage = "https://ekubo.org"
-cairo-version = "2.1.0-rc1"
+cairo-version = "2.1.0"
 
 [dependencies]
-starknet = ">=2.1.0-rc1"
+starknet = "=2.1.0"
 
 [[target.starknet-contract]]
 allowed-libfuncs-list.name = "audited"
