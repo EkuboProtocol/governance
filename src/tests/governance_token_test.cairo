@@ -2,7 +2,8 @@ use array::{ArrayTrait};
 use debug::PrintTrait;
 use governance::governance_token::{
     IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait, IERC20Dispatcher,
-    IERC20DispatcherTrait, GovernanceToken
+    IERC20DispatcherTrait, GovernanceToken,
+    GovernanceToken::{DelegatedSnapshotStorePacking, DelegatedSnapshot},
 };
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress,
@@ -32,6 +33,86 @@ fn deploy(
             }, IERC20Dispatcher {
             contract_address: address
         }
+    );
+}
+
+#[test]
+fn test_governance_token_delegated_snapshot_store_pack() {
+    assert(
+        DelegatedSnapshotStorePacking::pack(
+            DelegatedSnapshot { timestamp: 0, delegated_cumulative: 0 }
+        ) == 0,
+        'zero'
+    );
+    assert(
+        DelegatedSnapshotStorePacking::pack(
+            DelegatedSnapshot { timestamp: 0, delegated_cumulative: 1 }
+        ) == 1,
+        'one cumulative'
+    );
+    assert(
+        DelegatedSnapshotStorePacking::pack(
+            DelegatedSnapshot { timestamp: 1, delegated_cumulative: 0 }
+        ) == 0x1000000000000000000000000000000000000000000000000,
+        'one timestamp'
+    );
+    assert(
+        DelegatedSnapshotStorePacking::pack(
+            DelegatedSnapshot { timestamp: 1, delegated_cumulative: 1 }
+        ) == 0x1000000000000000000000000000000000000000000000001,
+        'one both'
+    );
+
+    assert(
+        DelegatedSnapshotStorePacking::pack(
+            DelegatedSnapshot {
+                timestamp: 576460752303423488, // this timestamp equal to 2**59 is so large it's invalid
+                delegated_cumulative: 6277101735386680763835789423207666416102355444464034512895 // max u192
+            }
+        ) == 3618502788666131113263695016908177884250476444008934042335404944711319814143,
+        'very large values'
+    );
+}
+
+#[test]
+fn test_governance_token_delegated_snapshot_store_unpack() {
+    assert(
+        DelegatedSnapshotStorePacking::unpack(0) == DelegatedSnapshot {
+            timestamp: 0, delegated_cumulative: 0
+        },
+        'zero'
+    );
+    assert(
+        DelegatedSnapshotStorePacking::unpack(1) == DelegatedSnapshot {
+            timestamp: 0, delegated_cumulative: 1
+        },
+        'one cumulative'
+    );
+    assert(
+        DelegatedSnapshotStorePacking::unpack(
+            0x1000000000000000000000000000000000000000000000000
+        ) == DelegatedSnapshot {
+            timestamp: 1, delegated_cumulative: 0
+        },
+        'one timestamp'
+    );
+    assert(
+        DelegatedSnapshotStorePacking::unpack(
+            0x1000000000000000000000000000000000000000000000001
+        ) == DelegatedSnapshot {
+            timestamp: 1, delegated_cumulative: 1
+        },
+        'one both'
+    );
+
+    assert(
+        DelegatedSnapshotStorePacking::unpack(
+            3618502788666131113263695016908177884250476444008934042335404944711319814143
+        ) == DelegatedSnapshot {
+            timestamp: 576460752303423488,
+            delegated_cumulative: 6277101735386680763835789423207666416102355444464034512895
+        },
+        'max both'
     );
 }
 
