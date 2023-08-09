@@ -1,26 +1,49 @@
-use governance::token::ITokenDispatcherTrait;
-use starknet::{ContractAddress};
+use governance::governance_token::IGovernanceTokenDispatcherTrait;
+use starknet::{ContractAddress, StorePacking};
 use array::{Array};
-use governance::token::{ITokenDispatcher};
+use governance::governance_token::{IGovernanceTokenDispatcher};
 use starknet::account::{Call};
+use option::{Option, OptionTrait};
+use integer::{u128_safe_divmod, u128_as_non_zero};
+use traits::{Into, TryInto};
+
+#[derive(Copy, Drop, Serde, PartialEq)]
+struct ProposalTimestamps {
+    // the timestamp when the proposal was created
+    creation: u64,
+    // the timestamp when the proposal was executed
+    executed: u64,
+}
+
+impl ProposalTimestampsStorePacking of StorePacking<ProposalTimestamps, u128> {
+    fn pack(value: ProposalTimestamps) -> u128 {
+        value.creation.into() + (value.executed.into() * 0x10000000000000000_u128)
+    }
+
+    fn unpack(value: u128) -> ProposalTimestamps {
+        let (executed, creation) = u128_safe_divmod(value, u128_as_non_zero(0x10000000000000000));
+        ProposalTimestamps {
+            creation: creation.try_into().unwrap(), executed: executed.try_into().unwrap()
+        }
+    }
+}
 
 #[derive(Copy, Drop, Serde, starknet::Store, PartialEq)]
 struct ProposalInfo {
+    // the address of the proposer
     proposer: ContractAddress,
-    // when the proposal was created
-    creation_timestamp: u64,
-    // how many yes votes has been collected
+    // the relevant timestamps
+    timestamps: ProposalTimestamps,
+    // how many yes votes have been collected
     yes: u128,
-    // how many no votes has been collected
+    // how many no votes have been collected
     no: u128,
-    // whether the proposal has been executed
-    executed: bool
 }
 
 #[derive(Copy, Drop, Serde, starknet::Store)]
 struct Config {
     // the token used for voting
-    voting_token: ITokenDispatcher,
+    voting_token: IGovernanceTokenDispatcher,
     // how long after a proposal is created does voting start
     voting_start_delay: u64,
     // the period during which votes are collected
@@ -56,10 +79,13 @@ trait IGovernor<TStorage> {
 
 #[starknet::contract]
 mod Governor {
-    use super::{ContractAddress, Array, IGovernor, ITokenDispatcher, Config, ProposalInfo, Call};
+    use super::{
+        ContractAddress, Array, IGovernor, IGovernanceTokenDispatcher, Config, ProposalInfo, Call,
+        ProposalTimestamps
+    };
     use starknet::{get_block_timestamp, get_caller_address, contract_address_const};
     use governance::call_trait::{CallTrait};
-    use governance::token::{ITokenDispatcherTrait};
+    use governance::governance_token::{IGovernanceTokenDispatcherTrait};
     use zeroable::{Zeroable};
 
     #[storage]
@@ -102,11 +128,9 @@ mod Governor {
                 .write(
                     id,
                     ProposalInfo {
-                        proposer,
-                        creation_timestamp: timestamp_current,
-                        yes: 0,
-                        no: 0,
-                        executed: false
+                        proposer, timestamps: ProposalTimestamps {
+                            creation: timestamp_current, executed: 0
+                        }, yes: 0, no: 0
                     }
                 );
 
@@ -119,7 +143,7 @@ mod Governor {
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
             let timestamp_current = get_block_timestamp();
-            let voting_start_time = (proposal.creation_timestamp + config.voting_start_delay);
+            let voting_start_time = (proposal.timestamps.creation + config.voting_start_delay);
             let voter = get_caller_address();
             let voted = self.voted.read((voter, id));
 
@@ -166,18 +190,16 @@ mod Governor {
             }
 
             assert(
-                timestamp_current < (proposal.creation_timestamp
+                timestamp_current < (proposal.timestamps.creation
                     + config.voting_start_delay
                     + config.voting_period),
                 'VOTING_ENDED'
             );
 
             proposal = ProposalInfo {
-                proposer: contract_address_const::<0>(),
-                creation_timestamp: 0,
-                yes: 0,
-                no: 0,
-                executed: false
+                proposer: contract_address_const::<0>(), timestamps: ProposalTimestamps {
+                    creation: 0, executed: 0
+                }, yes: 0, no: 0
             };
 
             self.proposals.write(id, proposal);
@@ -190,12 +212,15 @@ mod Governor {
             let mut proposal = self.proposals.read(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
-            assert(!proposal.executed, 'ALREADY_EXECUTED');
+            assert(proposal.timestamps.executed.is_zero(), 'ALREADY_EXECUTED');
 
             let timestamp_current = get_block_timestamp();
+            // we cannot tell if a proposal is executed if it is executed at timestamp 0
+            // this can only happen in testing, but it makes this method locally correct
+            assert(timestamp_current.is_non_zero(), 'TIMESTAMP_ZERO');
 
             assert(
-                timestamp_current >= (proposal.creation_timestamp
+                timestamp_current >= (proposal.timestamps.creation
                     + config.voting_start_delay
                     + config.voting_period),
                 'VOTING_NOT_ENDED'
@@ -204,7 +229,9 @@ mod Governor {
             assert((proposal.yes + proposal.no) >= config.quorum, 'QUORUM_NOT_MET');
             assert(proposal.yes >= proposal.no, 'NO_MAJORITY');
 
-            proposal.executed = true;
+            proposal.timestamps = ProposalTimestamps {
+                creation: proposal.timestamps.creation, executed: timestamp_current
+            };
 
             self.proposals.write(id, proposal);
 

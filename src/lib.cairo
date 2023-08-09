@@ -1,6 +1,6 @@
 mod airdrop;
 mod governor;
-mod token;
+mod governance_token;
 mod timelock;
 mod call_trait;
 

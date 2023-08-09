@@ -2,7 +2,7 @@ use debug::PrintTrait;
 use governance::call_trait::{CallTrait};
 use starknet::{contract_address_const, account::{Call}};
 use array::{Array, ArrayTrait};
-use governance::tests::token_test::{deploy as deploy_token};
+use governance::tests::governance_token_test::{deploy as deploy_token};
 use serde::{Serde};
 
 #[test]
@@ -71,7 +71,7 @@ fn test_execute_contract_not_deployed() {
 #[available_gas(300000000)]
 #[should_panic(expected: ('ENTRYPOINT_NOT_FOUND', ))]
 fn test_execute_invalid_entry_point() {
-    let token = deploy_token('TIMELOCK', 'TL', 1);
+    let (token, _) = deploy_token('TIMELOCK', 'TL', 1);
 
     let mut calldata: Array<felt252> = ArrayTrait::new();
     let call = Call { to: token.contract_address, selector: 0, calldata: calldata };
@@ -84,7 +84,7 @@ fn test_execute_invalid_entry_point() {
 #[available_gas(300000000)]
 #[should_panic(expected: ('Input too short for arguments', 'ENTRYPOINT_FAILED'))]
 fn test_execute_invalid_call_data_too_short() {
-    let token = deploy_token('TIMELOCK', 'TL', 1);
+    let (token, _) = deploy_token('TIMELOCK', 'TL', 1);
 
     let mut calldata: Array<felt252> = ArrayTrait::new();
     let call = Call {
@@ -101,7 +101,7 @@ fn test_execute_invalid_call_data_too_short() {
 #[test]
 #[available_gas(300000000)]
 fn test_execute_valid_call_data() {
-    let token = deploy_token('TIMELOCK', 'TL', 1);
+    let (token, _) = deploy_token('TIMELOCK', 'TL', 1);
 
     let mut calldata: Array<felt252> = ArrayTrait::new();
     Serde::serialize(@contract_address_const::<1>(), ref calldata);

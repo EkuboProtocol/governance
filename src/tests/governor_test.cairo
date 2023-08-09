@@ -2,9 +2,13 @@ use core::array::SpanTrait;
 use array::{ArrayTrait};
 use debug::PrintTrait;
 use governance::governor::{
-    IGovernorDispatcher, IGovernorDispatcherTrait, Governor, Config, ProposalInfo
+    IGovernorDispatcher, IGovernorDispatcherTrait, Governor, Config, ProposalInfo,
+    ProposalTimestamps
 };
-use governance::token::{ITokenDispatcher, ITokenDispatcherTrait};
+use governance::governance_token::{
+    IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait, IERC20Dispatcher,
+    IERC20DispatcherTrait
+};
 use governance::call_trait::{CallTrait};
 use starknet::account::{Call};
 use governance::tests::timelock_test::{single_call, transfer_call, deploy as deploy_timelock};
@@ -19,8 +23,9 @@ use traits::{TryInto};
 
 use result::{Result, ResultTrait};
 use option::{OptionTrait};
-use governance::tests::token_test::{deploy as deploy_token};
+use governance::tests::governance_token_test::{deploy as deploy_token};
 use serde::Serde;
+use zeroable::{Zeroable};
 
 
 fn deploy(config: Config) -> IGovernorDispatcher {
@@ -34,7 +39,7 @@ fn deploy(config: Config) -> IGovernorDispatcher {
     return IGovernorDispatcher { contract_address: address };
 }
 
-fn create_proposal(governance: IGovernorDispatcher, token: ITokenDispatcher) -> felt252 {
+fn create_proposal(governance: IGovernorDispatcher, token: IGovernanceTokenDispatcher) -> felt252 {
     let recipient = utils::recipient();
     let proposer = utils::proposer();
     let start_time = utils::timestamp();
@@ -57,7 +62,7 @@ fn create_proposal(governance: IGovernorDispatcher, token: ITokenDispatcher) -> 
 #[test]
 #[available_gas(3000000)]
 fn test_governance_deploy() {
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -84,7 +89,7 @@ fn test_governance_deploy() {
 #[test]
 #[available_gas(3000000)]
 fn test_propose() {
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -102,7 +107,9 @@ fn test_propose() {
     let start_time = utils::timestamp();
     assert(
         proposal == ProposalInfo {
-            proposer, creation_timestamp: start_time, yes: 0, no: 0, executed: false
+            proposer, timestamps: ProposalTimestamps {
+                creation: start_time, executed: 0
+            }, yes: 0, no: 0
         },
         'proposal doesnt match'
     );
@@ -113,7 +120,7 @@ fn test_propose() {
 #[available_gas(5000000)]
 #[should_panic(expected: ('ALREADY_PROPOSED', 'ENTRYPOINT_FAILED'))]
 fn test_propose_already_exists_should_fail() {
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -133,7 +140,7 @@ fn test_propose_already_exists_should_fail() {
 #[available_gas(3000000)]
 #[should_panic(expected: ('THRESHOLD', 'ENTRYPOINT_FAILED'))]
 fn test_propose_below_threshold_should_fail() {
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -164,7 +171,7 @@ fn test_propose_below_threshold_should_fail() {
 #[test]
 #[available_gas(6000000)]
 fn test_vote_yes() {
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -201,7 +208,7 @@ fn test_vote_yes() {
 #[test]
 #[available_gas(6000000)]
 fn test_vote_no() {
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -240,7 +247,7 @@ fn test_vote_no() {
 #[should_panic(expected: ('VOTING_NOT_STARTED', 'ENTRYPOINT_FAILED'))]
 fn test_vote_before_voting_start_should_fail() {
     // Initial setup similar to propose test
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -267,7 +274,7 @@ fn test_vote_before_voting_start_should_fail() {
 #[available_gas(6000000)]
 #[should_panic(expected: ('ALREADY_VOTED', 'ENTRYPOINT_FAILED'))]
 fn test_vote_already_voted_should_fail() {
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -300,7 +307,7 @@ fn test_vote_already_voted_should_fail() {
 #[available_gas(4000000)]
 #[should_panic(expected: ('VOTING_ENDED', 'ENTRYPOINT_FAILED'))]
 fn test_vote_after_voting_period_should_fail() {
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -330,7 +337,7 @@ fn test_vote_after_voting_period_should_fail() {
 #[test]
 #[available_gas(4000000)]
 fn test_cancel_by_proposer() {
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -353,11 +360,9 @@ fn test_cancel_by_proposer() {
     let proposal = governance.get_proposal(id);
     assert(
         proposal == ProposalInfo {
-            proposer: contract_address_const::<0>(),
-            creation_timestamp: 0,
-            yes: 0,
-            no: 0,
-            executed: false
+            proposer: contract_address_const::<0>(), timestamps: ProposalTimestamps {
+                creation: 0, executed: 0
+            }, yes: 0, no: 0,
         },
         'proposal not cancelled'
     );
@@ -366,7 +371,7 @@ fn test_cancel_by_proposer() {
 #[test]
 #[available_gas(6000000)]
 fn test_cancel_by_non_proposer() {
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -399,11 +404,9 @@ fn test_cancel_by_non_proposer() {
     let proposal = governance.get_proposal(id);
     assert(
         proposal == ProposalInfo {
-            proposer: contract_address_const::<0>(),
-            creation_timestamp: 0,
-            yes: 0,
-            no: 0,
-            executed: false
+            proposer: contract_address_const::<0>(), timestamps: ProposalTimestamps {
+                creation: 0, executed: 0
+            }, yes: 0, no: 0,
         },
         'proposal not cancelled'
     );
@@ -413,7 +416,7 @@ fn test_cancel_by_non_proposer() {
 #[available_gas(4000000)]
 #[should_panic(expected: ('THRESHOLD_NOT_BREACHED', 'ENTRYPOINT_FAILED'))]
 fn test_cancel_by_non_proposer_threshold_not_breached_should_fail() {
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -440,7 +443,7 @@ fn test_cancel_by_non_proposer_threshold_not_breached_should_fail() {
 #[available_gas(4000000)]
 #[should_panic(expected: ('VOTING_ENDED', 'ENTRYPOINT_FAILED'))]
 fn test_cancel_after_voting_end_should_fail() {
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -470,7 +473,7 @@ fn test_cancel_after_voting_end_should_fail() {
 #[test]
 #[available_gas(8000000)]
 fn test_execute_valid_proposal() {
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, erc20) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -496,22 +499,22 @@ fn test_execute_valid_proposal() {
 
     // Send 100 tokens to the gov contract - this is because
     // the proposal calls transfer() which requires gov to have tokens.
-    token.transfer(governance.contract_address, 100);
+    erc20.transfer(governance.contract_address, 100);
     // set_caller_address(utils::zero_address());
 
     let transfer_call = transfer_call(token: token, recipient: utils::recipient(), amount: 100);
     governance.execute(transfer_call);
 
     let proposal = governance.get_proposal(id);
-    assert(proposal.executed, 'execute failed');
-    assert(token.balance_of(utils::recipient()) == 100, 'balance after execute');
+    assert(proposal.timestamps.executed.is_non_zero(), 'execute failed');
+    assert(erc20.balance_of(utils::recipient()) == 100, 'balance after execute');
 }
 
 #[test]
 #[available_gas(4000000)]
 #[should_panic(expected: ('VOTING_NOT_ENDED', 'ENTRYPOINT_FAILED'))]
 fn test_execute_before_voting_ends_should_fail() {
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -538,7 +541,7 @@ fn test_execute_before_voting_ends_should_fail() {
 #[available_gas(4000000)]
 #[should_panic(expected: ('QUORUM_NOT_MET', 'ENTRYPOINT_FAILED'))]
 fn test_execute_quorum_not_met_should_fail() {
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -565,7 +568,7 @@ fn test_execute_quorum_not_met_should_fail() {
 #[available_gas(100000000)]
 #[should_panic(expected: ('NO_MAJORITY', 'ENTRYPOINT_FAILED'))]
 fn test_execute_no_majority_should_fail() {
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, erc20) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -580,8 +583,8 @@ fn test_execute_no_majority_should_fail() {
     let voter = utils::voter();
     let voter2 = utils::voter2();
     let mut current_timestamp = utils::timestamp();
-    token.transfer(voter, 49);
-    token.transfer(voter2, 51);
+    erc20.transfer(voter, 49);
+    erc20.transfer(voter2, 51);
     set_contract_address(voter);
     token.delegate(voter);
     set_contract_address(voter2);
@@ -610,7 +613,7 @@ fn test_execute_no_majority_should_fail() {
 #[available_gas(100000000)]
 #[should_panic(expected: ('ALREADY_EXECUTED', 'ENTRYPOINT_FAILED'))]
 fn test_execute_already_executed_should_fail() {
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, erc20) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -636,7 +639,7 @@ fn test_execute_already_executed_should_fail() {
 
     // Send 100 tokens to the gov contract - this is because
     // the proposal calls transfer() which requires gov to have tokens.
-    token.transfer(governance.contract_address, 100);
+    erc20.transfer(governance.contract_address, 100);
     // set_caller_address(utils::zero_address());
 
     let transfer_call = transfer_call(token: token, recipient: utils::recipient(), amount: 100);
@@ -663,7 +666,7 @@ fn queue_with_timelock_call(timelock: ITimelockDispatcher, calls: Span<Call>) ->
 #[test]
 #[available_gas(300000000)]
 fn test_proposal_e2e() {
-    let token = deploy_token('Governor', 'GT', 1000);
+    let (token, erc20) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
             voting_token: token,
@@ -686,7 +689,7 @@ fn test_proposal_e2e() {
     // so the average delegation is sufficient
     set_block_timestamp(start_time + 5);
 
-    token.transfer(timelock.contract_address, 200);
+    erc20.transfer(timelock.contract_address, 200);
     let recipient = utils::recipient();
     let timelock_calls = single_call(
         call: transfer_call(token: token, recipient: recipient, amount: 100)
@@ -701,9 +704,9 @@ fn test_proposal_e2e() {
     assert(result.len() == 1, '1 result');
     let queued_call_id = result.pop_front();
     set_block_timestamp(start_time + 5 + 3600 + 60 + 60);
-    assert(token.balance_of(timelock.contract_address) == 200, 'balance before t');
-    assert(token.balance_of(recipient) == 0, 'balance before r');
+    assert(erc20.balance_of(timelock.contract_address) == 200, 'balance before t');
+    assert(erc20.balance_of(recipient) == 0, 'balance before r');
     timelock.execute(timelock_calls);
-    assert(token.balance_of(timelock.contract_address) == 100, 'balance after t');
-    assert(token.balance_of(recipient) == 100, 'balance before r');
+    assert(erc20.balance_of(timelock.contract_address) == 100, 'balance after t');
+    assert(erc20.balance_of(recipient) == 100, 'balance before r');
 }
