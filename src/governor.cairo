@@ -15,13 +15,15 @@ struct ProposalTimestamps {
     executed: u64,
 }
 
+const TWO_POW_64: u128 = 0x10000000000000000_u128;
+
 impl ProposalTimestampsStorePacking of StorePacking<ProposalTimestamps, u128> {
     fn pack(value: ProposalTimestamps) -> u128 {
-        value.creation.into() + (value.executed.into() * 0x10000000000000000_u128)
+        value.creation.into() + (value.executed.into() * TWO_POW_64)
     }
 
     fn unpack(value: u128) -> ProposalTimestamps {
-        let (executed, creation) = u128_safe_divmod(value, u128_as_non_zero(0x10000000000000000));
+        let (executed, creation) = u128_safe_divmod(value, u128_as_non_zero(TWO_POW_64));
         ProposalTimestamps {
             creation: creation.try_into().unwrap(), executed: executed.try_into().unwrap()
         }
