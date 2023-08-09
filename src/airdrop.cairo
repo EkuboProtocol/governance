@@ -7,8 +7,9 @@ struct Claim {
     amount: u128,
 }
 
+// The only method required by Airdrop is transfer, so we use a simplified interface
 #[starknet::interface]
-trait IERC20<TStorage> {
+trait ITransferrableERC20<TStorage> {
     fn transfer(ref self: TStorage, recipient: ContractAddress, amount: u256);
 }
 
@@ -19,7 +20,10 @@ trait IAirdrop<TStorage> {
 
 #[starknet::contract]
 mod Airdrop {
-    use super::{IAirdrop, ContractAddress, Claim, IERC20Dispatcher, IERC20DispatcherTrait};
+    use super::{
+        IAirdrop, ContractAddress, Claim, ITransferrableERC20Dispatcher,
+        ITransferrableERC20DispatcherTrait
+    };
     use array::{ArrayTrait, SpanTrait};
     use hash::{pedersen};
     use traits::{Into, TryInto};
@@ -61,7 +65,7 @@ mod Airdrop {
     #[storage]
     struct Storage {
         root: felt252,
-        token: IERC20Dispatcher,
+        token: ITransferrableERC20Dispatcher,
         claimed: LegacyMap<felt252, bool>,
     }
 
@@ -77,9 +81,9 @@ mod Airdrop {
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, token: IERC20Dispatcher, root: felt252) {
+    fn constructor(ref self: ContractState, token: ContractAddress, root: felt252) {
         self.root.write(root);
-        self.token.write(token);
+        self.token.write(ITransferrableERC20Dispatcher { contract_address: token });
     }
 
     #[external(v0)]

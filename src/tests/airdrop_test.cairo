@@ -1,23 +1,24 @@
 use governance::airdrop::Airdrop::ClaimToLeafTrait;
-use governance::token::ITokenDispatcherTrait;
+use governance::governance_token::IGovernanceTokenDispatcherTrait;
 use array::{ArrayTrait};
 use debug::PrintTrait;
 use governance::airdrop::{
     IAirdropDispatcher, IAirdropDispatcherTrait, Airdrop, Airdrop::compute_pedersen_root, Claim,
-    Airdrop::ClaimToLeaf, Airdrop::felt252_lt, IERC20Dispatcher, IERC20DispatcherTrait
+    Airdrop::ClaimToLeaf, Airdrop::felt252_lt
 };
+use governance::governance_token::{IERC20Dispatcher, IERC20DispatcherTrait};
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress
 };
-use governance::token::{Token, ITokenDispatcher};
-use governance::tests::token_test::{deploy as deploy_token};
+use governance::governance_token::{GovernanceToken, IGovernanceTokenDispatcher};
+use governance::tests::governance_token_test::{deploy as deploy_token};
 use starknet::class_hash::Felt252TryIntoClassHash;
 use traits::{TryInto, Into};
 
 use result::{Result, ResultTrait};
 use option::{OptionTrait};
 
-fn deploy(token: IERC20Dispatcher, root: felt252) -> IAirdropDispatcher {
+fn deploy(token: ContractAddress, root: felt252) -> IAirdropDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
     Serde::serialize(@token, ref constructor_args);
     Serde::serialize(@root, ref constructor_args);
@@ -92,13 +93,13 @@ fn test_compute_pedersen_root_recursive() {
 #[test]
 #[available_gas(3000000)]
 fn test_claim_single_recipient() {
-    let token = deploy_token('AIRDROP', 'AD', 1234567);
+    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
 
     let claim = Claim { claimee: contract_address_const::<2345>(), amount: 6789,  };
 
     let leaf = claim.to_leaf();
 
-    let airdrop = deploy(IERC20Dispatcher { contract_address: token.contract_address }, leaf);
+    let airdrop = deploy(token.contract_address, leaf);
 
     token.transfer(airdrop.contract_address, 6789);
     let proof = ArrayTrait::new();
@@ -111,13 +112,13 @@ fn test_claim_single_recipient() {
 #[available_gas(4000000)]
 #[should_panic(expected: ('ALREADY_CLAIMED', 'ENTRYPOINT_FAILED'))]
 fn test_double_claim() {
-    let token = deploy_token('AIRDROP', 'AD', 1234567);
+    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
 
     let claim = Claim { claimee: contract_address_const::<2345>(), amount: 6789,  };
 
     let leaf = claim.to_leaf();
 
-    let airdrop = deploy(IERC20Dispatcher { contract_address: token.contract_address }, leaf);
+    let airdrop = deploy(token.contract_address, leaf);
 
     token.transfer(airdrop.contract_address, 6789);
     let mut proof = ArrayTrait::new();
@@ -131,13 +132,13 @@ fn test_double_claim() {
 #[available_gas(3000000)]
 #[should_panic(expected: ('INVALID_PROOF', 'ENTRYPOINT_FAILED'))]
 fn test_invalid_proof_single_entry() {
-    let token = deploy_token('AIRDROP', 'AD', 1234567);
+    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
 
     let claim = Claim { claimee: contract_address_const::<2345>(), amount: 6789,  };
 
     let leaf = claim.to_leaf();
 
-    let airdrop = deploy(IERC20Dispatcher { contract_address: token.contract_address }, leaf);
+    let airdrop = deploy(token.contract_address, leaf);
 
     token.transfer(airdrop.contract_address, 6789);
     let mut proof = ArrayTrait::new();
@@ -150,13 +151,13 @@ fn test_invalid_proof_single_entry() {
 #[available_gas(3000000)]
 #[should_panic(expected: ('INVALID_PROOF', 'ENTRYPOINT_FAILED'))]
 fn test_invalid_proof_fake_entry() {
-    let token = deploy_token('AIRDROP', 'AD', 1234567);
+    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
 
     let claim = Claim { claimee: contract_address_const::<2345>(), amount: 6789,  };
 
     let leaf = claim.to_leaf();
 
-    let airdrop = deploy(IERC20Dispatcher { contract_address: token.contract_address }, leaf);
+    let airdrop = deploy(token.contract_address, leaf);
 
     token.transfer(airdrop.contract_address, 6789);
     let proof = ArrayTrait::new();
@@ -168,7 +169,7 @@ fn test_invalid_proof_fake_entry() {
 #[test]
 #[available_gas(30000000)]
 fn test_claim_two_claims() {
-    let token = deploy_token('AIRDROP', 'AD', 1234567);
+    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
 
     let claim_a = Claim { claimee: contract_address_const::<2345>(), amount: 6789,  };
     let claim_b = Claim { claimee: contract_address_const::<3456>(), amount: 789,  };
@@ -182,7 +183,7 @@ fn test_claim_two_claims() {
         pedersen(leaf_b, leaf_a)
     };
 
-    let airdrop = deploy(IERC20Dispatcher { contract_address: token.contract_address }, root);
+    let airdrop = deploy(token.contract_address, root);
     token.transfer(airdrop.contract_address, 6789 + 789 + 1);
 
     let mut proof_a = ArrayTrait::new();

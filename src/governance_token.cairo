@@ -2,24 +2,27 @@ use core::traits::TryInto;
 use starknet::ContractAddress;
 
 #[starknet::interface]
-trait IToken<TStorage> {
-    // ERC20 methods
+trait IERC20<TStorage> {
     fn name(self: @TStorage) -> felt252;
     fn symbol(self: @TStorage) -> felt252;
     fn decimals(self: @TStorage) -> u8;
     fn total_supply(self: @TStorage) -> u256;
+    fn totalSupply(self: @TStorage) -> u256;
     fn balance_of(self: @TStorage, account: ContractAddress) -> u256;
+    fn balanceOf(self: @TStorage, account: ContractAddress) -> u256;
     fn allowance(self: @TStorage, owner: ContractAddress, spender: ContractAddress) -> u256;
     fn transfer(ref self: TStorage, recipient: ContractAddress, amount: u256) -> bool;
     fn transfer_from(
         ref self: TStorage, sender: ContractAddress, recipient: ContractAddress, amount: u256
     ) -> bool;
-    fn approve(ref self: TStorage, spender: ContractAddress, amount: u256) -> bool;
-    fn increase_allowance(ref self: TStorage, spender: ContractAddress, added_value: u256) -> bool;
-    fn decrease_allowance(
-        ref self: TStorage, spender: ContractAddress, subtracted_value: u256
+    fn transferFrom(
+        ref self: TStorage, sender: ContractAddress, recipient: ContractAddress, amount: u256
     ) -> bool;
+    fn approve(ref self: TStorage, spender: ContractAddress, amount: u256) -> bool;
+}
 
+#[starknet::interface]
+trait IGovernanceToken<TStorage> {
     // Delegate tokens from the caller to the given delegate address
     fn delegate(ref self: TStorage, to: ContractAddress);
 
@@ -43,8 +46,8 @@ trait IToken<TStorage> {
 }
 
 #[starknet::contract]
-mod Token {
-    use super::{IToken, ContractAddress};
+mod GovernanceToken {
+    use super::{IERC20, IGovernanceToken, ContractAddress};
     use traits::{Into, TryInto};
     use option::{OptionTrait};
     use starknet::{get_caller_address, get_block_timestamp};
@@ -211,7 +214,7 @@ mod Token {
     }
 
     #[external(v0)]
-    impl TokenImpl of IToken<ContractState> {
+    impl ERC20Impl of IERC20<ContractState> {
         fn name(self: @ContractState) -> felt252 {
             self.name.read()
         }
@@ -224,8 +227,14 @@ mod Token {
         fn total_supply(self: @ContractState) -> u256 {
             self.total_supply.read().into()
         }
+        fn totalSupply(self: @ContractState) -> u256 {
+            self.total_supply()
+        }
         fn balance_of(self: @ContractState, account: ContractAddress) -> u256 {
             self.balances.read(account).into()
+        }
+        fn balanceOf(self: @ContractState, account: ContractAddress) -> u256 {
+            self.balance_of(account)
         }
         fn allowance(
             self: @ContractState, owner: ContractAddress, spender: ContractAddress
@@ -269,6 +278,14 @@ mod Token {
             self.emit(Transfer { from: sender, to: recipient, value: amount });
             true
         }
+        fn transferFrom(
+            ref self: ContractState,
+            sender: ContractAddress,
+            recipient: ContractAddress,
+            amount: u256
+        ) -> bool {
+            self.transfer_from(sender, recipient, amount)
+        }
         fn approve(ref self: ContractState, spender: ContractAddress, amount: u256) -> bool {
             let owner = get_caller_address();
             self
@@ -277,18 +294,10 @@ mod Token {
             self.emit(Approval { owner, spender, value: amount });
             true
         }
+    }
 
-        fn increase_allowance(
-            ref self: ContractState, spender: ContractAddress, added_value: u256
-        ) -> bool {
-            self.approve(spender, self.allowance(get_caller_address(), spender) + added_value)
-        }
-        fn decrease_allowance(
-            ref self: ContractState, spender: ContractAddress, subtracted_value: u256
-        ) -> bool {
-            self.approve(spender, self.allowance(get_caller_address(), spender) - subtracted_value)
-        }
-
+    #[external(v0)]
+    impl TokenImpl of IGovernanceToken<ContractState> {
         fn delegate(ref self: ContractState, to: ContractAddress) {
             let caller = get_caller_address();
             let old = self.delegates.read(caller);

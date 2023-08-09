@@ -23,11 +23,11 @@ The structure is as follows:
     - Timelock ownership may be transferred to a new governance contract in future, e.g. to migrate to a volition-based voting contract
     - None of the proposal metadata is stored in governor, simply the number of votes
     - Proposals can be canceled at any time if the voting weight of the proposer falls below the threshold
-- `Token` is an ERC20 token meant for voting in contracts like `Governor`
+- `GovernanceToken` is an ERC20 token meant for voting in contracts like `Governor`
     - Users must delegate their tokens to vote, and may delegate to themselves
     - Allows other contracts to get the average voting weight for *any* historical period
     - Average votes are used to compute voting weight in the `Governor`, over a configurable period of time
-- `Airdrop` can be used to distribute Token
+- `Airdrop` can be used to distribute GovernanceToken
     - Compute a merkle root by computing a list of amounts and recipients, hashing them, and arranging them into a merkle binary tree
     - Deploy the airdrop with the root and the token address
     - Transfer the total amount of tokens to the `Airdrop` contract
