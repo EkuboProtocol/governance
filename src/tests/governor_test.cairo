@@ -608,8 +608,15 @@ fn test_execute_no_majority_should_fail() {
     // vote exactly at the quorum but 'no' votes are the majority
     set_contract_address(voter1);
     governance.vote(id, true);
+    let proposal = governance.get_proposal(id);
+    assert(proposal.yea == 49, 'yea after first');
+    assert(proposal.nay.is_zero(), 'nay after first');
+
     set_contract_address(voter2);
     governance.vote(id, false);
+    let proposal = governance.get_proposal(id);
+    assert(proposal.yea == 49, 'yea after both');
+    assert(proposal.nay == 51, 'nay after both');
 
     current_timestamp += 60;
     set_block_timestamp(current_timestamp); // voting period ends
@@ -649,7 +656,7 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
     set_contract_address(voter2);
     token.delegate(voter2);
 
-    // only 2/3rds of votes have been accumulated
+    // the full amount of delegation should be vested over 30 seconds
     current_timestamp += 30;
     set_block_timestamp(current_timestamp);
 
@@ -658,18 +665,25 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
 
     current_timestamp += 3580;
     set_block_timestamp(current_timestamp); // 20 seconds before voting starts
-    // undelegate 20 seconds before voting starts
+    // undelegate 20 seconds before voting starts, so only 1/3rd of voting power is counted for voter1
     set_contract_address(voter1);
     token.delegate(Zeroable::zero());
 
     current_timestamp += 20;
     set_block_timestamp(current_timestamp); // voting starts
 
-    // vote exactly at the quorum but 'no' votes are the majority
+    // vote less than quorum because of smoothing duration
     set_contract_address(voter1);
     governance.vote(id, true);
+    let proposal = governance.get_proposal(id);
+    assert(proposal.yea == 16, 'yea after first');
+    assert(proposal.nay.is_zero(), 'nay after first');
+
     set_contract_address(voter2);
     governance.vote(id, false);
+    let proposal = governance.get_proposal(id);
+    assert(proposal.yea == 16, 'yea after both');
+    assert(proposal.nay == 51, 'nay after both');
 
     current_timestamp += 60;
     set_block_timestamp(current_timestamp); // voting period ends
