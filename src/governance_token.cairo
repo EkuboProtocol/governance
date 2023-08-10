@@ -50,14 +50,34 @@ mod GovernanceToken {
     use super::{IERC20, IGovernanceToken, ContractAddress};
     use traits::{Into, TryInto};
     use option::{OptionTrait};
-    use starknet::{get_caller_address, get_block_timestamp};
+    use starknet::{get_caller_address, get_block_timestamp, StorePacking};
     use zeroable::{Zeroable};
+    use integer::{u256_safe_divmod, u256_as_non_zero};
 
-    #[derive(Copy, Drop, starknet::Store)]
+    #[derive(Copy, Drop, PartialEq)]
     struct DelegatedSnapshot {
         timestamp: u64,
         delegated_cumulative: u256,
     }
+
+    const TWO_POW_64: u128 = 0x10000000000000000_u128;
+
+    impl DelegatedSnapshotStorePacking of StorePacking<DelegatedSnapshot, felt252> {
+        fn pack(value: DelegatedSnapshot) -> felt252 {
+            (value.delegated_cumulative + u256 {
+                high: value.timestamp.into() * TWO_POW_64, low: 0
+            })
+                .try_into()
+                .unwrap()
+        }
+        fn unpack(value: felt252) -> DelegatedSnapshot {
+            let (timestamp, delegated_cumulative, _) = u256_safe_divmod(
+                value.into(), u256_as_non_zero(u256 { low: 0, high: TWO_POW_64 })
+            );
+            DelegatedSnapshot { timestamp: timestamp.low.try_into().unwrap(), delegated_cumulative }
+        }
+    }
+
 
     #[storage]
     struct Storage {
