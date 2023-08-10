@@ -109,7 +109,7 @@ fn test_propose() {
         proposal == ProposalInfo {
             proposer, timestamps: ProposalTimestamps {
                 creation: start_time, executed: 0
-            }, yes: 0, no: 0
+            }, yea: 0, nay: 0
         },
         'proposal doesnt match'
     );
@@ -198,11 +198,11 @@ fn test_vote_yes() {
 
     let proposal = governance.get_proposal(id);
     assert(
-        proposal.yes == token.get_average_delegated_over_last(voter, 30),
+        proposal.yea == token.get_average_delegated_over_last(voter, 30),
         'Yes vote count does not match'
     );
 
-    assert(proposal.no == 0, 'No vote count does not match');
+    assert(proposal.nay == 0, 'No vote count does not match');
 }
 
 #[test]
@@ -235,11 +235,11 @@ fn test_vote_no() {
 
     let proposal = governance.get_proposal(id);
     assert(
-        proposal.no == token.get_average_delegated_over_last(voter, 30),
+        proposal.nay == token.get_average_delegated_over_last(voter, 30),
         'No vote count does not match'
     );
 
-    assert(proposal.yes == 0, 'Yes vote count should be 0');
+    assert(proposal.yea == 0, 'Yes vote count should be 0');
 }
 
 #[test]
@@ -362,7 +362,7 @@ fn test_cancel_by_proposer() {
         proposal == ProposalInfo {
             proposer: contract_address_const::<0>(), timestamps: ProposalTimestamps {
                 creation: 0, executed: 0
-            }, yes: 0, no: 0,
+            }, yea: 0, nay: 0,
         },
         'proposal not cancelled'
     );
@@ -406,7 +406,7 @@ fn test_cancel_by_non_proposer() {
         proposal == ProposalInfo {
             proposer: contract_address_const::<0>(), timestamps: ProposalTimestamps {
                 creation: 0, executed: 0
-            }, yes: 0, no: 0,
+            }, yea: 0, nay: 0,
         },
         'proposal not cancelled'
     );
@@ -568,6 +568,7 @@ fn test_execute_quorum_not_met_should_fail() {
 #[available_gas(100000000)]
 #[should_panic(expected: ('NO_MAJORITY', 'ENTRYPOINT_FAILED'))]
 fn test_execute_no_majority_should_fail() {
+    let deployer = get_contract_address();
     let (token, erc20) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         Config {
@@ -579,24 +580,93 @@ fn test_execute_no_majority_should_fail() {
             proposal_creation_threshold: 50,
         }
     );
-    let id = create_proposal(governance, token);
-    let voter = utils::voter();
-    let voter2 = utils::voter2();
+
     let mut current_timestamp = utils::timestamp();
-    erc20.transfer(voter, 49);
+    set_block_timestamp(current_timestamp);
+
+    // delegate tokens to 2 voters
+    let voter1 = utils::voter();
+    let voter2 = utils::voter2();
+
+    erc20.transfer(voter1, 49);
     erc20.transfer(voter2, 51);
-    set_contract_address(voter);
-    token.delegate(voter);
+    set_contract_address(voter1);
+    token.delegate(voter1);
     set_contract_address(voter2);
     token.delegate(voter2);
 
-    // self-delegate tokens to get voting power
+    // now voter2 has enough weighted voting power to propose
+    current_timestamp += 30;
+    set_block_timestamp(current_timestamp);
+
+    let id = governance
+        .propose(transfer_call(token: token, recipient: utils::recipient(), amount: 100));
 
     current_timestamp += 3601;
     set_block_timestamp(current_timestamp); // voting period starts
 
     // vote exactly at the quorum but 'no' votes are the majority
-    set_contract_address(voter);
+    set_contract_address(voter1);
+    governance.vote(id, true);
+    set_contract_address(voter2);
+    governance.vote(id, false);
+
+    current_timestamp += 60;
+    set_block_timestamp(current_timestamp); // voting period ends
+
+    // Execute the proposal. The majority of votes are no, this should fail.
+    governance.execute(transfer_call(token: token, recipient: utils::recipient(), amount: 100));
+}
+
+#[test]
+#[available_gas(100000000)]
+#[should_panic(expected: ('QUORUM_NOT_MET', 'ENTRYPOINT_FAILED'))]
+fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_start() {
+    let deployer = get_contract_address();
+    let (token, erc20) = deploy_token('Governor', 'GT', 1000);
+    let governance = deploy(
+        Config {
+            voting_token: token,
+            voting_start_delay: 3600,
+            voting_period: 60,
+            voting_weight_smoothing_duration: 30,
+            quorum: 100,
+            proposal_creation_threshold: 50,
+        }
+    );
+
+    let mut current_timestamp = utils::timestamp();
+    set_block_timestamp(current_timestamp);
+
+    // self-delegate tokens to get voting power
+    let voter1 = utils::voter();
+    let voter2 = utils::voter2();
+
+    erc20.transfer(voter1, 49);
+    erc20.transfer(voter2, 51);
+    set_contract_address(voter1);
+    token.delegate(voter1);
+    set_contract_address(voter2);
+    token.delegate(voter2);
+
+    // only 2/3rds of votes have been accumulated
+    current_timestamp += 30;
+    set_block_timestamp(current_timestamp);
+
+    let id = governance
+        .propose(transfer_call(token: token, recipient: utils::recipient(), amount: 100));
+
+    current_timestamp += 3580;
+    set_block_timestamp(current_timestamp); // 20 seconds before voting starts
+    // undelegate 20 seconds before voting starts
+    set_contract_address(voter1);
+    token.delegate(Zeroable::zero());
+
+    current_timestamp += 20;
+    set_block_timestamp(current_timestamp); // voting starts
+
+    // vote exactly at the quorum but 'no' votes are the majority
+    set_contract_address(voter1);
     governance.vote(id, true);
     set_contract_address(voter2);
     governance.vote(id, false);
@@ -605,8 +675,7 @@ fn test_execute_no_majority_should_fail() {
     set_block_timestamp(current_timestamp); // voting period ends
 
     // Execute the proposal. The quorum was not met, this should fail.
-    let transfer_call = transfer_call(token: token, recipient: utils::recipient(), amount: 100);
-    governance.execute(transfer_call);
+    governance.execute(transfer_call(token: token, recipient: utils::recipient(), amount: 100));
 }
 
 #[test]

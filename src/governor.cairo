@@ -37,9 +37,9 @@ struct ProposalInfo {
     // the relevant timestamps
     timestamps: ProposalTimestamps,
     // how many yes votes have been collected
-    yes: u128,
+    yea: u128,
     // how many no votes have been collected
-    no: u128,
+    nay: u128,
 }
 
 #[derive(Copy, Drop, Serde, starknet::Store)]
@@ -64,7 +64,7 @@ trait IGovernor<TStorage> {
     fn propose(ref self: TStorage, call: Call) -> felt252;
 
     // Vote on the given proposal.
-    fn vote(ref self: TStorage, id: felt252, vote: bool);
+    fn vote(ref self: TStorage, id: felt252, yea: bool);
 
     // Cancel the given proposal. Cancellation can happen by any address if the average voting weight is below the proposal_creation_threshold.
     fn cancel(ref self: TStorage, id: felt252);
@@ -132,14 +132,14 @@ mod Governor {
                     ProposalInfo {
                         proposer, timestamps: ProposalTimestamps {
                             creation: timestamp_current, executed: 0
-                        }, yes: 0, no: 0
+                        }, yea: 0, nay: 0
                     }
                 );
 
             id
         }
 
-        fn vote(ref self: ContractState, id: felt252, vote: bool) {
+        fn vote(ref self: ContractState, id: felt252, yea: bool) {
             let config = self.config.read();
             let mut proposal = self.proposals.read(id);
 
@@ -155,14 +155,16 @@ mod Governor {
 
             let weight = config
                 .voting_token
-                .get_average_delegated_over_last(
-                    delegate: voter, period: config.voting_weight_smoothing_duration
+                .get_average_delegated(
+                    delegate: voter,
+                    start: voting_start_time - config.voting_weight_smoothing_duration,
+                    end: voting_start_time,
                 );
 
-            if vote {
-                proposal.yes = proposal.yes + weight;
+            if yea {
+                proposal.yea = proposal.yea + weight;
             } else {
-                proposal.no = proposal.no + weight;
+                proposal.nay = proposal.nay + weight;
             }
             self.proposals.write(id, proposal);
             self.voted.write((voter, id), true);
@@ -201,7 +203,7 @@ mod Governor {
             proposal = ProposalInfo {
                 proposer: contract_address_const::<0>(), timestamps: ProposalTimestamps {
                     creation: 0, executed: 0
-                }, yes: 0, no: 0
+                }, yea: 0, nay: 0
             };
 
             self.proposals.write(id, proposal);
@@ -228,8 +230,8 @@ mod Governor {
                 'VOTING_NOT_ENDED'
             );
 
-            assert((proposal.yes + proposal.no) >= config.quorum, 'QUORUM_NOT_MET');
-            assert(proposal.yes >= proposal.no, 'NO_MAJORITY');
+            assert((proposal.yea + proposal.nay) >= config.quorum, 'QUORUM_NOT_MET');
+            assert(proposal.yea >= proposal.nay, 'NO_MAJORITY');
 
             proposal.timestamps = ProposalTimestamps {
                 creation: proposal.timestamps.creation, executed: timestamp_current
