@@ -25,7 +25,7 @@ mod Airdrop {
         ITransferrableERC20DispatcherTrait
     };
     use array::{ArrayTrait, SpanTrait};
-    use hash::{pedersen};
+    use pedersen::{pedersen};
     use traits::{Into, TryInto};
     use starknet::ContractAddressIntoFelt252;
 
