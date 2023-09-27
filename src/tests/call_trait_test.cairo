@@ -82,7 +82,7 @@ fn test_execute_invalid_entry_point() {
 
 #[test]
 #[available_gas(300000000)]
-#[should_panic(expected: ('Input too short for arguments', 'ENTRYPOINT_FAILED'))]
+#[should_panic(expected: ('Failed to deserialize param #1', 'ENTRYPOINT_FAILED'))]
 fn test_execute_invalid_call_data_too_short() {
     let (token, _) = deploy_token('TIMELOCK', 'TL', 1);
 

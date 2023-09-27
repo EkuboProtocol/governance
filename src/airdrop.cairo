@@ -25,7 +25,6 @@ mod Airdrop {
         ITransferrableERC20DispatcherTrait
     };
     use array::{ArrayTrait, SpanTrait};
-    use hash::{pedersen};
     use traits::{Into, TryInto};
     use starknet::ContractAddressIntoFelt252;
 
@@ -42,9 +41,9 @@ mod Airdrop {
             Option::Some(proof_element) => {
                 compute_pedersen_root(
                     if felt252_lt(@current, proof_element) {
-                        pedersen(current, *proof_element)
+                        pedersen::pedersen(current, *proof_element)
                     } else {
-                        pedersen(*proof_element, current)
+                        pedersen::pedersen(*proof_element, current)
                     },
                     proof
                 )
@@ -58,7 +57,7 @@ mod Airdrop {
     #[generate_trait]
     impl ClaimToLeaf of ClaimToLeafTrait {
         fn to_leaf(self: @Claim) -> felt252 {
-            pedersen((*self.claimee).into(), (*self.amount).into())
+            pedersen::pedersen((*self.claimee).into(), (*self.amount).into())
         }
     }
 
