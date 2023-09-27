@@ -68,7 +68,7 @@ mod Timelock {
         loop {
             match calls.pop_front() {
                 Option::Some(call) => {
-                    state = pedersen(state, call.hash());
+                    state = pedersen::pedersen(state, call.hash());
                 },
                 Option::None(_) => {
                     break state;

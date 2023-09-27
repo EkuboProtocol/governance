@@ -14,7 +14,7 @@ impl CallTraitImpl of CallTrait {
         loop {
             match data_span.pop_front() {
                 Option::Some(word) => {
-                    data_hash = pedersen(data_hash, *word);
+                    data_hash = pedersen::pedersen(data_hash, *word);
                 },
                 Option::None(_) => {
                     break;
@@ -22,7 +22,7 @@ impl CallTraitImpl of CallTrait {
             };
         };
 
-        pedersen(pedersen((*self.to).into(), *self.selector), data_hash)
+        pedersen::pedersen(pedersen::pedersen((*self.to).into(), *self.selector), data_hash)
     }
 
     fn execute(self: @Call) -> Span<felt252> {

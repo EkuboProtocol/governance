@@ -178,9 +178,9 @@ fn test_claim_two_claims() {
     let leaf_b = claim_b.to_leaf();
 
     let root = if felt252_lt(@leaf_a, @leaf_b) {
-        pedersen(leaf_a, leaf_b)
+        pedersen::pedersen(leaf_a, leaf_b)
     } else {
-        pedersen(leaf_b, leaf_a)
+        pedersen::pedersen(leaf_b, leaf_a)
     };
 
     let airdrop = deploy(token.contract_address, root);
