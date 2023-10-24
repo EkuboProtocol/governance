@@ -64,9 +64,8 @@ mod GovernanceToken {
 
     impl DelegatedSnapshotStorePacking of StorePacking<DelegatedSnapshot, felt252> {
         fn pack(value: DelegatedSnapshot) -> felt252 {
-            (value.delegated_cumulative + u256 {
-                high: value.timestamp.into() * TWO_POW_64, low: 0
-            })
+            (value.delegated_cumulative
+                + u256 { high: value.timestamp.into() * TWO_POW_64, low: 0 })
                 .try_into()
                 .unwrap()
         }

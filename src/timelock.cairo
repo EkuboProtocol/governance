@@ -67,12 +67,8 @@ mod Timelock {
         let mut state = 0;
         loop {
             match calls.pop_front() {
-                Option::Some(call) => {
-                    state = pedersen::pedersen(state, call.hash());
-                },
-                Option::None(_) => {
-                    break state;
-                }
+                Option::Some(call) => { state = pedersen::pedersen(state, call.hash()); },
+                Option::None(_) => { break state; }
             };
         }
     }
@@ -126,12 +122,8 @@ mod Timelock {
 
             loop {
                 match calls.pop_front() {
-                    Option::Some(call) => {
-                        results.append(call.execute());
-                    },
-                    Option::None(_) => {
-                        break;
-                    }
+                    Option::Some(call) => { results.append(call.execute()); },
+                    Option::None(_) => { break; }
                 };
             };
 

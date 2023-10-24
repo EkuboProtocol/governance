@@ -13,12 +13,8 @@ impl CallTraitImpl of CallTrait {
         let mut data_span = self.calldata.span();
         loop {
             match data_span.pop_front() {
-                Option::Some(word) => {
-                    data_hash = pedersen::pedersen(data_hash, *word);
-                },
-                Option::None(_) => {
-                    break;
-                }
+                Option::Some(word) => { data_hash = pedersen::pedersen(data_hash, *word); },
+                Option::None(_) => { break; }
             };
         };
 

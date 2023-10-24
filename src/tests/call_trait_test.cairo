@@ -59,7 +59,7 @@ fn test_hash_address_data_one_two() {
 
 #[test]
 #[available_gas(300000000)]
-#[should_panic(expected: ('CONTRACT_NOT_DEPLOYED', ))]
+#[should_panic(expected: ('CONTRACT_NOT_DEPLOYED',))]
 fn test_execute_contract_not_deployed() {
     let mut calldata: Array<felt252> = ArrayTrait::new();
     let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: calldata };
@@ -69,7 +69,7 @@ fn test_execute_contract_not_deployed() {
 
 #[test]
 #[available_gas(300000000)]
-#[should_panic(expected: ('ENTRYPOINT_NOT_FOUND', ))]
+#[should_panic(expected: ('ENTRYPOINT_NOT_FOUND',))]
 fn test_execute_invalid_entry_point() {
     let (token, _) = deploy_token('TIMELOCK', 'TL', 1);
 

@@ -107,9 +107,10 @@ fn test_propose() {
     let start_time = utils::timestamp();
     assert(
         proposal == ProposalInfo {
-            proposer, timestamps: ProposalTimestamps {
-                creation: start_time, executed: 0
-            }, yea: 0, nay: 0
+            proposer,
+            timestamps: ProposalTimestamps { creation: start_time, executed: 0 },
+            yea: 0,
+            nay: 0
         },
         'proposal doesnt match'
     );
@@ -360,9 +361,10 @@ fn test_cancel_by_proposer() {
     let proposal = governance.get_proposal(id);
     assert(
         proposal == ProposalInfo {
-            proposer: contract_address_const::<0>(), timestamps: ProposalTimestamps {
-                creation: 0, executed: 0
-            }, yea: 0, nay: 0,
+            proposer: contract_address_const::<0>(),
+            timestamps: ProposalTimestamps { creation: 0, executed: 0 },
+            yea: 0,
+            nay: 0,
         },
         'proposal not cancelled'
     );
@@ -404,9 +406,10 @@ fn test_cancel_by_non_proposer() {
     let proposal = governance.get_proposal(id);
     assert(
         proposal == ProposalInfo {
-            proposer: contract_address_const::<0>(), timestamps: ProposalTimestamps {
-                creation: 0, executed: 0
-            }, yea: 0, nay: 0,
+            proposer: contract_address_const::<0>(),
+            timestamps: ProposalTimestamps { creation: 0, executed: 0 },
+            yea: 0,
+            nay: 0,
         },
         'proposal not cancelled'
     );

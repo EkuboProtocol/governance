@@ -130,9 +130,10 @@ mod Governor {
                 .write(
                     id,
                     ProposalInfo {
-                        proposer, timestamps: ProposalTimestamps {
-                            creation: timestamp_current, executed: 0
-                        }, yea: 0, nay: 0
+                        proposer,
+                        timestamps: ProposalTimestamps { creation: timestamp_current, executed: 0 },
+                        yea: 0,
+                        nay: 0
                     }
                 );
 
@@ -200,11 +201,13 @@ mod Governor {
                 'VOTING_ENDED'
             );
 
-            proposal = ProposalInfo {
-                proposer: contract_address_const::<0>(), timestamps: ProposalTimestamps {
-                    creation: 0, executed: 0
-                }, yea: 0, nay: 0
-            };
+            proposal =
+                ProposalInfo {
+                    proposer: contract_address_const::<0>(),
+                    timestamps: ProposalTimestamps { creation: 0, executed: 0 },
+                    yea: 0,
+                    nay: 0
+                };
 
             self.proposals.write(id, proposal);
         }
@@ -233,9 +236,11 @@ mod Governor {
             assert((proposal.yea + proposal.nay) >= config.quorum, 'QUORUM_NOT_MET');
             assert(proposal.yea >= proposal.nay, 'NO_MAJORITY');
 
-            proposal.timestamps = ProposalTimestamps {
-                creation: proposal.timestamps.creation, executed: timestamp_current
-            };
+            proposal
+                .timestamps =
+                    ProposalTimestamps {
+                        creation: proposal.timestamps.creation, executed: timestamp_current
+                    };
 
             self.proposals.write(id, proposal);
 

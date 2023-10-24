@@ -48,9 +48,7 @@ mod Airdrop {
                     proof
                 )
             },
-            Option::None(()) => {
-                current
-            },
+            Option::None(()) => { current },
         }
     }
 
@@ -76,7 +74,7 @@ mod Airdrop {
     #[derive(starknet::Event, Drop)]
     #[event]
     enum Event {
-        Claimed: Claimed, 
+        Claimed: Claimed,
     }
 
     #[constructor]

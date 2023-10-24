@@ -28,11 +28,8 @@ fn deploy(
     )
         .expect('DEPLOY_TK_FAILED');
     return (
-        IGovernanceTokenDispatcher {
-            contract_address: address
-            }, IERC20Dispatcher {
-            contract_address: address
-        }
+        IGovernanceTokenDispatcher { contract_address: address },
+        IERC20Dispatcher { contract_address: address }
     );
 }
 
@@ -77,31 +74,27 @@ fn test_governance_token_delegated_snapshot_store_pack() {
 #[test]
 fn test_governance_token_delegated_snapshot_store_unpack() {
     assert(
-        DelegatedSnapshotStorePacking::unpack(0) == DelegatedSnapshot {
-            timestamp: 0, delegated_cumulative: 0
-        },
+        DelegatedSnapshotStorePacking::unpack(
+            0
+        ) == DelegatedSnapshot { timestamp: 0, delegated_cumulative: 0 },
         'zero'
     );
     assert(
-        DelegatedSnapshotStorePacking::unpack(1) == DelegatedSnapshot {
-            timestamp: 0, delegated_cumulative: 1
-        },
+        DelegatedSnapshotStorePacking::unpack(
+            1
+        ) == DelegatedSnapshot { timestamp: 0, delegated_cumulative: 1 },
         'one cumulative'
     );
     assert(
         DelegatedSnapshotStorePacking::unpack(
             0x1000000000000000000000000000000000000000000000000
-        ) == DelegatedSnapshot {
-            timestamp: 1, delegated_cumulative: 0
-        },
+        ) == DelegatedSnapshot { timestamp: 1, delegated_cumulative: 0 },
         'one timestamp'
     );
     assert(
         DelegatedSnapshotStorePacking::unpack(
             0x1000000000000000000000000000000000000000000000001
-        ) == DelegatedSnapshot {
-            timestamp: 1, delegated_cumulative: 1
-        },
+        ) == DelegatedSnapshot { timestamp: 1, delegated_cumulative: 1 },
         'one both'
     );
 
