@@ -3,24 +3,27 @@ use array::{ArrayTrait, SpanTrait};
 use traits::{Into};
 use hash::{LegacyHash};
 use starknet::{SyscallResult, syscalls::call_contract_syscall};
-use starknet::account::Call;
+use starknet::account::{Call};
 use result::{ResultTrait};
 
-#[generate_trait]
-impl CallTraitImpl of CallTrait {
-    fn hash(self: @Call) -> felt252 {
-        let mut data_hash = 0;
-        let mut data_span = self.calldata.span();
+impl HashCall<S, +hash::HashStateTrait<S>, +Drop<S>, +Copy<S>> of hash::Hash<@Call, S> {
+    fn update_state(state: S, value: @Call) -> S {
+        let mut s = state.update((*value.to).into()).update(*value.selector);
+
+        let mut data_span = value.calldata.span();
         loop {
             match data_span.pop_front() {
-                Option::Some(word) => { data_hash = pedersen::pedersen(data_hash, *word); },
-                Option::None(_) => { break; }
+                Option::Some(word) => { s = s.update(*word); },
+                Option::None => { break; }
             };
         };
 
-        pedersen::pedersen(pedersen::pedersen((*self.to).into(), *self.selector), data_hash)
+        s
     }
+}
 
+#[generate_trait]
+impl CallTraitImpl of CallTrait {
     fn execute(self: @Call) -> Span<felt252> {
         let result = call_contract_syscall(*self.to, *self.selector, self.calldata.span());
 

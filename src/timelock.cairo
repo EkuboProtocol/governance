@@ -31,8 +31,8 @@ trait ITimelock<TStorage> {
 #[starknet::contract]
 mod Timelock {
     use super::{ITimelock, ContractAddress, Call};
-    use governance::call_trait::{CallTrait};
-    use hash::LegacyHash;
+    use governance::call_trait::{CallTrait, HashCall};
+    use hash::{LegacyHash};
     use array::{ArrayTrait, SpanTrait};
     use starknet::{
         get_caller_address, get_contract_address, SyscallResult, syscalls::call_contract_syscall,
@@ -67,8 +67,8 @@ mod Timelock {
         let mut state = 0;
         loop {
             match calls.pop_front() {
-                Option::Some(call) => { state = pedersen::pedersen(state, call.hash()); },
-                Option::None(_) => { break state; }
+                Option::Some(call) => { state = LegacyHash::hash(state, call) },
+                Option::None => { break state; }
             };
         }
     }
@@ -123,7 +123,7 @@ mod Timelock {
             loop {
                 match calls.pop_front() {
                     Option::Some(call) => { results.append(call.execute()); },
-                    Option::None(_) => { break; }
+                    Option::None => { break; }
                 };
             };
 

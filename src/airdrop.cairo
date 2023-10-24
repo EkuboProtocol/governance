@@ -1,7 +1,7 @@
 use starknet::ContractAddress;
 use array::{Array};
 
-#[derive(Copy, Drop, Serde)]
+#[derive(Copy, Drop, Serde, Hash)]
 struct Claim {
     claimee: ContractAddress,
     amount: u128,
@@ -24,12 +24,12 @@ mod Airdrop {
         IAirdrop, ContractAddress, Claim, ITransferrableERC20Dispatcher,
         ITransferrableERC20DispatcherTrait
     };
+    use hash::{LegacyHash};
     use array::{ArrayTrait, SpanTrait};
     use traits::{Into, TryInto};
-    use starknet::ContractAddressIntoFelt252;
+    use starknet::{ContractAddressIntoFelt252};
 
-
-    fn felt252_lt(lhs: @felt252, rhs: @felt252) -> bool {
+    fn lt<X, +Copy<X>, +Into<X, u256>>(lhs: @X, rhs: @X) -> bool {
         let a: u256 = (*lhs).into();
         let b: u256 = (*rhs).into();
         return a < b;
@@ -40,7 +40,7 @@ mod Airdrop {
         match proof.pop_front() {
             Option::Some(proof_element) => {
                 compute_pedersen_root(
-                    if felt252_lt(@current, proof_element) {
+                    if lt(@current, proof_element) {
                         pedersen::pedersen(current, *proof_element)
                     } else {
                         pedersen::pedersen(*proof_element, current)
@@ -49,13 +49,6 @@ mod Airdrop {
                 )
             },
             Option::None(()) => { current },
-        }
-    }
-
-    #[generate_trait]
-    impl ClaimToLeaf of ClaimToLeafTrait {
-        fn to_leaf(self: @Claim) -> felt252 {
-            pedersen::pedersen((*self.claimee).into(), (*self.amount).into())
         }
     }
 
@@ -86,7 +79,7 @@ mod Airdrop {
     #[external(v0)]
     impl AirdropImpl of IAirdrop<ContractState> {
         fn claim(ref self: ContractState, claim: Claim, proof: Array::<felt252>) {
-            let leaf = claim.to_leaf();
+            let leaf = LegacyHash::hash(0, claim);
 
             assert(!self.claimed.read(leaf), 'ALREADY_CLAIMED');
             assert(self.root.read() == compute_pedersen_root(leaf, proof.span()), 'INVALID_PROOF');

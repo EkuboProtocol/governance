@@ -1,11 +1,11 @@
-use governance::airdrop::Airdrop::ClaimToLeafTrait;
-use governance::governance_token::IGovernanceTokenDispatcherTrait;
+use governance::governance_token::{IGovernanceTokenDispatcherTrait};
 use array::{ArrayTrait};
 use debug::PrintTrait;
 use governance::airdrop::{
     IAirdropDispatcher, IAirdropDispatcherTrait, Airdrop, Airdrop::compute_pedersen_root, Claim,
-    Airdrop::ClaimToLeaf, Airdrop::felt252_lt
+    Airdrop::lt
 };
+use hash::{LegacyHash};
 use governance::governance_token::{IERC20Dispatcher, IERC20DispatcherTrait};
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress
@@ -97,7 +97,7 @@ fn test_claim_single_recipient() {
 
     let claim = Claim { claimee: contract_address_const::<2345>(), amount: 6789, };
 
-    let leaf = claim.to_leaf();
+    let leaf = LegacyHash::hash(0, claim);
 
     let airdrop = deploy(token.contract_address, leaf);
 
@@ -116,7 +116,7 @@ fn test_double_claim() {
 
     let claim = Claim { claimee: contract_address_const::<2345>(), amount: 6789, };
 
-    let leaf = claim.to_leaf();
+    let leaf = LegacyHash::hash(0, claim);
 
     let airdrop = deploy(token.contract_address, leaf);
 
@@ -136,7 +136,7 @@ fn test_invalid_proof_single_entry() {
 
     let claim = Claim { claimee: contract_address_const::<2345>(), amount: 6789, };
 
-    let leaf = claim.to_leaf();
+    let leaf = LegacyHash::hash(0, claim);
 
     let airdrop = deploy(token.contract_address, leaf);
 
@@ -155,7 +155,7 @@ fn test_invalid_proof_fake_entry() {
 
     let claim = Claim { claimee: contract_address_const::<2345>(), amount: 6789, };
 
-    let leaf = claim.to_leaf();
+    let leaf = LegacyHash::hash(0, claim);
 
     let airdrop = deploy(token.contract_address, leaf);
 
@@ -174,10 +174,10 @@ fn test_claim_two_claims() {
     let claim_a = Claim { claimee: contract_address_const::<2345>(), amount: 6789, };
     let claim_b = Claim { claimee: contract_address_const::<3456>(), amount: 789, };
 
-    let leaf_a = claim_a.to_leaf();
-    let leaf_b = claim_b.to_leaf();
+    let leaf_a = LegacyHash::hash(0, claim_a);
+    let leaf_b = LegacyHash::hash(0, claim_b);
 
-    let root = if felt252_lt(@leaf_a, @leaf_b) {
+    let root = if lt(@leaf_a, @leaf_b) {
         pedersen::pedersen(leaf_a, leaf_b)
     } else {
         pedersen::pedersen(leaf_b, leaf_a)

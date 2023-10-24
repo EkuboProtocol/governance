@@ -1,16 +1,20 @@
 use debug::PrintTrait;
-use governance::call_trait::{CallTrait};
+use governance::call_trait::{CallTrait, HashCall};
 use starknet::{contract_address_const, account::{Call}};
 use array::{Array, ArrayTrait};
 use governance::tests::governance_token_test::{deploy as deploy_token};
 use serde::{Serde};
+use hash::{LegacyHash};
 
 #[test]
 #[available_gas(300000000)]
 fn test_hash_empty() {
     let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: ArrayTrait::new() };
     assert(
-        call.hash() == 0x6bf1b215edde951b1b50c19e77f7b362d23c6cb4232ae8b95bc112ff94d3956, 'hash'
+        LegacyHash::hash(
+            0, @call
+        ) == 0x6bf1b215edde951b1b50c19e77f7b362d23c6cb4232ae8b95bc112ff94d3956,
+        'hash'
     );
 }
 
@@ -19,7 +23,10 @@ fn test_hash_empty() {
 fn test_hash_address_one() {
     let call = Call { to: contract_address_const::<1>(), selector: 0, calldata: ArrayTrait::new() };
     assert(
-        call.hash() == 0x40d1577057b0ad691b66e6d129844046c0f329d8368fbf85a7ef4ff4beffc4c, 'hash'
+        LegacyHash::hash(
+            0, @call
+        ) == 0x5f6208726bc717f95f23a8e3632dd5a30f4b61d11db5ea4f4fab24bf931a053,
+        'hash'
     );
 }
 
@@ -28,7 +35,10 @@ fn test_hash_address_one() {
 fn test_hash_address_entry_point_one() {
     let call = Call { to: contract_address_const::<0>(), selector: 1, calldata: ArrayTrait::new() };
     assert(
-        call.hash() == 0x5f6208726bc717f95f23a8e3632dd5a30f4b61d11db5ea4f4fab24bf931a053, 'hash'
+        LegacyHash::hash(
+            0, @call
+        ) == 0x137c95c76862129847d0f5e3618c7a4c3822ee344f4aa80bcb897cb97d3e16,
+        'hash'
     );
 }
 
@@ -40,7 +50,10 @@ fn test_hash_address_data_one() {
     let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: calldata };
 
     assert(
-        call.hash() == 0x5ad843e478f13c80cd84180f621a6abacca4d9410e6dc5c8b3c1dbf709ff293, 'hash'
+        LegacyHash::hash(
+            0, @call
+        ) == 0x200a54d7737c13f1013835f88c566515921c2b9c7c7a50cc44ff6f176cf06b2,
+        'hash'
     );
 }
 
@@ -53,7 +66,10 @@ fn test_hash_address_data_one_two() {
     let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: calldata };
 
     assert(
-        call.hash() == 0x34552b59a4ecaac8c01b63dfb0ee31f2e49fb784dc90f58c7475fbcdaf3330b, 'hash'
+        LegacyHash::hash(
+            0, @call
+        ) == 0x6f615c05fa309e4041f96f83d47a23acec3d725b47f8c1005f388aa3d26c187,
+        'hash'
     );
 }
 

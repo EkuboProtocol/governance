@@ -86,9 +86,10 @@ mod Governor {
         ProposalTimestamps
     };
     use starknet::{get_block_timestamp, get_caller_address, contract_address_const};
-    use governance::call_trait::{CallTrait};
+    use governance::call_trait::{HashCall, CallTrait};
     use governance::governance_token::{IGovernanceTokenDispatcherTrait};
     use zeroable::{Zeroable};
+    use hash::{LegacyHash};
 
     #[storage]
     struct Storage {
@@ -105,7 +106,7 @@ mod Governor {
     #[external(v0)]
     impl GovernorImpl of IGovernor<ContractState> {
         fn propose(ref self: ContractState, call: Call) -> felt252 {
-            let id = call.hash();
+            let id = LegacyHash::hash(0, @call);
 
             assert(self.proposals.read(id).proposer.is_zero(), 'ALREADY_PROPOSED');
 
@@ -213,7 +214,7 @@ mod Governor {
         }
 
         fn execute(ref self: ContractState, call: Call) -> Span<felt252> {
-            let id = call.hash();
+            let id = LegacyHash::hash(0, @call);
 
             let config = self.config.read();
             let mut proposal = self.proposals.read(id);
