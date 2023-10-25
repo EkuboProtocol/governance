@@ -6,8 +6,8 @@ trait IVRGDA<TContractState> {
     // The result is transferred to the recipient
     fn buy(ref self: TContractState, min_amount_out: u128) -> u128;
 
-    // Refund any payment token that is still held by the contract
-    fn clear_payment(ref self: TContractState) -> u256;
+    // Withdraw the proceeds, must be called by the benefactor
+    fn withdraw_proceeds(ref self: TContractState);
 }
 
 #[starknet::interface]
@@ -44,6 +44,9 @@ mod VRGDA {
         sale_config: SaleConfig,
         // The address that receives the payment token from the sale of the tokens
         benefactor: ContractAddress,
+        // The amount of tokens that have been used to purchase the sold token and have not been withdrawn
+        // Used to compute how much was paid
+        reserves: u128,
         // The number of sold tokens thus far
         amount_sold: u128,
     }
@@ -80,13 +83,20 @@ mod VRGDA {
     #[external(v0)]
     impl VRGDAImpl of IVRGDA<ContractState> {
         fn buy(ref self: ContractState, min_amount_out: u128) -> u128 {
-            let pt = self.payment_token.read();
-            let ot = self.option_token.read();
-            let st = self.sold_token.read();
-            let paid: u128 = pt
+            let payment_token = self.payment_token.read();
+            let option_token = self.option_token.read();
+            let sold_token = self.sold_token.read();
+
+            let reserves = self.reserves.read();
+
+            let payment_balance: u128 = payment_token
                 .balanceOf(get_contract_address())
                 .try_into()
                 .expect('PAID_OVERFLOW');
+
+            let paid: u128 = payment_balance - reserves;
+
+            self.reserves.write(payment_balance);
 
             let amount_sold = self.amount_sold.read();
 
@@ -99,22 +109,25 @@ mod VRGDA {
             self.amount_sold.write(amount_sold + sold);
 
             assert(
-                sold.into() <= (amount_sold.into() + ot.balanceOf(get_contract_address())),
-                'INSUFFICIENT_OPTIONS'
+                sold
+                    .into() <= (amount_sold.into()
+                        + option_token.balanceOf(get_contract_address())),
+                'INSUFFICIENT_Opayment_tokenIONS'
             );
 
             self.emit(Buy { buyer: get_caller_address(), paid, sold });
 
-            st.transfer(get_caller_address(), sold.into());
+            sold_token.transfer(get_caller_address(), sold.into());
 
             sold
         }
 
-        fn clear_payment(ref self: ContractState) -> u256 {
-            let pt = self.payment_token.read();
-            let refund = pt.balanceOf(get_contract_address());
-            pt.transfer(get_caller_address(), refund);
-            refund
+        fn withdraw_proceeds(ref self: ContractState) {
+            let benefactor = self.benefactor.read();
+            assert(get_caller_address() == benefactor, 'BENEFACTOR_ONLY');
+            let reserves = self.reserves.read();
+            self.reserves.write(0);
+            self.payment_token.read().transfer(benefactor, reserves.into());
         }
     }
 }
