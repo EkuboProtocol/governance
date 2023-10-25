@@ -52,7 +52,7 @@ mod VRGDA {
     struct Buy {
         buyer: ContractAddress,
         paid: u128,
-        received: u128,
+        sold: u128,
     }
 
     #[derive(starknet::Event, Drop)]
@@ -90,24 +90,24 @@ mod VRGDA {
 
             let amount_sold = self.amount_sold.read();
 
-            // todo: compute the amount received based on current time
-            let received: u128 = 0;
+            // todo: compute the amount sold based on current time, the sales config, and the amount sold thus far
+            let sold: u128 = 0;
 
-            assert(received >= min_amount_out, 'PURCHASED');
+            assert(sold >= min_amount_out, 'PURCHASED');
 
             // Account for the newly sold amount before transferring anything
-            self.amount_sold.write(amount_sold + received);
+            self.amount_sold.write(amount_sold + sold);
 
             assert(
-                received.into() <= (amount_sold.into() + ot.balanceOf(get_contract_address())),
+                sold.into() <= (amount_sold.into() + ot.balanceOf(get_contract_address())),
                 'INSUFFICIENT_OPTIONS'
             );
 
-            self.emit(Buy { buyer: get_caller_address(), paid, received });
+            self.emit(Buy { buyer: get_caller_address(), paid, sold });
 
-            st.transfer(get_caller_address(), received.into());
+            st.transfer(get_caller_address(), sold.into());
 
-            received
+            sold
         }
 
         fn clear_payment(ref self: ContractState) -> u256 {
