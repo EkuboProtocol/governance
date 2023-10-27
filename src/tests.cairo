@@ -10,3 +10,5 @@ mod timelock_test;
 mod call_trait_test;
 #[cfg(test)]
 mod utils;
+#[cfg(test)]
+mod vrgda_test;
