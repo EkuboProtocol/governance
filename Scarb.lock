@@ -2,5 +2,13 @@
 version = 1
 
 [[package]]
+name = "cubit"
+version = "1.2.0"
+source = "git+https://github.com/raphaeldkhn/cubit#e6331ebf98c5d5f442a0e5edefe0b367c8e270d9"
+
+[[package]]
 name = "governance"
 version = "0.1.0"
+dependencies = [
+ "cubit",
+]

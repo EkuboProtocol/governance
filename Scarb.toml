@@ -6,6 +6,7 @@ homepage = "https://ekubo.org"
 cairo-version = "2.3.0"
 
 [dependencies]
+cubit = { git = "https://github.com/raphaeldkhn/cubit" }
 starknet = "=2.3.0"
 
 [[target.starknet-contract]]
