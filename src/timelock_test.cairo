@@ -1,11 +1,9 @@
 use array::{Array, ArrayTrait, SpanTrait};
 use debug::PrintTrait;
 use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait, Timelock};
-use governance::tests::governance_token_test::{deploy as deploy_token};
-use governance::governance_token::{
-    IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait, IERC20Dispatcher,
-    IERC20DispatcherTrait
-};
+use governance::governance_token_test::{deploy as deploy_token};
+use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+use governance::governance_token::{IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait};
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress,
     get_block_timestamp, testing::set_block_timestamp

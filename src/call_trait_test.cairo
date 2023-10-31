@@ -2,7 +2,7 @@ use debug::PrintTrait;
 use governance::call_trait::{CallTrait, HashCall};
 use starknet::{contract_address_const, account::{Call}};
 use array::{Array, ArrayTrait};
-use governance::tests::governance_token_test::{deploy as deploy_token};
+use governance::governance_token_test::{deploy as deploy_token};
 use serde::{Serde};
 use hash::{LegacyHash};
 

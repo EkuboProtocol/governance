@@ -5,14 +5,12 @@ use governance::governor::{
     IGovernorDispatcher, IGovernorDispatcherTrait, Governor, Config, ProposalInfo,
     ProposalTimestamps
 };
-use governance::governance_token::{
-    IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait, IERC20Dispatcher,
-    IERC20DispatcherTrait
-};
+use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+use governance::governance_token::{IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait};
 use governance::call_trait::{CallTrait};
 use starknet::account::{Call};
-use governance::tests::timelock_test::{single_call, transfer_call, deploy as deploy_timelock};
-use governance::tests::utils;
+use governance::timelock_test::{single_call, transfer_call, deploy as deploy_timelock};
+use governance::{test_utils as utils};
 use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait};
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress,
@@ -23,7 +21,7 @@ use traits::{TryInto};
 
 use result::{Result, ResultTrait};
 use option::{OptionTrait};
-use governance::tests::governance_token_test::{deploy as deploy_token};
+use governance::governance_token_test::{deploy as deploy_token};
 use serde::Serde;
 use zeroable::{Zeroable};
 

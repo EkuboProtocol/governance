@@ -1,4 +1,6 @@
-use governance::governance_token::{IGovernanceTokenDispatcherTrait};
+use governance::governance_token::{
+    IGovernanceTokenDispatcherTrait, GovernanceToken, IGovernanceTokenDispatcher
+};
 use array::{ArrayTrait};
 use debug::PrintTrait;
 use governance::airdrop::{
@@ -6,12 +8,12 @@ use governance::airdrop::{
     Airdrop::lt
 };
 use hash::{LegacyHash};
-use governance::governance_token::{IERC20Dispatcher, IERC20DispatcherTrait};
+use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress
 };
-use governance::governance_token::{GovernanceToken, IGovernanceTokenDispatcher};
-use governance::tests::governance_token_test::{deploy as deploy_token};
+use starknet::testing::{pop_log};
+use governance::governance_token_test::{deploy as deploy_token};
 use starknet::class_hash::Felt252TryIntoClassHash;
 use traits::{TryInto, Into};
 
@@ -105,6 +107,16 @@ fn test_claim_single_recipient() {
     let proof = ArrayTrait::new();
 
     airdrop.claim(claim, proof);
+
+    let log = pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
+    assert(log.claim == claim, 'claim');
+
+    pop_log::<GovernanceToken::Transfer>(token.contract_address);
+    pop_log::<GovernanceToken::Transfer>(token.contract_address);
+    let log = pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
+    assert(log.from == airdrop.contract_address, 'from');
+    assert(log.to == claim.claimee, 'to');
+    assert(log.value == claim.amount.into(), 'amount');
 }
 
 

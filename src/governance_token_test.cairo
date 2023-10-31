@@ -1,15 +1,15 @@
 use array::{ArrayTrait};
 use debug::PrintTrait;
+use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::governance_token::{
-    IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait, IERC20Dispatcher,
-    IERC20DispatcherTrait, GovernanceToken,
+    IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait, GovernanceToken,
     GovernanceToken::{DelegatedSnapshotStorePacking, DelegatedSnapshot},
 };
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress,
 };
 use starknet::class_hash::Felt252TryIntoClassHash;
-use starknet::testing::{set_contract_address, set_block_timestamp};
+use starknet::testing::{set_contract_address, set_block_timestamp, pop_log};
 use traits::{TryInto};
 
 use result::{Result, ResultTrait};
@@ -121,6 +121,11 @@ fn test_deploy_constructor() {
     assert(erc20.balanceOf(contract_address_const::<1234512345>()) == 0, 'random balance');
     assert(erc20.total_supply() == 12345, 'total supply');
     assert(erc20.totalSupply() == 12345, 'total supply');
+
+    let log = pop_log::<GovernanceToken::Transfer>(erc20.contract_address).unwrap();
+    assert(log.from.is_zero(), 'from zero');
+    assert(log.to == get_contract_address(), 'to deployer');
+    assert(log.value == 12345, 'value');
 }
 
 #[test]
@@ -132,6 +137,12 @@ fn test_transfer_entire_balance() {
     erc20.transfer(recipient, 12345);
     assert(erc20.balance_of(get_contract_address()) == 0, 'zero after');
     assert(erc20.balance_of(recipient) == 12345, '12345 after');
+
+    pop_log::<GovernanceToken::Transfer>(erc20.contract_address);
+    let log = pop_log::<GovernanceToken::Transfer>(erc20.contract_address).unwrap();
+    assert(log.from == get_contract_address(), 'from');
+    assert(log.to == recipient, 'to');
+    assert(log.value == 12345, 'value');
 }
 
 #[test]
@@ -145,6 +156,12 @@ fn test_transfer_lt_total_balance() {
     assert(erc20.balanceOf(get_contract_address()) == 12300, 'remaining');
     assert(erc20.balance_of(recipient) == 45, '45 transferred');
     assert(erc20.balanceOf(recipient) == 45, '45 transferred');
+
+    pop_log::<GovernanceToken::Transfer>(erc20.contract_address);
+    let log = pop_log::<GovernanceToken::Transfer>(erc20.contract_address).unwrap();
+    assert(log.from == get_contract_address(), 'from');
+    assert(log.to == recipient, 'to');
+    assert(log.value == 45, 'value');
 }
 
 #[test]
@@ -404,4 +421,11 @@ fn test_delegate_undelegate() {
 
     assert(token.get_delegated(delegatee) == 0, 'delegated');
     assert(token.get_average_delegated(delegatee, 0, 8) == ((3 * 12345) / 8), 'average');
+
+    assert(token.get_delegated_at(delegatee, timestamp: 1) == 0, 'at 1');
+    assert(token.get_delegated_at(delegatee, timestamp: 2) == 0, 'at 2');
+    assert(token.get_delegated_at(delegatee, timestamp: 3) == 12345, 'at 3');
+    assert(token.get_delegated_at(delegatee, timestamp: 4) == 12345, 'at 4');
+    assert(token.get_delegated_at(delegatee, timestamp: 5) == 12345, 'at 5');
+    assert(token.get_delegated_at(delegatee, timestamp: 6) == 0, 'at 6');
 }

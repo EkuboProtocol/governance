@@ -1,7 +1,6 @@
-use governance::governance_token::IGovernanceTokenDispatcherTrait;
+use governance::governance_token::{IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait};
 use starknet::{ContractAddress, StorePacking};
 use array::{Array};
-use governance::governance_token::{IGovernanceTokenDispatcher};
 use starknet::account::{Call};
 use option::{Option, OptionTrait};
 use integer::{u128_safe_divmod, u128_as_non_zero};

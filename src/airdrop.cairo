@@ -1,32 +1,24 @@
-use starknet::ContractAddress;
+use starknet::{ContractAddress};
 use array::{Array};
 
-#[derive(Copy, Drop, Serde, Hash)]
+#[derive(Copy, Drop, Serde, Hash, PartialEq)]
 struct Claim {
     claimee: ContractAddress,
     amount: u128,
 }
 
-// The only method required by Airdrop is transfer, so we use a simplified interface
-#[starknet::interface]
-trait ITransferrableERC20<TStorage> {
-    fn transfer(ref self: TStorage, recipient: ContractAddress, amount: u256);
-}
-
 #[starknet::interface]
 trait IAirdrop<TStorage> {
+    // Claims the given allotment of tokens
     fn claim(ref self: TStorage, claim: Claim, proof: Array::<felt252>);
 }
 
 #[starknet::contract]
 mod Airdrop {
-    use super::{
-        IAirdrop, ContractAddress, Claim, ITransferrableERC20Dispatcher,
-        ITransferrableERC20DispatcherTrait
-    };
+    use super::{IAirdrop, ContractAddress, Claim};
+    use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use hash::{LegacyHash};
     use array::{ArrayTrait, SpanTrait};
-    use traits::{Into, TryInto};
     use starknet::{ContractAddressIntoFelt252};
 
     fn lt<X, +Copy<X>, +Into<X, u256>>(lhs: @X, rhs: @X) -> bool {
@@ -55,7 +47,7 @@ mod Airdrop {
     #[storage]
     struct Storage {
         root: felt252,
-        token: ITransferrableERC20Dispatcher,
+        token: IERC20Dispatcher,
         claimed: LegacyMap<felt252, bool>,
     }
 
@@ -71,9 +63,9 @@ mod Airdrop {
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, token: ContractAddress, root: felt252) {
+    fn constructor(ref self: ContractState, token: IERC20Dispatcher, root: felt252) {
         self.root.write(root);
-        self.token.write(ITransferrableERC20Dispatcher { contract_address: token });
+        self.token.write(token);
     }
 
     #[external(v0)]

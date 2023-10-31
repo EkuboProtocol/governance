@@ -2,16 +2,17 @@
 
 [![Tests](https://github.com/EkuboProtocol/governance/actions/workflows/test.yaml/badge.svg)](https://github.com/EkuboProtocol/governance/actions/workflows/test.yaml)
 
-Simple-as contracts for token governance on Starknet.
+Simple contracts for token governance on Starknet.
 
 ## Principles
 
 These contracts follow the Compound governance architecture.
-Contracts are focused on immutability, so it's broken up into a set of very modular components.
+The contracts are not upgradeable, so the project is broken up into modular and replaceable components.
+All contracts are intended to be upgraded by simply migrating to new ones. 
 
-All contracts are intended to be upgraded by simply migrating to new ones. Even the token contract can be migrated, if necessary, by deploying a new contract that allows burning the old token to mint the new one. It's likely volition will make voting use cases significantly cheaper, given the amount of indexed data required by the token contract, so upgrades of this sort are to be expected.
+Even the token contract can be migrated, if necessary, by deploying a new contract that allows burning the old token to mint the new one.
 
-The structure is as follows:
+## Components
 
 - `Timelock` is an owned contract that allows a list of calls to be queued by an owner
     - Anyone can execute the calls after a period of time, once queued by the owner

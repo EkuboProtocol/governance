@@ -1,25 +1,4 @@
-use core::traits::TryInto;
-use starknet::ContractAddress;
-
-#[starknet::interface]
-trait IERC20<TStorage> {
-    fn name(self: @TStorage) -> felt252;
-    fn symbol(self: @TStorage) -> felt252;
-    fn decimals(self: @TStorage) -> u8;
-    fn total_supply(self: @TStorage) -> u256;
-    fn totalSupply(self: @TStorage) -> u256;
-    fn balance_of(self: @TStorage, account: ContractAddress) -> u256;
-    fn balanceOf(self: @TStorage, account: ContractAddress) -> u256;
-    fn allowance(self: @TStorage, owner: ContractAddress, spender: ContractAddress) -> u256;
-    fn transfer(ref self: TStorage, recipient: ContractAddress, amount: u256) -> bool;
-    fn transfer_from(
-        ref self: TStorage, sender: ContractAddress, recipient: ContractAddress, amount: u256
-    ) -> bool;
-    fn transferFrom(
-        ref self: TStorage, sender: ContractAddress, recipient: ContractAddress, amount: u256
-    ) -> bool;
-    fn approve(ref self: TStorage, spender: ContractAddress, amount: u256) -> bool;
-}
+use starknet::{ContractAddress};
 
 #[starknet::interface]
 trait IGovernanceToken<TStorage> {
@@ -31,6 +10,7 @@ trait IGovernanceToken<TStorage> {
 
     // Get how much delegated tokens an address has at a certain timestamp.
     fn get_delegated_at(self: @TStorage, delegate: ContractAddress, timestamp: u64) -> u128;
+
     // Get the cumulative delegated amount * seconds for an address at a certain timestamp.
     fn get_delegated_cumulative(self: @TStorage, delegate: ContractAddress, timestamp: u64) -> u256;
 
@@ -47,7 +27,8 @@ trait IGovernanceToken<TStorage> {
 
 #[starknet::contract]
 mod GovernanceToken {
-    use super::{IERC20, IGovernanceToken, ContractAddress};
+    use governance::interfaces::erc20::{IERC20};
+    use super::{IGovernanceToken, ContractAddress};
     use traits::{Into, TryInto};
     use option::{OptionTrait};
     use starknet::{get_caller_address, get_block_timestamp, StorePacking};
@@ -97,6 +78,12 @@ mod GovernanceToken {
         self.symbol.write(symbol);
         self.total_supply.write(total_supply);
         self.balances.write(get_caller_address(), total_supply);
+        self
+            .emit(
+                Transfer {
+                    from: Zeroable::zero(), to: get_caller_address(), value: total_supply.into()
+                }
+            );
     }
 
     #[derive(starknet::Event, Drop)]
@@ -237,32 +224,41 @@ mod GovernanceToken {
         fn name(self: @ContractState) -> felt252 {
             self.name.read()
         }
+
         fn symbol(self: @ContractState) -> felt252 {
             self.symbol.read()
         }
+
         fn decimals(self: @ContractState) -> u8 {
             18_u8
         }
+
         fn total_supply(self: @ContractState) -> u256 {
             self.total_supply.read().into()
         }
+
         fn totalSupply(self: @ContractState) -> u256 {
             self.total_supply()
         }
+
         fn balance_of(self: @ContractState, account: ContractAddress) -> u256 {
             self.balances.read(account).into()
         }
+
         fn balanceOf(self: @ContractState, account: ContractAddress) -> u256 {
             self.balance_of(account)
         }
+
         fn allowance(
             self: @ContractState, owner: ContractAddress, spender: ContractAddress
         ) -> u256 {
             self.allowances.read((owner, spender)).into()
         }
+
         fn transfer(ref self: ContractState, recipient: ContractAddress, amount: u256) -> bool {
             self.transfer_from(get_caller_address(), recipient, amount)
         }
+
         fn transfer_from(
             ref self: ContractState,
             sender: ContractAddress,
@@ -297,6 +293,7 @@ mod GovernanceToken {
             self.emit(Transfer { from: sender, to: recipient, value: amount });
             true
         }
+
         fn transferFrom(
             ref self: ContractState,
             sender: ContractAddress,
@@ -305,6 +302,7 @@ mod GovernanceToken {
         ) -> bool {
             self.transfer_from(sender, recipient, amount)
         }
+
         fn approve(ref self: ContractState, spender: ContractAddress, amount: u256) -> bool {
             let owner = get_caller_address();
             self
@@ -348,7 +346,13 @@ mod GovernanceToken {
             return if (num_snapshots.is_zero()) {
                 0
             } else {
-                self.find_delegated_cumulative(delegate, 0, num_snapshots, timestamp)
+                self
+                    .find_delegated_cumulative(
+                        delegate: delegate,
+                        min_index: 0,
+                        max_index_exclusive: num_snapshots,
+                        timestamp: timestamp
+                    )
             };
         }
 
