@@ -32,6 +32,7 @@ Even the token contract can be migrated, if necessary, by deploying a new contra
     - Compute a merkle root by computing a list of amounts and recipients, hashing them, and arranging them into a merkle binary tree
     - Deploy the airdrop with the root and the token address
     - Transfer the total amount of tokens to the `Airdrop` contract
+- `Factory` allows creating the entire set of contracts with one call
 
 ## Testing
 

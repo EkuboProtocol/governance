@@ -53,6 +53,7 @@ fn test_deploy() {
                 name: 'token',
                 symbol: 'tk',
                 total_supply: 5678,
+                airdrop_root: Option::None
             }
         );
 }
