@@ -1,18 +1,38 @@
 use starknet::{ContractAddress};
+use governance::governor::{Config as GovernorConfig};
+use governance::governor::{IGovernorDispatcher};
+use governance::governance_token::{IGovernanceTokenDispatcher};
+use governance::airdrop::{IAirdropDispatcher};
+use governance::timelock::{ITimelockDispatcher};
+
+#[derive(Copy, Drop, Serde)]
+struct AirdropConfig {
+    root: felt252,
+    total: u256,
+}
+
+#[derive(Copy, Drop, Serde)]
+struct TimelockConfig {
+    delay: u64,
+    window: u64,
+}
 
 #[derive(Copy, Drop, Serde)]
 struct DeploymentParameters {
-    benefactor: ContractAddress,
     name: felt252,
     symbol: felt252,
     total_supply: u128,
-    airdrop_root: Option<felt252>,
+    governor_config: GovernorConfig,
+    timelock_config: TimelockConfig,
+    airdrop_config: Option<AirdropConfig>,
 }
 
 #[derive(Copy, Drop, Serde)]
 struct DeploymentResult {
-    token_address: ContractAddress,
-    airdrop_address: Option<ContractAddress>,
+    token: IGovernanceTokenDispatcher,
+    governor: IGovernorDispatcher,
+    timelock: ITimelockDispatcher,
+    airdrop: Option<IAirdropDispatcher>,
 }
 
 // This contract makes it easy to deploy a set of governance contracts from a block explorer just by specifying parameters
@@ -23,9 +43,12 @@ trait IFactory<TContractState> {
 
 #[starknet::contract]
 mod Factory {
-    use core::result::ResultTrait;
-    use super::{IFactory, DeploymentParameters, DeploymentResult, ContractAddress};
-    use starknet::{ClassHash, deploy_syscall};
+    use super::{
+        IFactory, DeploymentParameters, DeploymentResult, ContractAddress,
+        IGovernanceTokenDispatcher, IAirdropDispatcher, IGovernorDispatcher, ITimelockDispatcher
+    };
+    use core::result::{ResultTrait};
+    use starknet::{ClassHash, deploy_syscall, get_caller_address};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 
     #[storage]
@@ -66,13 +89,23 @@ mod Factory {
             )
                 .unwrap();
 
-            IERC20Dispatcher { contract_address: token_address }
-                .transfer(params.benefactor, params.total_supply.into());
+            let mut governor_constructor_args: Array<felt252> = ArrayTrait::new();
+            Serde::serialize(
+                @(token_address, params.governor_config), ref governor_constructor_args
+            );
 
-            let airdrop_address = match params.airdrop_root {
-                Option::Some(root) => {
+            let (governor_address, _) = deploy_syscall(
+                class_hash: self.governor.read(),
+                contract_address_salt: 0,
+                calldata: governor_constructor_args.span(),
+                deploy_from_zero: false,
+            )
+                .unwrap();
+
+            let (airdrop, remaining_amount) = match params.airdrop_config {
+                Option::Some(config) => {
                     let mut airdrop_constructor_args: Array<felt252> = ArrayTrait::new();
-                    Serde::serialize(@(token_address, root), ref token_constructor_args);
+                    Serde::serialize(@(token_address, config.root), ref airdrop_constructor_args);
 
                     let (airdrop_address, _) = deploy_syscall(
                         class_hash: self.airdrop.read(),
@@ -82,12 +115,37 @@ mod Factory {
                     )
                         .unwrap();
 
-                    Option::Some(airdrop_address)
+                    (
+                        Option::Some(IAirdropDispatcher { contract_address: airdrop_address }),
+                        params.total_supply.into() - config.total
+                    )
                 },
-                Option::None => { Option::None }
+                Option::None => { (Option::None, params.total_supply.into()) }
             };
 
-            DeploymentResult { token_address, airdrop_address, }
+            IERC20Dispatcher { contract_address: token_address }
+                .transfer(get_caller_address(), remaining_amount);
+
+            let mut timelock_constructor_args: Array<felt252> = ArrayTrait::new();
+            Serde::serialize(
+                @(governor_address, params.timelock_config.delay, params.timelock_config.window),
+                ref timelock_constructor_args
+            );
+
+            let (timelock_address, _) = deploy_syscall(
+                class_hash: self.timelock.read(),
+                contract_address_salt: 0,
+                calldata: timelock_constructor_args.span(),
+                deploy_from_zero: false,
+            )
+                .unwrap();
+
+            DeploymentResult {
+                token: IGovernanceTokenDispatcher { contract_address: token_address },
+                airdrop,
+                governor: IGovernorDispatcher { contract_address: governor_address },
+                timelock: ITimelockDispatcher { contract_address: timelock_address }
+            }
         }
     }
 }

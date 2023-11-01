@@ -1,8 +1,10 @@
 use array::{ArrayTrait};
 use debug::PrintTrait;
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+use governance::governor::{Config as GovernorConfig};
 use governance::factory::{
-    IFactoryDispatcher, IFactoryDispatcherTrait, Factory, DeploymentParameters
+    IFactoryDispatcher, IFactoryDispatcherTrait, Factory, DeploymentParameters, AirdropConfig,
+    TimelockConfig,
 };
 use governance::governance_token::{GovernanceToken};
 use governance::governor::{Governor};
@@ -14,6 +16,11 @@ use starknet::{
 use starknet::class_hash::{Felt252TryIntoClassHash};
 use starknet::testing::{set_contract_address, set_block_timestamp, pop_log};
 use traits::{TryInto};
+
+use governance::governor::{IGovernorDispatcherTrait};
+use governance::governance_token::{IGovernanceTokenDispatcherTrait};
+use governance::airdrop::{IAirdropDispatcherTrait};
+use governance::timelock::{ITimelockDispatcherTrait};
 
 use result::{Result, ResultTrait};
 use option::{OptionTrait};
@@ -46,14 +53,28 @@ fn deploy() -> IFactoryDispatcher {
 fn test_deploy() {
     let factory = deploy();
 
-    factory
+    let result = factory
         .deploy(
             DeploymentParameters {
-                benefactor: contract_address_const::<12345>(),
                 name: 'token',
                 symbol: 'tk',
                 total_supply: 5678,
-                airdrop_root: Option::None
+                airdrop_config: Option::Some(AirdropConfig { root: 'root', total: 1111 }),
+                governor_config: GovernorConfig {
+                    voting_start_delay: 0,
+                    voting_period: 180,
+                    voting_weight_smoothing_duration: 30,
+                    quorum: 1000,
+                    proposal_creation_threshold: 100,
+                },
+                timelock_config: TimelockConfig { window: 60, delay: 320, }
             }
         );
+
+    assert(
+        IERC20Dispatcher { contract_address: result.token.contract_address }
+            .balance_of(get_contract_address()) == 5678
+            - 1111,
+        'balance'
+    );
 }

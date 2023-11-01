@@ -43,8 +43,6 @@ struct ProposalInfo {
 
 #[derive(Copy, Drop, Serde, starknet::Store)]
 struct Config {
-    // the token used for voting
-    voting_token: IGovernanceTokenDispatcher,
     // how long after a proposal is created does voting start
     voting_start_delay: u64,
     // the period during which votes are collected
@@ -72,6 +70,9 @@ trait IGovernor<TStorage> {
     fn execute(ref self: TStorage, call: Call) -> Span<felt252>;
 
     // Get the configuration for this governor contract.
+    fn get_voting_token(self: @TStorage) -> IGovernanceTokenDispatcher;
+
+    // Get the configuration for this governor contract.
     fn get_config(self: @TStorage) -> Config;
 
     // Get the proposal info for the given proposal id.
@@ -92,13 +93,17 @@ mod Governor {
 
     #[storage]
     struct Storage {
+        voting_token: IGovernanceTokenDispatcher,
         config: Config,
         proposals: LegacyMap<felt252, ProposalInfo>,
         voted: LegacyMap<(ContractAddress, felt252), bool>,
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, config: Config) {
+    fn constructor(
+        ref self: ContractState, voting_token: IGovernanceTokenDispatcher, config: Config
+    ) {
+        self.voting_token.write(voting_token);
         self.config.write(config);
     }
 
@@ -116,8 +121,9 @@ mod Governor {
             let proposer = get_caller_address();
 
             assert(
-                config
+                self
                     .voting_token
+                    .read()
                     .get_average_delegated_over_last(
                         delegate: proposer, period: config.voting_weight_smoothing_duration
                     ) >= config
@@ -154,8 +160,9 @@ mod Governor {
             assert(timestamp_current < (voting_start_time + config.voting_period), 'VOTING_ENDED');
             assert(!voted, 'ALREADY_VOTED');
 
-            let weight = config
+            let weight = self
                 .voting_token
+                .read()
                 .get_average_delegated(
                     delegate: voter,
                     start: voting_start_time - config.voting_weight_smoothing_duration,
@@ -174,6 +181,7 @@ mod Governor {
 
         fn cancel(ref self: ContractState, id: felt252) {
             let config = self.config.read();
+            let voting_token = self.voting_token.read();
             let mut proposal = self.proposals.read(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
@@ -183,8 +191,7 @@ mod Governor {
             if (proposal.proposer != get_caller_address()) {
                 // if at any point the average voting weight is below the proposal_creation_threshold for the proposer, it can be canceled
                 assert(
-                    config
-                        .voting_token
+                    voting_token
                         .get_average_delegated_over_last(
                             delegate: proposal.proposer,
                             period: config.voting_weight_smoothing_duration
@@ -249,6 +256,10 @@ mod Governor {
 
         fn get_config(self: @ContractState) -> Config {
             self.config.read()
+        }
+
+        fn get_voting_token(self: @ContractState) -> IGovernanceTokenDispatcher {
+            self.voting_token.read()
         }
 
         fn get_proposal(self: @ContractState, id: felt252) -> ProposalInfo {
