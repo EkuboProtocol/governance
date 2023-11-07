@@ -91,6 +91,41 @@ mod Governor {
     use zeroable::{Zeroable};
     use hash::{LegacyHash};
 
+
+    #[derive(starknet::Event, Drop)]
+    struct Proposed {
+        id: felt252,
+        proposer: ContractAddress,
+        call: Call,
+    }
+
+    #[derive(starknet::Event, Drop)]
+    struct Voted {
+        id: felt252,
+        voter: ContractAddress,
+        weight: u128,
+        yea: bool,
+    }
+
+    #[derive(starknet::Event, Drop)]
+    struct Canceled {
+        id: felt252,
+    }
+
+    #[derive(starknet::Event, Drop)]
+    struct Executed {
+        id: felt252,
+    }
+
+    #[derive(starknet::Event, Drop)]
+    #[event]
+    enum Event {
+        Proposed: Proposed,
+        Voted: Voted,
+        Canceled: Canceled,
+        Executed: Executed,
+    }
+
     #[storage]
     struct Storage {
         voting_token: IGovernanceTokenDispatcher,
@@ -143,6 +178,8 @@ mod Governor {
                     }
                 );
 
+            self.emit(Proposed { id, proposer, call, });
+
             id
         }
 
@@ -176,6 +213,8 @@ mod Governor {
             }
             self.proposals.write(id, proposal);
             self.voted.write((voter, id), true);
+
+            self.emit(Voted { id, voter, weight, yea, });
         }
 
 
@@ -217,6 +256,8 @@ mod Governor {
                 };
 
             self.proposals.write(id, proposal);
+
+            self.emit(Canceled { id, });
         }
 
         fn execute(ref self: ContractState, call: Call) -> Span<felt252> {
@@ -251,7 +292,11 @@ mod Governor {
 
             self.proposals.write(id, proposal);
 
-            call.execute()
+            let data = call.execute();
+
+            self.emit(Executed { id, });
+            
+            data
         }
 
         fn get_config(self: @ContractState) -> Config {
