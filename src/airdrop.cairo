@@ -1,3 +1,4 @@
+use governance::interfaces::erc20::{IERC20Dispatcher};
 use starknet::{ContractAddress};
 use array::{Array};
 
@@ -11,12 +12,21 @@ struct Claim {
 trait IAirdrop<TStorage> {
     // Claims the given allotment of tokens
     fn claim(ref self: TStorage, claim: Claim, proof: Array::<felt252>);
+
+    // Return the root of the airdrop
+    fn get_root(self: @TStorage) -> felt252;
+
+    // Return the token being dropped
+    fn get_token(self: @TStorage) -> IERC20Dispatcher;
+
+    // Return whether the claim has been claimed (always false for invalid claims)
+    fn is_claimed(self: @TStorage, claim: Claim) -> bool;
 }
 
 #[starknet::contract]
 mod Airdrop {
-    use super::{IAirdrop, ContractAddress, Claim};
-    use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+    use super::{IAirdrop, ContractAddress, Claim, IERC20Dispatcher};
+    use governance::interfaces::erc20::{IERC20DispatcherTrait};
     use hash::{LegacyHash};
     use array::{ArrayTrait, SpanTrait};
     use starknet::{ContractAddressIntoFelt252};
@@ -80,6 +90,18 @@ mod Airdrop {
             self.token.read().transfer(claim.claimee, u256 { high: 0, low: claim.amount });
 
             self.emit(Claimed { claim });
+        }
+
+        fn get_root(self: @ContractState) -> felt252 {
+            self.root.read()
+        }
+
+        fn get_token(self: @ContractState) -> IERC20Dispatcher {
+            self.token.read()
+        }
+
+        fn is_claimed(self: @ContractState, claim: Claim) -> bool {
+            self.claimed.read(LegacyHash::hash(0, claim))
         }
     }
 }
