@@ -42,6 +42,29 @@ mod Timelock {
     use traits::{Into};
     use zeroable::{Zeroable};
 
+    #[derive(starknet::Event, Drop)]
+    struct Queued {
+        id: felt252,
+        calls: Span<Call>,
+    }
+
+    #[derive(starknet::Event, Drop)]
+    struct Canceled {
+        id: felt252,
+    }
+
+    #[derive(starknet::Event, Drop)]
+    struct Executed {
+        id: felt252,
+    }
+
+    #[derive(starknet::Event, Drop)]
+    #[event]
+    enum Event {
+        Queued: Queued,
+        Canceled: Canceled,
+        Executed: Executed,
+    }
 
     #[storage]
     struct Storage {
@@ -94,6 +117,9 @@ mod Timelock {
             assert(self.execution_started.read(id).is_zero(), 'ALREADY_QUEUED');
 
             self.execution_started.write(id, get_block_timestamp());
+
+            self.emit(Queued { id, calls, });
+
             id
         }
 
@@ -103,6 +129,8 @@ mod Timelock {
             assert(self.executed.read(id).is_zero(), 'ALREADY_EXECUTED');
 
             self.execution_started.write(id, 0);
+
+            self.emit(Canceled { id, });
         }
 
         fn execute(ref self: ContractState, mut calls: Span<Call>) -> Array<Span<felt252>> {
@@ -126,6 +154,8 @@ mod Timelock {
                     Option::None => { break; }
                 };
             };
+
+            self.emit(Executed { id, });
 
             results
         }
