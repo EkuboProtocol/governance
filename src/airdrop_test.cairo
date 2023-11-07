@@ -22,8 +22,7 @@ use option::{OptionTrait};
 
 fn deploy(token: ContractAddress, root: felt252) -> IAirdropDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
-    Serde::serialize(@token, ref constructor_args);
-    Serde::serialize(@root, ref constructor_args);
+    Serde::serialize(@(token, root), ref constructor_args);
 
     let (address, _) = deploy_syscall(
         Airdrop::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true

@@ -16,9 +16,7 @@ use option::{OptionTrait};
 
 fn deploy(owner: ContractAddress, delay: u64, window: u64) -> ITimelockDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
-    Serde::serialize(@owner, ref constructor_args);
-    Serde::serialize(@delay, ref constructor_args);
-    Serde::serialize(@window, ref constructor_args);
+    Serde::serialize(@(owner, delay, window), ref constructor_args);
 
     let (address, _) = deploy_syscall(
         Timelock::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true
@@ -43,8 +41,7 @@ fn transfer_call(
     token: IGovernanceTokenDispatcher, recipient: ContractAddress, amount: u256
 ) -> Call {
     let mut calldata: Array<felt252> = ArrayTrait::new();
-    Serde::serialize(@recipient, ref calldata);
-    Serde::serialize(@amount, ref calldata);
+    Serde::serialize(@(recipient, amount), ref calldata);
 
     Call {
         to: token.contract_address,

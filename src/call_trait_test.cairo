@@ -120,8 +120,7 @@ fn test_execute_valid_call_data() {
     let (token, _) = deploy_token('TIMELOCK', 'TL', 1);
 
     let mut calldata: Array<felt252> = ArrayTrait::new();
-    Serde::serialize(@contract_address_const::<1>(), ref calldata);
-    Serde::serialize(@1_u256, ref calldata);
+    Serde::serialize(@(contract_address_const::<1>(), 1_u256), ref calldata);
 
     let call = Call {
         to: token.contract_address,

@@ -19,9 +19,7 @@ fn deploy(
     name: felt252, symbol: felt252, supply: u128
 ) -> (IGovernanceTokenDispatcher, IERC20Dispatcher) {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
-    Serde::serialize(@name, ref constructor_args);
-    Serde::serialize(@symbol, ref constructor_args);
-    Serde::serialize(@supply, ref constructor_args);
+    Serde::serialize(@(name, symbol, supply), ref constructor_args);
 
     let (address, _) = deploy_syscall(
         GovernanceToken::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true
