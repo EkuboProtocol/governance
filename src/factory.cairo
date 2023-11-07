@@ -119,6 +119,8 @@ mod Factory {
 
                     assert(config.total <= params.total_supply, 'AIRDROP_GT_SUPPLY');
 
+                    erc20.transfer(airdrop_address, config.total.into());
+
                     (
                         Option::Some(IAirdropDispatcher { contract_address: airdrop_address }),
                         params.total_supply - config.total

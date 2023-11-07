@@ -78,7 +78,7 @@ fn test_deploy() {
     assert(erc20.decimals() == 18, 'decimals');
     assert(erc20.totalSupply() == 5678, 'totalSupply');
     assert(erc20.balance_of(get_contract_address()) == 5678 - 1111, 'deployer balance');
-    // assert(erc20.balance_of(result.airdrop.unwrap().contract_address) == 1111, 'airdrop balance');
+    assert(erc20.balance_of(result.airdrop.unwrap().contract_address) == 1111, 'airdrop balance');
 
     let drop = result.airdrop.unwrap();
     assert(drop.get_root() == 'root', 'airdrop root');
