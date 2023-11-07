@@ -41,7 +41,7 @@ struct ProposalInfo {
     nay: u128,
 }
 
-#[derive(Copy, Drop, Serde, starknet::Store)]
+#[derive(Copy, Drop, Serde, starknet::Store, PartialEq)]
 struct Config {
     // how long after a proposal is created does voting start
     voting_start_delay: u64,

@@ -49,7 +49,7 @@ fn deploy() -> IFactoryDispatcher {
 
 
 #[test]
-#[available_gas(3000000)]
+#[available_gas(30000000)]
 fn test_deploy() {
     let factory = deploy();
 
@@ -67,14 +67,34 @@ fn test_deploy() {
                     quorum: 1000,
                     proposal_creation_threshold: 100,
                 },
-                timelock_config: TimelockConfig { window: 60, delay: 320, }
+                timelock_config: TimelockConfig { delay: 320, window: 60, }
             }
         );
 
+    let erc20 = IERC20Dispatcher { contract_address: result.token.contract_address };
+
+    assert(erc20.name() == 'token', 'name');
+    assert(erc20.symbol() == 'tk', 'symbol');
+    assert(erc20.decimals() == 18, 'decimals');
+    assert(erc20.totalSupply() == 5678, 'totalSupply');
+    assert(erc20.balance_of(get_contract_address()) == 5678 - 1111, 'deployer balance');
+    // assert(erc20.balance_of(result.airdrop.unwrap().contract_address) == 1111, 'airdrop balance');
+
     assert(
-        IERC20Dispatcher { contract_address: result.token.contract_address }
-            .balance_of(get_contract_address()) == 5678
-            - 1111,
-        'balance'
+        result.governor.get_voting_token().contract_address == result.token.contract_address,
+        'voting_token'
     );
+    assert(
+        result
+            .governor
+            .get_config() == GovernorConfig {
+                voting_start_delay: 0,
+                voting_period: 180,
+                voting_weight_smoothing_duration: 30,
+                quorum: 1000,
+                proposal_creation_threshold: 100,
+            },
+        'governor.config'
+    );
+    assert(result.timelock.get_configuration() == (320, 60), 'timelock config');
 }

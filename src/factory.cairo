@@ -8,7 +8,7 @@ use governance::timelock::{ITimelockDispatcher};
 #[derive(Copy, Drop, Serde)]
 struct AirdropConfig {
     root: felt252,
-    total: u256,
+    total: u128,
 }
 
 #[derive(Copy, Drop, Serde)]
@@ -89,6 +89,8 @@ mod Factory {
             )
                 .unwrap();
 
+            let erc20 = IERC20Dispatcher { contract_address: token_address };
+
             let mut governor_constructor_args: Array<felt252> = ArrayTrait::new();
             Serde::serialize(
                 @(token_address, params.governor_config), ref governor_constructor_args
@@ -115,16 +117,17 @@ mod Factory {
                     )
                         .unwrap();
 
+                    assert(config.total <= params.total_supply, 'AIRDROP_GT_SUPPLY');
+
                     (
                         Option::Some(IAirdropDispatcher { contract_address: airdrop_address }),
-                        params.total_supply.into() - config.total
+                        params.total_supply - config.total
                     )
                 },
-                Option::None => { (Option::None, params.total_supply.into()) }
+                Option::None => { (Option::None, params.total_supply) }
             };
 
-            IERC20Dispatcher { contract_address: token_address }
-                .transfer(get_caller_address(), remaining_amount);
+            erc20.transfer(get_caller_address(), remaining_amount.into());
 
             let mut timelock_constructor_args: Array<felt252> = ArrayTrait::new();
             Serde::serialize(
