@@ -26,9 +26,9 @@ use serde::Serde;
 use zeroable::{Zeroable};
 
 
-fn deploy(config: Config) -> IGovernorDispatcher {
+fn deploy(voting_token: IGovernanceTokenDispatcher, config: Config) -> IGovernorDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
-    Serde::serialize(@config, ref constructor_args);
+    Serde::serialize(@(voting_token, config), ref constructor_args);
 
     let (address, _) = deploy_syscall(
         Governor::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true
@@ -62,8 +62,8 @@ fn create_proposal(governance: IGovernorDispatcher, token: IGovernanceTokenDispa
 fn test_governance_deploy() {
     let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -72,8 +72,8 @@ fn test_governance_deploy() {
         }
     );
 
+    assert(governance.get_voting_token().contract_address == token.contract_address, 'token');
     let config = governance.get_config();
-    assert(config.voting_token.contract_address == token.contract_address, 'token');
     assert(config.voting_start_delay == 3600, 'voting_start_delay');
     assert(config.voting_period == 60, 'voting_period');
     assert(config.voting_weight_smoothing_duration == 30, 'smoothing');
@@ -89,8 +89,8 @@ fn test_governance_deploy() {
 fn test_propose() {
     let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -121,8 +121,8 @@ fn test_propose() {
 fn test_propose_already_exists_should_fail() {
     let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -141,8 +141,8 @@ fn test_propose_already_exists_should_fail() {
 fn test_propose_below_threshold_should_fail() {
     let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -172,8 +172,8 @@ fn test_propose_below_threshold_should_fail() {
 fn test_vote_yes() {
     let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -209,8 +209,8 @@ fn test_vote_yes() {
 fn test_vote_no() {
     let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -248,8 +248,8 @@ fn test_vote_before_voting_start_should_fail() {
     // Initial setup similar to propose test
     let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -275,8 +275,8 @@ fn test_vote_before_voting_start_should_fail() {
 fn test_vote_already_voted_should_fail() {
     let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -308,8 +308,8 @@ fn test_vote_already_voted_should_fail() {
 fn test_vote_after_voting_period_should_fail() {
     let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -338,8 +338,8 @@ fn test_vote_after_voting_period_should_fail() {
 fn test_cancel_by_proposer() {
     let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -373,8 +373,8 @@ fn test_cancel_by_proposer() {
 fn test_cancel_by_non_proposer() {
     let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -419,8 +419,8 @@ fn test_cancel_by_non_proposer() {
 fn test_cancel_by_non_proposer_threshold_not_breached_should_fail() {
     let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -446,8 +446,8 @@ fn test_cancel_by_non_proposer_threshold_not_breached_should_fail() {
 fn test_cancel_after_voting_end_should_fail() {
     let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -476,8 +476,8 @@ fn test_cancel_after_voting_end_should_fail() {
 fn test_execute_valid_proposal() {
     let (token, erc20) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -517,8 +517,8 @@ fn test_execute_valid_proposal() {
 fn test_execute_before_voting_ends_should_fail() {
     let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -544,8 +544,8 @@ fn test_execute_before_voting_ends_should_fail() {
 fn test_execute_quorum_not_met_should_fail() {
     let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -572,8 +572,8 @@ fn test_execute_no_majority_should_fail() {
     let deployer = get_contract_address();
     let (token, erc20) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -633,8 +633,8 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
     let deployer = get_contract_address();
     let (token, erc20) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -699,8 +699,8 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
 fn test_execute_already_executed_should_fail() {
     let (token, erc20) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
@@ -752,8 +752,8 @@ fn queue_with_timelock_call(timelock: ITimelockDispatcher, calls: Span<Call>) ->
 fn test_proposal_e2e() {
     let (token, erc20) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
-        Config {
-            voting_token: token,
+        voting_token: token,
+        config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
             voting_weight_smoothing_duration: 30,
