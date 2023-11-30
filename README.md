@@ -18,12 +18,12 @@
     - Любой может совершать вызовы после промежутка времени, если владелец поставил их (вызовы) в очередь
     - Timelock обычно управляет всеми активами и редко обновляется
     - Чтобы обновить timelock, все активы должны быть перемещены на новый контракт timelock
-- `Governor` manages voting on a _single call_ that can be queued into a timelock
-    - Designed to be the owner of Timelock
-    - The single call can be to `Timelock#queue(calls)`, which can execute multiple calls in a single proposal
-    - Timelock ownership may be transferred to a new governance contract in future, e.g. to migrate to a volition-based voting contract
-    - None of the proposal metadata is stored in governor, simply the number of votes
-    - Proposals can be canceled at any time if the voting weight of the proposer falls below the threshold
+- `Governor` контролирует голосование на вызове _single call_ , который можно добавить в timelock
+    - Спроектирован так, чтобы быть владельцем Timelock
+    - Одиночный вызов может быть постановкой в очередь вызовов `Timelock#queue(calls)`, которые, могут исполнять множество вызовов в одиночном предложении.
+    - Владение Timelock может быть передано новому контракту управления в будущем, например, мигрировать на контракт голосования, основанный на volition.
+    - Мета данные предложений не хранятся в governor, только лишь количество голосов
+    - Предложения могут быть отменены в любой момент времени, если сила голоса предложившего упадет ниже минимального порогового значения
 - `GovernanceToken` is an ERC20 token meant for voting in contracts like `Governor`
     - Users must delegate their tokens to vote, and may delegate to themselves
     - Allows other contracts to get the average voting weight for *any* historical period
