@@ -24,15 +24,15 @@
     - Владение Timelock может быть передано новому контракту управления в будущем, например, мигрировать на контракт голосования, основанный на volition.
     - Мета данные предложений не хранятся в governor, только лишь количество голосов
     - Предложения могут быть отменены в любой момент времени, если сила голоса предложившего упадет ниже минимального порогового значения
-- `GovernanceToken` is an ERC20 token meant for voting in contracts like `Governor`
-    - Users must delegate their tokens to vote, and may delegate to themselves
-    - Allows other contracts to get the average voting weight for *any* historical period
-    - Average votes are used to compute voting weight in the `Governor`, over a configurable period of time
-- `Airdrop` can be used to distribute GovernanceToken
-    - Compute a merkle root by computing a list of amounts and recipients, hashing them, and arranging them into a merkle binary tree
-    - Deploy the airdrop with the root and the token address
-    - Transfer the total amount of tokens to the `Airdrop` contract
-- `Factory` allows creating the entire set of contracts with one call
+- `GovernanceToken` это токен стандарта ERC20, необходимый для голосвания в контрактах типа `Governor`
+    - Пользователи должны делегировать свои токены для голосования и могут делегировать голоса сами себе
+    - Позволяет другим контрактам получать среднюю силу голоса для *любого* исторического периода
+    - Средневзвешенные голоса используются для вычисления силы голоса в контракте `Governor` в течение заданного периода времени
+- `Airdrop` можно использовать для дистрибуцииGovernanceToken
+    - Вычисление merkle root путем вычисления списка количеств и получателей, их хеширования и выстроения их в бинарное древо merkle
+    - Развертывание аирдропа с данным корнем merkle и адресом токена
+    - Перемещение общего количества токенов на контракт `Airdrop`
+- `Factory` позволяет создавать полностью новый набор контрактов с помощью лишь одного вызова
 
 ## Testing
 
