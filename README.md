@@ -6,13 +6,13 @@
 
 ## Принципы
 
-These contracts follow the Compound governance architecture.
-The contracts are not upgradeable, so the project is broken up into modular and replaceable components.
-All contracts are intended to be upgraded by simply migrating to new ones. 
+Данные контракты следуют архитектуре управления проекта Compound.
+Контракты не обнволяемы, так что проект разбит на модули и заменяемые компоненты.
+Подразумевается, что все контракт обновляемы путем обычной миграции на новые версии.
 
-Even the token contract can be migrated, if necessary, by deploying a new contract that allows burning the old token to mint the new one.
+Даже контракт токена может быть мигриован, если необходим, путем развертывания нового контракта, который позволяет сжечь старый токен и заминтить новый.
 
-## Components
+## Компоненты
 
 - `Timelock` is an owned contract that allows a list of calls to be queued by an owner
     - Anyone can execute the calls after a period of time, once queued by the owner
