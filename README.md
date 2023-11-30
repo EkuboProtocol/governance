@@ -34,20 +34,20 @@
     - Перемещение общего количества токенов на контракт `Airdrop`
 - `Factory` позволяет создавать полностью новый набор контрактов с помощью лишь одного вызова
 
-## Testing
+## Тестирование
 
-Make sure you have [Scarb with asdf](https://docs.swmansion.com/scarb/download#install-via-asdf) installed.
+Убедитесь, что у вас установлен [Scarb with asdf](https://docs.swmansion.com/scarb/download#install-via-asdf) .
 
-To run unit tests:
+Для запуска юнит-тестов:
 
 ```
 scarb test
 ```
 
-## Disclaimer
+## Дисклеймер
 
-These contracts are unaudited. Use at your own risk. Additional review is greatly appreciated.
+Данные контракты не проходили аудит безопасноси. Используйте на свой страх и риск. Дополнительное ревью было бы неплохо :)
 
-## Credits
+## Благодарности
 
-The [Airdrop](./src/airdrop.cairo) contract was heavily inspired by the [Carmine Options Airdrop contract](https://github.com/CarmineOptions/governance/blob/master/src/airdrop.cairo).
+Контракт [Airdrop](./src/airdrop.cairo) был создан под впечатлением от [Carmine Options Airdrop contract](https://github.com/CarmineOptions/governance/blob/master/src/airdrop.cairo).
