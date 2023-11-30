@@ -1,10 +1,10 @@
-# Ekubo Governance
+# Управление Ekubo
 
 [![Tests](https://github.com/EkuboProtocol/governance/actions/workflows/test.yaml/badge.svg)](https://github.com/EkuboProtocol/governance/actions/workflows/test.yaml)
 
-Simple contracts for token governance on Starknet.
+Простые контракты для токенизированного управления на Starknet.
 
-## Principles
+## Принципы
 
 These contracts follow the Compound governance architecture.
 The contracts are not upgradeable, so the project is broken up into modular and replaceable components.
