@@ -1,53 +1,53 @@
-# Ekubo Governance
+# Управление Ekubo
 
 [![Tests](https://github.com/EkuboProtocol/governance/actions/workflows/test.yaml/badge.svg)](https://github.com/EkuboProtocol/governance/actions/workflows/test.yaml)
 
-Simple contracts for token governance on Starknet.
+Простые контракты для токенизированного управления на Starknet.
 
-## Principles
+## Принципы
 
-These contracts follow the Compound governance architecture.
-The contracts are not upgradeable, so the project is broken up into modular and replaceable components.
-All contracts are intended to be upgraded by simply migrating to new ones. 
+Данные контракты следуют архитектуре управления проекта Compound.
+Контракты не обнволяемы, так что проект разбит на модули и заменяемые компоненты.
+Подразумевается, что все контракт обновляемы путем обычной миграции на новые версии.
 
-Even the token contract can be migrated, if necessary, by deploying a new contract that allows burning the old token to mint the new one.
+Даже контракт токена может быть мигриован, если необходим, путем развертывания нового контракта, который позволяет сжечь старый токен и заминтить новый.
 
-## Components
+## Компоненты
 
-- `Timelock` is an owned contract that allows a list of calls to be queued by an owner
-    - Anyone can execute the calls after a period of time, once queued by the owner
-    - Timelock is meant to own all assets, and rarely be upgraded
-    - In order to upgrade timelock, all assets must be transferred to a new timelock
-- `Governor` manages voting on a _single call_ that can be queued into a timelock
-    - Designed to be the owner of Timelock
-    - The single call can be to `Timelock#queue(calls)`, which can execute multiple calls in a single proposal
-    - Timelock ownership may be transferred to a new governance contract in future, e.g. to migrate to a volition-based voting contract
-    - None of the proposal metadata is stored in governor, simply the number of votes
-    - Proposals can be canceled at any time if the voting weight of the proposer falls below the threshold
-- `GovernanceToken` is an ERC20 token meant for voting in contracts like `Governor`
-    - Users must delegate their tokens to vote, and may delegate to themselves
-    - Allows other contracts to get the average voting weight for *any* historical period
-    - Average votes are used to compute voting weight in the `Governor`, over a configurable period of time
-- `Airdrop` can be used to distribute GovernanceToken
-    - Compute a merkle root by computing a list of amounts and recipients, hashing them, and arranging them into a merkle binary tree
-    - Deploy the airdrop with the root and the token address
-    - Transfer the total amount of tokens to the `Airdrop` contract
-- `Factory` allows creating the entire set of contracts with one call
+- `Timelock` контракт с владельцем, который позволяет владельцу ставить на очередь список вызовов
+    - Любой может совершать вызовы после промежутка времени, если владелец поставил их (вызовы) в очередь
+    - Timelock обычно управляет всеми активами и редко обновляется
+    - Чтобы обновить timelock, все активы должны быть перемещены на новый контракт timelock
+- `Governor` контролирует голосование на вызове _single call_ , который можно добавить в timelock
+    - Спроектирован так, чтобы быть владельцем Timelock
+    - Одиночный вызов может быть постановкой в очередь вызовов `Timelock#queue(calls)`, которые, могут исполнять множество вызовов в одиночном предложении.
+    - Владение Timelock может быть передано новому контракту управления в будущем, например, мигрировать на контракт голосования, основанный на volition.
+    - Мета данные предложений не хранятся в governor, только лишь количество голосов
+    - Предложения могут быть отменены в любой момент времени, если сила голоса предложившего упадет ниже минимального порогового значения
+- `GovernanceToken` это токен стандарта ERC20, необходимый для голосвания в контрактах типа `Governor`
+    - Пользователи должны делегировать свои токены для голосования и могут делегировать голоса сами себе
+    - Позволяет другим контрактам получать среднюю силу голоса для *любого* исторического периода
+    - Средневзвешенные голоса используются для вычисления силы голоса в контракте `Governor` в течение заданного периода времени
+- `Airdrop` можно использовать для дистрибуцииGovernanceToken
+    - Вычисление merkle root путем вычисления списка количеств и получателей, их хеширования и выстроения их в бинарное древо merkle
+    - Развертывание аирдропа с данным корнем merkle и адресом токена
+    - Перемещение общего количества токенов на контракт `Airdrop`
+- `Factory` позволяет создавать полностью новый набор контрактов с помощью лишь одного вызова
 
-## Testing
+## Тестирование
 
-Make sure you have [Scarb with asdf](https://docs.swmansion.com/scarb/download#install-via-asdf) installed.
+Убедитесь, что у вас установлен [Scarb with asdf](https://docs.swmansion.com/scarb/download#install-via-asdf) .
 
-To run unit tests:
+Для запуска юнит-тестов:
 
 ```
 scarb test
 ```
 
-## Disclaimer
+## Дисклеймер
 
-These contracts are unaudited. Use at your own risk. Additional review is greatly appreciated.
+Данные контракты не проходили аудит безопасноси. Используйте на свой страх и риск. Дополнительное ревью было бы неплохо :)
 
-## Credits
+## Благодарности
 
-The [Airdrop](./src/airdrop.cairo) contract was heavily inspired by the [Carmine Options Airdrop contract](https://github.com/CarmineOptions/governance/blob/master/src/airdrop.cairo).
+Контракт [Airdrop](./src/airdrop.cairo) был создан под впечатлением от [Carmine Options Airdrop contract](https://github.com/CarmineOptions/governance/blob/master/src/airdrop.cairo).
