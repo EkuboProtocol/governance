@@ -14,10 +14,10 @@
 
 ## Компоненты
 
-- `Timelock` is an owned contract that allows a list of calls to be queued by an owner
-    - Anyone can execute the calls after a period of time, once queued by the owner
-    - Timelock is meant to own all assets, and rarely be upgraded
-    - In order to upgrade timelock, all assets must be transferred to a new timelock
+- `Timelock` контракт с владельцем, который позволяет владельцу ставить на очередь список вызовов
+    - Любой может совершать вызовы после промежутка времени, если владелец поставил их (вызовы) в очередь
+    - Timelock обычно управляет всеми активами и редко обновляется
+    - Чтобы обновить timelock, все активы должны быть перемещены на новый контракт timelock
 - `Governor` manages voting on a _single call_ that can be queued into a timelock
     - Designed to be the owner of Timelock
     - The single call can be to `Timelock#queue(calls)`, which can execute multiple calls in a single proposal
