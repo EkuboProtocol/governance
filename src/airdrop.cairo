@@ -101,7 +101,7 @@ mod Airdrop {
         }
 
         fn is_claimed(self: @ContractState, claim: Claim) -> bool {
-            self.claimed.read(LegacyHash::hash(0, claim))
+            self.claimed.read(LegacyHash::hash(1, claim))
         }
     }
 }
