@@ -8,7 +8,7 @@ trait IGovernanceToken<TStorage> {
     // Get the currently delegated amount of token. Note this is not flash-loan resistant.
     fn get_delegated(self: @TStorage, delegate: ContractAddress) -> u128;
 
-    // Get how much delegated tokens an address has at a certain timestamp.
+    // Get how many delegated tokens an address has at a certain timestamp.
     fn get_delegated_at(self: @TStorage, delegate: ContractAddress, timestamp: u64) -> u128;
 
     // Get the cumulative delegated amount * seconds for an address at a certain timestamp.
