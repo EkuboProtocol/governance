@@ -21,7 +21,7 @@ Even the token contract can be migrated, if necessary, by deploying a new contra
 - `Governor` manages voting on a _single call_ that can be queued into a timelock
     - Designed to be the owner of Timelock
     - The single call can be to `Timelock#queue(calls)`, which can execute multiple calls in a single proposal
-    - Timelock ownership may be transferred to a new governance contract in future, e.g. to migrate to a volition-based voting contract
+    - Timelock ownership may be transferred to a new governance contract in the future, e.g. to migrate to a volition-based voting contract
     - None of the proposal metadata is stored in governor, simply the number of votes
     - Proposals can be canceled at any time if the voting weight of the proposer falls below the threshold
 - `GovernanceToken` is an ERC20 token meant for voting in contracts like `Governor`

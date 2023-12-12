@@ -43,7 +43,7 @@ fn create_proposal(governance: IGovernorDispatcher, token: IGovernanceTokenDispa
     let start_time = utils::timestamp();
     let transfer_call = transfer_call(token: token, recipient: recipient, amount: 100);
 
-    // Delegate token to the proposer so that he reaches threshold.
+    // Delegate the token to the proposer so that he reaches threshold.
     token.delegate(proposer);
 
     set_block_timestamp(start_time);
