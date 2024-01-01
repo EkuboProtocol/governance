@@ -1,6 +1,6 @@
 use array::{Array, ArrayTrait, SpanTrait};
 use debug::PrintTrait;
-use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait, Timelock};
+use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait, Timelock, TwoTimestamps, TwoTimestampsImpl, ThreeTimestamps, ThreeTimestampsImpl};
 use governance::governance_token_test::{deploy as deploy_token};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::governance_token::{IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait};
@@ -30,7 +30,7 @@ fn deploy(owner: ContractAddress, delay: u64, window: u64) -> ITimelockDispatche
 fn test_deploy() {
     let timelock = deploy(contract_address_const::<2300>(), 10239, 3600);
 
-    let (window, delay) = timelock.get_configuration();
+    let (window, delay) = timelock.get_configuration().all();
     assert(window == 10239, 'window');
     assert(delay == 3600, 'delay');
     let owner = timelock.get_owner();
@@ -70,7 +70,7 @@ fn test_queue_execute() {
 
     let id = timelock.queue(single_call(transfer_call(token, recipient, 500_u256)));
 
-    let (earliest, latest) = timelock.get_execution_window(id);
+    let (earliest, latest) = timelock.get_execution_window(id).all();
     assert(earliest == 86401, 'earliest');
     assert(latest == 90001, 'latest');
 
@@ -134,7 +134,7 @@ fn test_queue_executed_too_early() {
 
     let id = timelock.queue(single_call(transfer_call(token, recipient, 500_u256)));
 
-    let (earliest, latest) = timelock.get_execution_window(id);
+    let (earliest, latest) = timelock.get_execution_window(id).all();
     set_block_timestamp(earliest - 1);
     timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
 }
@@ -153,7 +153,7 @@ fn test_queue_executed_too_late() {
 
     let id = timelock.queue(single_call(transfer_call(token, recipient, 500_u256)));
 
-    let (earliest, latest) = timelock.get_execution_window(id);
+    let (earliest, latest) = timelock.get_execution_window(id).all();
     set_block_timestamp(latest);
     timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
 }
