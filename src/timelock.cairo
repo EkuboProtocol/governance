@@ -17,7 +17,7 @@ trait ITimelock<TStorage> {
     fn execute(ref self: TStorage, calls: Span<Call>) -> Array<Span<felt252>>;
 
     // Return the execution window, i.e. the start and end timestamp in which the call can be executed
-    fn get_execution_window(self: @TStorage, id: felt252) -> DelayAndWindow;
+    fn get_execution_window(self: @TStorage, id: felt252) -> ExecutionWindow;
 
     // Get the current owner
     fn get_owner(self: @TStorage) -> ContractAddress;
@@ -81,9 +81,28 @@ impl DelayAndWindowStorePacking of StorePacking<DelayAndWindow, u128> {
     }
 }
 
+#[derive(Copy, Drop, Serde)]
+struct ExecutionWindow {
+    earliest: u64,
+    latest: u64
+}
+
+impl ExecutionWindowStorePacking of StorePacking<ExecutionWindow, u128> {
+    fn pack(value: ExecutionWindow) -> u128 {
+        value.earliest.into()+value.latest.into()*TWO_POW_36
+    }
+    fn unpack(value: u128) -> ExecutionWindow {
+        ExecutionWindow {
+            earliest: (value & TIMESTAMP_A_MASK).into(), 
+            latest: (value & TIMESTAMP_B_MASK).into(), 
+        }
+    }
+}
+
+
 #[starknet::contract]
 mod Timelock {
-    use super::{ITimelock, ContractAddress, Call, DelayAndWindow, ExecutionState, DelayAndWindowStorePacking, ExecutionStateStorePacking};
+    use super::{ITimelock, ContractAddress, Call, DelayAndWindow, ExecutionState, DelayAndWindowStorePacking, ExecutionStateStorePacking, ExecutionWindow, ExecutionWindowStorePacking};
     use governance::call_trait::{CallTrait, HashCall};
     use hash::{LegacyHash};
     use array::{ArrayTrait, SpanTrait};
@@ -195,8 +214,8 @@ mod Timelock {
             let execution_window = self.get_execution_window(id);
             let time_current = get_block_timestamp();
 
-            assert(time_current >= execution_window.delay, 'TOO_EARLY');
-            assert(time_current < execution_window.window, 'TOO_LATE');
+            assert(time_current >= execution_window.earliest, 'TOO_EARLY');
+            assert(time_current < execution_window.latest, 'TOO_LATE');
 
             self.execution_state.write(id, ExecutionState {started: execution_state.started, executed: time_current, canceled: execution_state.canceled});
 
@@ -214,7 +233,7 @@ mod Timelock {
             results
         }
 
-        fn get_execution_window(self: @ContractState, id: felt252) -> DelayAndWindow {
+        fn get_execution_window(self: @ContractState, id: felt252) -> ExecutionWindow {
             let start_time = self.execution_state.read(id).started;
 
             // this is how we prevent the 0 timestamp from being considered valid
@@ -226,7 +245,7 @@ mod Timelock {
             
             let latest = earliest + configuration.window;
 
-            DelayAndWindow {delay: earliest, window: latest}
+            ExecutionWindow {earliest: earliest, latest: latest}
         }
 
         fn get_owner(self: @ContractState) -> ContractAddress {
