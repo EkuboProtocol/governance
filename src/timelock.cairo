@@ -1,3 +1,4 @@
+use core::option::OptionTrait;
 use core::traits::TryInto;
 use core::result::ResultTrait;
 use starknet::{ContractAddress};
@@ -31,17 +32,9 @@ trait ITimelock<TStorage> {
     fn configure(ref self: TStorage, delay_and_window: DelayAndWindow);
 }
 
-impl U128IntoU64 of Into<u128, u64> {
-    fn into(self: u128) -> u64 {
-        u64_try_from_felt252(u128_to_felt252(self)).unwrap()
-    }
-} 
 
-const TIMESTAMP_C_MASK: u128 = 0xFFFFFFFFF000000000000000000;
-const TIMESTAMP_B_MASK: u128 = 0xFFFFFFFFF000000000;
-const TIMESTAMP_A_MASK: u128 = 0xFFFFFFFFF;
-const TWO_POW_36: u128 = 0x1000000000;
-const TWO_POW_72: u128 = 0x1000000000000000000;
+const U64_MASK: u128 = 0xFFFFFFFFFFFFFFFF;
+const TWO_POW_64: u128 = 0x10000000000000000;
 
 #[derive(Copy, Drop, Serde)]
 struct ExecutionState {
@@ -50,15 +43,19 @@ struct ExecutionState {
     canceled: u64
 }
 
-impl ExecutionStateStorePacking of StorePacking<ExecutionState, u128> {
-    fn pack(value: ExecutionState) -> u128 {
-        value.started.into()+value.executed.into()*TWO_POW_36+value.canceled.into()*TWO_POW_72
+impl ExecutionStateStorePacking of StorePacking<ExecutionState, felt252> {
+    fn pack(value: ExecutionState) -> felt252 {
+        u256 {
+            low: value.started.into()+value.executed.into()*TWO_POW_64,
+            high: value.canceled.into()
+        }.try_into().unwrap()
     }
-    fn unpack(value: u128) -> ExecutionState {
+    fn unpack(value: felt252) -> ExecutionState {
+        let u256_value: u256 = value.into();
         ExecutionState {
-            started: (value & TIMESTAMP_A_MASK).into(), 
-            executed: (value & TIMESTAMP_B_MASK).into(), 
-            canceled: (value & TIMESTAMP_C_MASK).into()
+            started: (u256_value.low & U64_MASK).try_into().unwrap(), 
+            executed: ((u256_value.low/TWO_POW_64) & U64_MASK).try_into().unwrap(), 
+            canceled: (u256_value.high).try_into().unwrap()
         }
     }
 }
@@ -69,14 +66,15 @@ struct DelayAndWindow {
     window: u64
 }
 
-impl DelayAndWindowStorePacking of StorePacking<DelayAndWindow, u128> {
-    fn pack(value: DelayAndWindow) -> u128 {
-        value.delay.into()+value.window.into()*TWO_POW_36
+impl DelayAndWindowStorePacking of StorePacking<DelayAndWindow, felt252> {
+    fn pack(value: DelayAndWindow) -> felt252 {
+        (value.delay.into()+value.window.into()*TWO_POW_64).into()
     }
-    fn unpack(value: u128) -> DelayAndWindow {
+    fn unpack(value: felt252) -> DelayAndWindow {
+        let u256_value: u256 = value.into();
         DelayAndWindow {
-            delay: (value & TIMESTAMP_A_MASK).into(), 
-            window: (value & TIMESTAMP_B_MASK).into(), 
+            delay: (u256_value.low & U64_MASK).try_into().unwrap(), 
+            window: ((u256_value.low/TWO_POW_64) & U64_MASK).try_into().unwrap(), 
         }
     }
 }
@@ -87,14 +85,15 @@ struct ExecutionWindow {
     latest: u64
 }
 
-impl ExecutionWindowStorePacking of StorePacking<ExecutionWindow, u128> {
-    fn pack(value: ExecutionWindow) -> u128 {
-        value.earliest.into()+value.latest.into()*TWO_POW_36
+impl ExecutionWindowStorePacking of StorePacking<ExecutionWindow, felt252> {
+    fn pack(value: ExecutionWindow) -> felt252 {
+        (value.earliest.into()+value.latest.into()*TWO_POW_64).into()
     }
-    fn unpack(value: u128) -> ExecutionWindow {
+    fn unpack(value: felt252) -> ExecutionWindow {
+        let u256_value: u256 = value.into();
         ExecutionWindow {
-            earliest: (value & TIMESTAMP_A_MASK).into(), 
-            latest: (value & TIMESTAMP_B_MASK).into(), 
+            earliest: (u256_value.low & U64_MASK).try_into().unwrap(), 
+            latest: ((u256_value.low/TWO_POW_64) & U64_MASK).try_into().unwrap(), 
         }
     }
 }
