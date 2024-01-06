@@ -54,7 +54,7 @@ impl ExecutionStateStorePacking of StorePacking<ExecutionState, felt252> {
         let u256_value: u256 = value.into();
         ExecutionState {
             started: (u256_value.low & U64_MASK).try_into().unwrap(), 
-            executed: ((u256_value.low/TWO_POW_64) & U64_MASK).try_into().unwrap(), 
+            executed: (u256_value.low/TWO_POW_64).try_into().unwrap(), 
             canceled: (u256_value.high).try_into().unwrap()
         }
     }
@@ -74,7 +74,7 @@ impl DelayAndWindowStorePacking of StorePacking<DelayAndWindow, felt252> {
         let u256_value: u256 = value.into();
         DelayAndWindow {
             delay: (u256_value.low & U64_MASK).try_into().unwrap(), 
-            window: ((u256_value.low/TWO_POW_64) & U64_MASK).try_into().unwrap(), 
+            window: (u256_value.low/TWO_POW_64).try_into().unwrap(), 
         }
     }
 }
@@ -93,7 +93,7 @@ impl ExecutionWindowStorePacking of StorePacking<ExecutionWindow, felt252> {
         let u256_value: u256 = value.into();
         ExecutionWindow {
             earliest: (u256_value.low & U64_MASK).try_into().unwrap(), 
-            latest: ((u256_value.low/TWO_POW_64) & U64_MASK).try_into().unwrap(), 
+            latest: (u256_value.low/TWO_POW_64).try_into().unwrap(), 
         }
     }
 }

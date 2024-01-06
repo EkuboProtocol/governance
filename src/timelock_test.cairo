@@ -31,8 +31,8 @@ fn test_deploy() {
     let timelock = deploy(contract_address_const::<2300>(), 10239, 3600);
 
     let configuration = timelock.get_configuration();
-    assert(configuration.window == 10239, 'window');
-    assert(configuration.delay == 3600, 'delay');
+    assert(configuration.delay == 10239, 'delay');
+    assert(configuration.window == 3600, 'window');
     let owner = timelock.get_owner();
     assert(owner == contract_address_const::<2300>(), 'owner');
 }
