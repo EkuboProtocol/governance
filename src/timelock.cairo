@@ -3,6 +3,7 @@ use core::result::ResultTrait;
 use starknet::{ContractAddress};
 use starknet::account::{Call};
 use core::integer::{u128_to_felt252, u64_try_from_felt252};
+use starknet::storage_access::{StorePacking};
 
 #[starknet::interface]
 trait ITimelock<TStorage> {
@@ -16,84 +17,73 @@ trait ITimelock<TStorage> {
     fn execute(ref self: TStorage, calls: Span<Call>) -> Array<Span<felt252>>;
 
     // Return the execution window, i.e. the start and end timestamp in which the call can be executed
-    fn get_execution_window(self: @TStorage, id: felt252) -> TwoTimestamps;
+    fn get_execution_window(self: @TStorage, id: felt252) -> DelayAndWindow;
 
     // Get the current owner
     fn get_owner(self: @TStorage) -> ContractAddress;
 
     // Returns the delay and the window for call execution
-    fn get_configuration(self: @TStorage) -> TwoTimestamps;
+    fn get_configuration(self: @TStorage) -> DelayAndWindow;
 
     // Transfer ownership, i.e. the address that can queue and cancel calls. This must be self-called via #queue.
     fn transfer(ref self: TStorage, to: ContractAddress);
     // Configure the delay and the window for call execution. This must be self-called via #queue.
-    fn configure(ref self: TStorage, delay_and_window: TwoTimestamps);
+    fn configure(ref self: TStorage, delay_and_window: DelayAndWindow);
 }
 
 impl U128IntoU64 of Into<u128, u64> {
     fn into(self: u128) -> u64 {
         u64_try_from_felt252(u128_to_felt252(self)).unwrap()
     }
-}
+} 
 
-const TIMESTAMP_C_FILTER: u128 = 0xFFFFFFFFF000000000000000000;
-const TIMESTAMP_B_FILTER: u128 = 0xFFFFFFFFF000000000;
-const TIMESTAMP_A_FILTER: u128 = 0xFFFFFFFFF;
-const B_SPACE: u128 = 0x1000000000;
-const C_SPACE: u128 = 0x1000000000000000000;
+const TIMESTAMP_C_MASK: u128 = 0xFFFFFFFFF000000000000000000;
+const TIMESTAMP_B_MASK: u128 = 0xFFFFFFFFF000000000;
+const TIMESTAMP_A_MASK: u128 = 0xFFFFFFFFF;
+const TWO_POW_36: u128 = 0x1000000000;
+const TWO_POW_72: u128 = 0x1000000000000000000;
 
 #[derive(Copy, Drop, Serde)]
-struct ThreeTimestamps {
-    timestamps: u128
+struct ExecutionState {
+    started: u64,
+    executed: u64,
+    canceled: u64
 }
 
-#[generate_trait]    
-impl ThreeTimestampsImpl of ThreeTimestampsTrait {
-    fn a(self: @ThreeTimestamps) -> u64 {
-       (*self.timestamps & TIMESTAMP_A_FILTER).into()
+impl ExecutionStateStorePacking of StorePacking<ExecutionState, u128> {
+    fn pack(value: ExecutionState) -> u128 {
+        value.started.into()+value.executed.into()*TWO_POW_36+value.canceled.into()*TWO_POW_72
     }
-    fn b(self: @ThreeTimestamps) -> u64 {
-       (*self.timestamps & TIMESTAMP_B_FILTER).into()
-    }
-    fn c(self: @ThreeTimestamps) -> u64 {
-       (*self.timestamps & TIMESTAMP_C_FILTER).into()
-    }
-    fn all(self: @ThreeTimestamps) -> (u64, u64, u64) {
-        ((*self.timestamps & TIMESTAMP_A_FILTER).into(), (*self.timestamps & TIMESTAMP_B_FILTER).into(), (*self.timestamps & TIMESTAMP_C_FILTER).into())
-    }
-    fn new(a: u64, b: u64, c: u64) -> ThreeTimestamps {
-        ThreeTimestamps {
-            timestamps: a.into()+b.into()*B_SPACE+c.into()*C_SPACE
+    fn unpack(value: u128) -> ExecutionState {
+        ExecutionState {
+            started: (value & TIMESTAMP_A_MASK).into(), 
+            executed: (value & TIMESTAMP_B_MASK).into(), 
+            canceled: (value & TIMESTAMP_C_MASK).into()
         }
     }
 }
 
 #[derive(Copy, Drop, Serde)]
-struct TwoTimestamps {
-    timestamps: u128
+struct DelayAndWindow {
+    delay: u64,
+    window: u64
 }
 
-#[generate_trait]    
-impl TwoTimestampsImpl of TwoTimestampsTrait {
-    fn a(self: @TwoTimestamps) -> u64 {
-       (*self.timestamps & TIMESTAMP_A_FILTER).into()
+impl DelayAndWindowStorePacking of StorePacking<DelayAndWindow, u128> {
+    fn pack(value: DelayAndWindow) -> u128 {
+        value.delay.into()+value.window.into()*TWO_POW_36
     }
-    fn b(self: @TwoTimestamps) -> u64 {
-       (*self.timestamps & TIMESTAMP_B_FILTER).into()
-    }
-    fn all(self: @TwoTimestamps) -> (u64, u64) {
-        ((*self.timestamps & TIMESTAMP_A_FILTER).into(), (*self.timestamps & TIMESTAMP_B_FILTER).into())
-    }
-    fn new(a: u64, b: u64) -> TwoTimestamps {
-        TwoTimestamps {
-            timestamps: a.into()+b.into()*B_SPACE
+    fn unpack(value: u128) -> DelayAndWindow {
+        DelayAndWindow {
+            delay: (value & TIMESTAMP_A_MASK).into(), 
+            window: (value & TIMESTAMP_B_MASK).into(), 
         }
     }
 }
 
 #[starknet::contract]
 mod Timelock {
-    use super::{ITimelock, ContractAddress, Call, TwoTimestamps, ThreeTimestamps, TwoTimestampsImpl, ThreeTimestampsImpl};
+    use super::{ITimelock, ContractAddress, Call, DelayAndWindow, ExecutionState, DelayAndWindowStorePacking, ExecutionStateStorePacking};
     use governance::call_trait::{CallTrait, HashCall};
     use hash::{LegacyHash};
     use array::{ArrayTrait, SpanTrait};
@@ -132,13 +122,13 @@ mod Timelock {
     #[storage]
     struct Storage {
         owner: ContractAddress,
-        delay_and_window: TwoTimestamps,
+        delay_and_window: DelayAndWindow,
         // started_executed_canceled
-        execution_state: LegacyMap<felt252, ThreeTimestamps>,
+        execution_state: LegacyMap<felt252, ExecutionState>,
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, owner: ContractAddress, delay_and_window: TwoTimestamps) {
+    fn constructor(ref self: ContractState, owner: ContractAddress, delay_and_window: DelayAndWindow) {
         self.owner.write(owner);
         self.delay_and_window.write(delay_and_window);
     }
@@ -173,12 +163,11 @@ mod Timelock {
             self.check_owner();
 
             let id = to_id(calls);
-            let (execution_started, execution_executed, execution_canceled) = self.execution_state.read(id).all();
+            let execution_state = self.execution_state.read(id);
 
+            assert(execution_state.started.is_zero(), 'ALREADY_QUEUED');
 
-            assert(execution_started.is_zero(), 'ALREADY_QUEUED');
-
-            self.execution_state.write(id, ThreeTimestampsImpl::new(get_block_timestamp(), execution_executed, execution_canceled));
+            self.execution_state.write(id, ExecutionState{started: get_block_timestamp(), executed: execution_state.executed, canceled: execution_state.canceled});
 
             self.emit(Queued { id, calls, });
 
@@ -187,11 +176,11 @@ mod Timelock {
 
         fn cancel(ref self: ContractState, id: felt252) {
             self.check_owner();
-            let (execution_started, execution_executed, execution_canceled) = self.execution_state.read(id).all();
-            assert(execution_started.is_non_zero(), 'DOES_NOT_EXIST');
-            assert(execution_executed.is_zero(), 'ALREADY_EXECUTED');
+            let execution_state = self.execution_state.read(id);
+            assert(execution_state.started.is_non_zero(), 'DOES_NOT_EXIST');
+            assert(execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
 
-            self.execution_state.write(id, ThreeTimestampsImpl::new(0, execution_executed, execution_canceled));
+            self.execution_state.write(id, ExecutionState {started: 0, executed: execution_state.executed, canceled: execution_state.canceled});
 
             self.emit(Canceled { id, });
         }
@@ -199,17 +188,17 @@ mod Timelock {
         fn execute(ref self: ContractState, mut calls: Span<Call>) -> Array<Span<felt252>> {
             let id = to_id(calls);
 
-            let (execution_started, execution_executed, execution_canceled) = self.execution_state.read(id).all();
+            let execution_state = self.execution_state.read(id);
 
-            assert(execution_executed.is_zero(), 'ALREADY_EXECUTED');
+            assert(execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
 
-            let (earliest, latest) = self.get_execution_window(id).all();
+            let execution_window = self.get_execution_window(id);
             let time_current = get_block_timestamp();
 
-            assert(time_current >= earliest, 'TOO_EARLY');
-            assert(time_current < latest, 'TOO_LATE');
+            assert(time_current >= execution_window.delay, 'TOO_EARLY');
+            assert(time_current < execution_window.window, 'TOO_LATE');
 
-            self.execution_state.write(id, ThreeTimestampsImpl::new(execution_started, time_current, execution_canceled));
+            self.execution_state.write(id, ExecutionState {started: execution_state.started, executed: time_current, canceled: execution_state.canceled});
 
             let mut results: Array<Span<felt252>> = ArrayTrait::new();
 
@@ -225,26 +214,26 @@ mod Timelock {
             results
         }
 
-        fn get_execution_window(self: @ContractState, id: felt252) -> TwoTimestamps {
-            let start_time = self.execution_state.read(id).a();
+        fn get_execution_window(self: @ContractState, id: felt252) -> DelayAndWindow {
+            let start_time = self.execution_state.read(id).started;
 
             // this is how we prevent the 0 timestamp from being considered valid
             assert(start_time != 0, 'DOES_NOT_EXIST');
 
-            let (delay, window) = (self.get_configuration()).all();
+            let configuration = (self.get_configuration());
 
-            let earliest = start_time + delay;
+            let earliest = start_time + configuration.delay;
             
-            let latest = earliest + window;
+            let latest = earliest + configuration.window;
 
-            TwoTimestampsImpl::new(earliest, latest)
+            DelayAndWindow {delay: earliest, window: latest}
         }
 
         fn get_owner(self: @ContractState) -> ContractAddress {
             self.owner.read()
         }
 
-        fn get_configuration(self: @ContractState) -> TwoTimestamps {
+        fn get_configuration(self: @ContractState) -> DelayAndWindow {
             self.delay_and_window.read()
         }
 
@@ -254,7 +243,7 @@ mod Timelock {
             self.owner.write(to);
         }
 
-        fn configure(ref self: ContractState, delay_and_window: TwoTimestamps) {
+        fn configure(ref self: ContractState, delay_and_window: DelayAndWindow) {
             self.check_self_call();
 
             self.delay_and_window.write(delay_and_window);
