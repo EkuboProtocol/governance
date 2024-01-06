@@ -8,7 +8,7 @@ use governance::factory::{
 };
 use governance::governance_token::{GovernanceToken};
 use governance::governor::{Governor};
-use governance::timelock::{Timelock};
+use governance::timelock::{Timelock, DelayAndWindow};
 use governance::airdrop::{Airdrop};
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress,
@@ -100,5 +100,6 @@ fn test_deploy() {
             },
         'governor.config'
     );
-    assert(result.timelock.get_configuration() == (320, 60), 'timelock config');
+    assert(result.timelock.get_configuration().delay == 320, 'timelock config (delay)');
+    assert(result.timelock.get_configuration().window == 60, 'timelock config (window)');
 }
