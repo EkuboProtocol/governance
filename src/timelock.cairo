@@ -24,17 +24,48 @@ trait ITimelock<TStorage> {
     fn get_owner(self: @TStorage) -> ContractAddress;
 
     // Returns the delay and the window for call execution
-    fn get_configuration(self: @TStorage) -> DelayAndWindow;
+    fn get_configuration(self: @TStorage) -> TimelockConfig;
 
     // Transfer ownership, i.e. the address that can queue and cancel calls. This must be self-called via #queue.
     fn transfer(ref self: TStorage, to: ContractAddress);
     // Configure the delay and the window for call execution. This must be self-called via #queue.
-    fn configure(ref self: TStorage, delay_and_window: DelayAndWindow);
+    fn configure(ref self: TStorage, delay_and_window: TimelockConfig);
 }
 
 
 const U64_MASK: u128 = 0xFFFFFFFFFFFFFFFF;
 const TWO_POW_64: u128 = 0x10000000000000000;
+
+impl ThreeU64TupleStorePacking of StorePacking<(u64, u64, u64), felt252> {
+    fn pack(value: (u64, u64, u64)) -> felt252 {
+        let (a, b, c) = value;
+        u256 {
+            low: a.into()+b.into()*TWO_POW_64,
+            high: c.into()
+        }.try_into().unwrap()
+    }
+    fn unpack(value: felt252) -> (u64, u64, u64) {
+        let u256_value: u256 = value.into();
+        (
+            (u256_value.low & U64_MASK).try_into().unwrap(), 
+            (u256_value.low/TWO_POW_64).try_into().unwrap(), 
+            (u256_value.high).try_into().unwrap()
+        )   
+    }
+}
+
+impl TwoU64TupleStorePacking of StorePacking<(u64, u64), u128> {
+    fn pack(value: (u64, u64)) -> u128 {
+        let (a, b) = value;
+        a.into()+b.into()*TWO_POW_64
+    }
+    fn unpack(value: u128) -> (u64, u64) {
+        (
+            (value & U64_MASK).try_into().unwrap(), 
+            (value/TWO_POW_64).try_into().unwrap()
+        )
+    }
+}
 
 #[derive(Copy, Drop, Serde)]
 struct ExecutionState {
@@ -43,38 +74,36 @@ struct ExecutionState {
     canceled: u64
 }
 
-impl ExecutionStateStorePacking of StorePacking<ExecutionState, felt252> {
-    fn pack(value: ExecutionState) -> felt252 {
-        u256 {
-            low: value.started.into()+value.executed.into()*TWO_POW_64,
-            high: value.canceled.into()
-        }.try_into().unwrap()
+#[inline(always)]
+impl ExecutionStateStorePacking of StorePacking<ExecutionState, (u64, u64, u64)> {
+    fn pack(value: ExecutionState) -> (u64, u64, u64) {
+        (value.started, value.executed, value.canceled)
     }
-    fn unpack(value: felt252) -> ExecutionState {
-        let u256_value: u256 = value.into();
+    fn unpack(value: (u64, u64, u64)) -> ExecutionState {
+        let (started, executed, canceled) = value;
         ExecutionState {
-            started: (u256_value.low & U64_MASK).try_into().unwrap(), 
-            executed: (u256_value.low/TWO_POW_64).try_into().unwrap(), 
-            canceled: (u256_value.high).try_into().unwrap()
+            started, 
+            executed,
+            canceled
         }
     }
 }
 
 #[derive(Copy, Drop, Serde)]
-struct DelayAndWindow {
+struct TimelockConfig {
     delay: u64,
-    window: u64
+    window: u64,
 }
 
-impl DelayAndWindowStorePacking of StorePacking<DelayAndWindow, felt252> {
-    fn pack(value: DelayAndWindow) -> felt252 {
-        (value.delay.into()+value.window.into()*TWO_POW_64).into()
+impl TimelockConfigStorePacking of StorePacking<TimelockConfig, (u64, u64)> {
+    fn pack(value: TimelockConfig) -> (u64, u64) {
+        (value.delay, value.window)
     }
-    fn unpack(value: felt252) -> DelayAndWindow {
-        let u256_value: u256 = value.into();
-        DelayAndWindow {
-            delay: (u256_value.low & U64_MASK).try_into().unwrap(), 
-            window: (u256_value.low/TWO_POW_64).try_into().unwrap(), 
+    fn unpack(value: (u64, u64)) -> TimelockConfig {
+        let (delay, window) = value;
+        TimelockConfig {
+            delay,
+            window
         }
     }
 }
@@ -101,7 +130,7 @@ impl ExecutionWindowStorePacking of StorePacking<ExecutionWindow, felt252> {
 
 #[starknet::contract]
 mod Timelock {
-    use super::{ITimelock, ContractAddress, Call, DelayAndWindow, ExecutionState, DelayAndWindowStorePacking, ExecutionStateStorePacking, ExecutionWindow, ExecutionWindowStorePacking};
+    use super::{ITimelock, ContractAddress, Call, TimelockConfig, ExecutionState, TimelockConfigStorePacking, ExecutionStateStorePacking, ExecutionWindow, ExecutionWindowStorePacking, TwoU64TupleStorePacking, ThreeU64TupleStorePacking};
     use governance::call_trait::{CallTrait, HashCall};
     use hash::{LegacyHash};
     use array::{ArrayTrait, SpanTrait};
@@ -140,13 +169,13 @@ mod Timelock {
     #[storage]
     struct Storage {
         owner: ContractAddress,
-        delay_and_window: DelayAndWindow,
+        delay_and_window: TimelockConfig,
         // started_executed_canceled
         execution_state: LegacyMap<felt252, ExecutionState>,
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, owner: ContractAddress, delay_and_window: DelayAndWindow) {
+    fn constructor(ref self: ContractState, owner: ContractAddress, delay_and_window: TimelockConfig) {
         self.owner.write(owner);
         self.delay_and_window.write(delay_and_window);
     }
@@ -251,7 +280,7 @@ mod Timelock {
             self.owner.read()
         }
 
-        fn get_configuration(self: @ContractState) -> DelayAndWindow {
+        fn get_configuration(self: @ContractState) -> TimelockConfig {
             self.delay_and_window.read()
         }
 
@@ -261,7 +290,7 @@ mod Timelock {
             self.owner.write(to);
         }
 
-        fn configure(ref self: ContractState, delay_and_window: DelayAndWindow) {
+        fn configure(ref self: ContractState, delay_and_window: TimelockConfig) {
             self.check_self_call();
 
             self.delay_and_window.write(delay_and_window);

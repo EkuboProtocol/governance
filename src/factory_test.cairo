@@ -4,11 +4,10 @@ use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::governor::{Config as GovernorConfig};
 use governance::factory::{
     IFactoryDispatcher, IFactoryDispatcherTrait, Factory, DeploymentParameters, AirdropConfig,
-    TimelockConfig,
 };
 use governance::governance_token::{GovernanceToken};
 use governance::governor::{Governor};
-use governance::timelock::{Timelock, DelayAndWindow};
+use governance::timelock::{Timelock, TimelockConfig};
 use governance::airdrop::{Airdrop};
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress,
