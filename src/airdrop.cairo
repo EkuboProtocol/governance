@@ -1,6 +1,6 @@
+use core::array::{Array};
 use governance::interfaces::erc20::{IERC20Dispatcher};
 use starknet::{ContractAddress};
-use array::{Array};
 
 #[derive(Copy, Drop, Serde, Hash, PartialEq)]
 struct Claim {
@@ -25,11 +25,11 @@ trait IAirdrop<TStorage> {
 
 #[starknet::contract]
 mod Airdrop {
-    use super::{IAirdrop, ContractAddress, Claim, IERC20Dispatcher};
+    use core::array::{ArrayTrait, SpanTrait};
+    use core::hash::{LegacyHash};
     use governance::interfaces::erc20::{IERC20DispatcherTrait};
-    use hash::{LegacyHash};
-    use array::{ArrayTrait, SpanTrait};
     use starknet::{ContractAddressIntoFelt252};
+    use super::{IAirdrop, ContractAddress, Claim, IERC20Dispatcher};
 
     fn lt<X, +Copy<X>, +Into<X, u256>>(lhs: @X, rhs: @X) -> bool {
         let a: u256 = (*lhs).into();
@@ -43,9 +43,9 @@ mod Airdrop {
             Option::Some(proof_element) => {
                 compute_pedersen_root(
                     if lt(@current, proof_element) {
-                        pedersen::pedersen(current, *proof_element)
+                        core::pedersen::pedersen(current, *proof_element)
                     } else {
-                        pedersen::pedersen(*proof_element, current)
+                        core::pedersen::pedersen(*proof_element, current)
                     },
                     proof
                 )

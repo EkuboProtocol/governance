@@ -1,29 +1,29 @@
 use core::array::SpanTrait;
-use array::{ArrayTrait};
-use debug::PrintTrait;
+use core::array::{ArrayTrait};
+use core::num::traits::zero::{Zero};
+use core::option::{OptionTrait};
+
+use core::result::{Result, ResultTrait};
+use core::serde::Serde;
+use core::traits::{TryInto};
+
+use governance::call_trait::{CallTrait};
+use governance::governance_token::{IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait};
+use governance::governance_token_test::{deploy as deploy_token};
 use governance::governor::{
     IGovernorDispatcher, IGovernorDispatcherTrait, Governor, Config, ProposalInfo,
     ProposalTimestamps
 };
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
-use governance::governance_token::{IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait};
-use governance::call_trait::{CallTrait};
-use starknet::account::{Call};
+use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait};
 use governance::timelock_test::{single_call, transfer_call, deploy as deploy_timelock};
 use governance::{test_utils as utils};
-use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait};
+use starknet::account::{Call};
+use starknet::class_hash::Felt252TryIntoClassHash;
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress,
     get_block_timestamp, testing::{set_block_timestamp, set_contract_address}
 };
-use starknet::class_hash::Felt252TryIntoClassHash;
-use traits::{TryInto};
-
-use result::{Result, ResultTrait};
-use option::{OptionTrait};
-use governance::governance_token_test::{deploy as deploy_token};
-use serde::Serde;
-use zeroable::{Zeroable};
 
 
 fn deploy(voting_token: IGovernanceTokenDispatcher, config: Config) -> IGovernorDispatcher {
@@ -668,7 +668,7 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
     set_block_timestamp(current_timestamp); // 20 seconds before voting starts
     // undelegate 20 seconds before voting starts, so only 1/3rd of voting power is counted for voter1
     set_contract_address(voter1);
-    token.delegate(Zeroable::zero());
+    token.delegate(Zero::zero());
 
     current_timestamp += 20;
     set_block_timestamp(current_timestamp); // voting starts

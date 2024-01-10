@@ -1,29 +1,28 @@
-use array::{ArrayTrait};
-use debug::PrintTrait;
-use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
-use governance::governor::{Config as GovernorConfig};
+use core::array::{ArrayTrait};
+use core::option::{OptionTrait};
+
+use core::result::{Result, ResultTrait};
+use core::traits::{TryInto};
+use governance::airdrop::{Airdrop};
+use governance::airdrop::{IAirdropDispatcherTrait};
 use governance::factory::{
     IFactoryDispatcher, IFactoryDispatcherTrait, Factory, DeploymentParameters, AirdropConfig,
     TimelockConfig,
 };
 use governance::governance_token::{GovernanceToken};
+use governance::governance_token::{IGovernanceTokenDispatcherTrait};
+use governance::governor::{Config as GovernorConfig};
 use governance::governor::{Governor};
+
+use governance::governor::{IGovernorDispatcherTrait};
+use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+use governance::timelock::{ITimelockDispatcherTrait};
 use governance::timelock::{Timelock};
-use governance::airdrop::{Airdrop};
+use starknet::class_hash::{Felt252TryIntoClassHash};
+use starknet::testing::{set_contract_address, set_block_timestamp, pop_log};
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress,
 };
-use starknet::class_hash::{Felt252TryIntoClassHash};
-use starknet::testing::{set_contract_address, set_block_timestamp, pop_log};
-use traits::{TryInto};
-
-use governance::governor::{IGovernorDispatcherTrait};
-use governance::governance_token::{IGovernanceTokenDispatcherTrait};
-use governance::airdrop::{IAirdropDispatcherTrait};
-use governance::timelock::{ITimelockDispatcherTrait};
-
-use result::{Result, ResultTrait};
-use option::{OptionTrait};
 
 fn deploy() -> IFactoryDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();

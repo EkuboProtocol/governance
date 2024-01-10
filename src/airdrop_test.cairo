@@ -1,24 +1,23 @@
-use governance::governance_token::{
-    IGovernanceTokenDispatcherTrait, GovernanceToken, IGovernanceTokenDispatcher
-};
-use array::{ArrayTrait};
-use debug::PrintTrait;
+use core::array::{ArrayTrait};
+use core::hash::{LegacyHash};
+use core::option::{OptionTrait};
+
+use core::result::{Result, ResultTrait};
+use core::traits::{TryInto, Into};
 use governance::airdrop::{
     IAirdropDispatcher, IAirdropDispatcherTrait, Airdrop, Airdrop::compute_pedersen_root, Claim,
     Airdrop::lt
 };
-use hash::{LegacyHash};
+use governance::governance_token::{
+    IGovernanceTokenDispatcherTrait, GovernanceToken, IGovernanceTokenDispatcher
+};
+use governance::governance_token_test::{deploy as deploy_token};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+use starknet::class_hash::Felt252TryIntoClassHash;
+use starknet::testing::{pop_log};
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress
 };
-use starknet::testing::{pop_log};
-use governance::governance_token_test::{deploy as deploy_token};
-use starknet::class_hash::Felt252TryIntoClassHash;
-use traits::{TryInto, Into};
-
-use result::{Result, ResultTrait};
-use option::{OptionTrait};
 
 fn deploy(token: ContractAddress, root: felt252) -> IAirdropDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
@@ -189,9 +188,9 @@ fn test_claim_two_claims() {
     let leaf_b = LegacyHash::hash(0, claim_b);
 
     let root = if lt(@leaf_a, @leaf_b) {
-        pedersen::pedersen(leaf_a, leaf_b)
+        core::pedersen::pedersen(leaf_a, leaf_b)
     } else {
-        pedersen::pedersen(leaf_b, leaf_a)
+        core::pedersen::pedersen(leaf_b, leaf_a)
     };
 
     let airdrop = deploy(token.contract_address, root);

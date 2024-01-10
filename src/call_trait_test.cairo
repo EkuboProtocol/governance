@@ -1,10 +1,9 @@
-use debug::PrintTrait;
+use core::array::{Array, ArrayTrait};
+use core::hash::{LegacyHash};
+use core::serde::{Serde};
 use governance::call_trait::{CallTrait, HashCall};
-use starknet::{contract_address_const, account::{Call}};
-use array::{Array, ArrayTrait};
 use governance::governance_token_test::{deploy as deploy_token};
-use serde::{Serde};
-use hash::{LegacyHash};
+use starknet::{contract_address_const, account::{Call}};
 
 #[test]
 #[available_gas(300000000)]

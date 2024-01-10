@@ -1,12 +1,12 @@
-use starknet::{ContractAddress, ContractAddressIntoFelt252};
-use array::{ArrayTrait, SpanTrait};
-use traits::{Into};
-use hash::{LegacyHash};
-use starknet::{SyscallResult, syscalls::call_contract_syscall};
+use core::array::{ArrayTrait, SpanTrait};
+use core::hash::{LegacyHash, HashStateTrait, Hash};
+use core::result::{ResultTrait};
+use core::traits::{Into};
 use starknet::account::{Call};
-use result::{ResultTrait};
+use starknet::{ContractAddress, ContractAddressIntoFelt252};
+use starknet::{SyscallResult, syscalls::call_contract_syscall};
 
-impl HashCall<S, +hash::HashStateTrait<S>, +Drop<S>, +Copy<S>> of hash::Hash<@Call, S> {
+impl HashCall<S, +HashStateTrait<S>, +Drop<S>, +Copy<S>> of Hash<@Call, S> {
     fn update_state(state: S, value: @Call) -> S {
         let mut s = state.update((*value.to).into()).update(*value.selector);
 

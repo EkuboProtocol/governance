@@ -1,18 +1,18 @@
-use array::{Array, ArrayTrait, SpanTrait};
-use debug::PrintTrait;
-use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait, Timelock};
+use core::array::{Array, ArrayTrait, SpanTrait};
+use core::option::{OptionTrait};
+use core::result::{Result, ResultTrait};
+use core::traits::{TryInto};
+
+use governance::governance_token::{IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait};
 use governance::governance_token_test::{deploy as deploy_token};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
-use governance::governance_token::{IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait};
+use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait, Timelock};
+use starknet::account::{Call};
+use starknet::class_hash::Felt252TryIntoClassHash;
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress,
     get_block_timestamp, testing::set_block_timestamp
 };
-use starknet::class_hash::Felt252TryIntoClassHash;
-use starknet::account::{Call};
-use traits::{TryInto};
-use result::{Result, ResultTrait};
-use option::{OptionTrait};
 
 fn deploy(owner: ContractAddress, delay: u64, window: u64) -> ITimelockDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();

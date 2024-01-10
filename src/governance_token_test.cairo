@@ -1,19 +1,19 @@
-use array::{ArrayTrait};
-use debug::PrintTrait;
-use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+use core::array::{ArrayTrait};
+use core::num::traits::zero::{Zero};
+use core::option::{OptionTrait};
+use core::result::{Result, ResultTrait};
+use core::traits::{TryInto};
+
 use governance::governance_token::{
     IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait, GovernanceToken,
     GovernanceToken::{DelegatedSnapshotStorePacking, DelegatedSnapshot},
 };
+use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+use starknet::class_hash::Felt252TryIntoClassHash;
+use starknet::testing::{set_contract_address, set_block_timestamp, pop_log};
 use starknet::{
     get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress,
 };
-use starknet::class_hash::Felt252TryIntoClassHash;
-use starknet::testing::{set_contract_address, set_block_timestamp, pop_log};
-use traits::{TryInto};
-
-use result::{Result, ResultTrait};
-use option::{OptionTrait};
 
 fn deploy(
     name: felt252, symbol: felt252, supply: u128
@@ -414,7 +414,7 @@ fn test_delegate_undelegate() {
     token.delegate(delegatee);
 
     set_block_timestamp(5);
-    token.delegate(Zeroable::zero());
+    token.delegate(Zero::zero());
     set_block_timestamp(8);
 
     assert(token.get_delegated(delegatee) == 0, 'delegated');

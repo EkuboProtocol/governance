@@ -1,10 +1,10 @@
+use core::array::{Array};
+use core::integer::{u128_safe_divmod, u128_as_non_zero};
+use core::option::{Option, OptionTrait};
+use core::traits::{Into, TryInto};
 use governance::governance_token::{IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait};
-use starknet::{ContractAddress, StorePacking};
-use array::{Array};
 use starknet::account::{Call};
-use option::{Option, OptionTrait};
-use integer::{u128_safe_divmod, u128_as_non_zero};
-use traits::{Into, TryInto};
+use starknet::{ContractAddress, StorePacking};
 
 #[derive(Copy, Drop, Serde, PartialEq)]
 struct ProposalTimestamps {
@@ -81,15 +81,15 @@ trait IGovernor<TStorage> {
 
 #[starknet::contract]
 mod Governor {
+    use core::hash::{LegacyHash};
+    use core::num::traits::zero::{Zero};
+    use governance::call_trait::{HashCall, CallTrait};
+    use governance::governance_token::{IGovernanceTokenDispatcherTrait};
+    use starknet::{get_block_timestamp, get_caller_address, contract_address_const};
     use super::{
         ContractAddress, Array, IGovernor, IGovernanceTokenDispatcher, Config, ProposalInfo, Call,
         ProposalTimestamps
     };
-    use starknet::{get_block_timestamp, get_caller_address, contract_address_const};
-    use governance::call_trait::{HashCall, CallTrait};
-    use governance::governance_token::{IGovernanceTokenDispatcherTrait};
-    use zeroable::{Zeroable};
-    use hash::{LegacyHash};
 
 
     #[derive(starknet::Event, Drop)]
@@ -295,7 +295,7 @@ mod Governor {
             let data = call.execute();
 
             self.emit(Executed { id, });
-            
+
             data
         }
 

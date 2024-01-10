@@ -1,9 +1,9 @@
-use starknet::{ContractAddress};
+use governance::airdrop::{IAirdropDispatcher};
+use governance::governance_token::{IGovernanceTokenDispatcher};
 use governance::governor::{Config as GovernorConfig};
 use governance::governor::{IGovernorDispatcher};
-use governance::governance_token::{IGovernanceTokenDispatcher};
-use governance::airdrop::{IAirdropDispatcher};
 use governance::timelock::{ITimelockDispatcher};
+use starknet::{ContractAddress};
 
 #[derive(Copy, Drop, Serde)]
 struct AirdropConfig {
@@ -43,13 +43,13 @@ trait IFactory<TContractState> {
 
 #[starknet::contract]
 mod Factory {
+    use core::result::{ResultTrait};
+    use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+    use starknet::{ClassHash, deploy_syscall, get_caller_address};
     use super::{
         IFactory, DeploymentParameters, DeploymentResult, ContractAddress,
         IGovernanceTokenDispatcher, IAirdropDispatcher, IGovernorDispatcher, ITimelockDispatcher
     };
-    use core::result::{ResultTrait};
-    use starknet::{ClassHash, deploy_syscall, get_caller_address};
-    use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 
     #[storage]
     struct Storage {

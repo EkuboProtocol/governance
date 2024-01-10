@@ -1,5 +1,5 @@
+use core::option::OptionTrait;
 use starknet::{contract_address_try_from_felt252, ContractAddress};
-use option::OptionTrait;
 
 fn recipient() -> ContractAddress {
     contract_address_try_from_felt252('recipient').unwrap()

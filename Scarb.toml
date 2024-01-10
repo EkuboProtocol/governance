@@ -4,9 +4,16 @@ version = "0.1.0"
 description = "Contracts for governance of Starknet-native protocols"
 homepage = "https://ekubo.org"
 cairo-version = "2.4.3"
+edition = '2023_10'
+
+
 
 [dependencies]
 starknet = "=2.4.3"
 
 [[target.starknet-contract]]
 allowed-libfuncs-list.name = "audited"
+casm = true
+
+[tool.fmt]
+sort-module-level-items = true

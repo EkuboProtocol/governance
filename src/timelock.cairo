@@ -1,6 +1,6 @@
 use core::result::ResultTrait;
-use starknet::{ContractAddress};
 use starknet::account::{Call};
+use starknet::{ContractAddress};
 
 #[starknet::interface]
 trait ITimelock<TStorage> {
@@ -30,17 +30,17 @@ trait ITimelock<TStorage> {
 
 #[starknet::contract]
 mod Timelock {
-    use super::{ITimelock, ContractAddress, Call};
+    use core::array::{ArrayTrait, SpanTrait};
+    use core::hash::{LegacyHash};
+    use core::num::traits::zero::{Zero};
+    use core::result::{ResultTrait};
+    use core::traits::{Into};
     use governance::call_trait::{CallTrait, HashCall};
-    use hash::{LegacyHash};
-    use array::{ArrayTrait, SpanTrait};
     use starknet::{
         get_caller_address, get_contract_address, SyscallResult, syscalls::call_contract_syscall,
         ContractAddressIntoFelt252, get_block_timestamp
     };
-    use result::{ResultTrait};
-    use traits::{Into};
-    use zeroable::{Zeroable};
+    use super::{ITimelock, ContractAddress, Call};
 
     #[derive(starknet::Event, Drop)]
     struct Queued {

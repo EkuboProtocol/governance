@@ -27,13 +27,13 @@ trait IGovernanceToken<TStorage> {
 
 #[starknet::contract]
 mod GovernanceToken {
+    use core::integer::{u256_safe_divmod, u256_as_non_zero};
+    use core::num::traits::zero::{Zero};
+    use core::option::{OptionTrait};
+    use core::traits::{Into, TryInto};
     use governance::interfaces::erc20::{IERC20};
-    use super::{IGovernanceToken, ContractAddress};
-    use traits::{Into, TryInto};
-    use option::{OptionTrait};
     use starknet::{get_caller_address, get_block_timestamp, StorePacking};
-    use zeroable::{Zeroable};
-    use integer::{u256_safe_divmod, u256_as_non_zero};
+    use super::{IGovernanceToken, ContractAddress};
 
     #[derive(Copy, Drop, PartialEq)]
     struct DelegatedSnapshot {
@@ -81,7 +81,7 @@ mod GovernanceToken {
         self
             .emit(
                 Transfer {
-                    from: Zeroable::zero(), to: get_caller_address(), value: total_supply.into()
+                    from: Zero::zero(), to: get_caller_address(), value: total_supply.into()
                 }
             );
     }
