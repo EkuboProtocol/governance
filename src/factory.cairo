@@ -45,7 +45,7 @@ trait IFactory<TContractState> {
 mod Factory {
     use core::result::{ResultTrait};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
-    use starknet::{ClassHash, deploy_syscall, get_caller_address};
+    use starknet::{ClassHash, deploy_syscall, get_caller_address, get_contract_address};
     use super::{
         IFactory, DeploymentParameters, DeploymentResult, ContractAddress,
         IGovernanceTokenDispatcher, IAirdropDispatcher, IGovernorDispatcher, ITimelockDispatcher
@@ -78,7 +78,8 @@ mod Factory {
         fn deploy(self: @ContractState, params: DeploymentParameters) -> DeploymentResult {
             let mut token_constructor_args: Array<felt252> = ArrayTrait::new();
             Serde::serialize(
-                @(params.name, params.symbol, params.total_supply), ref token_constructor_args
+                @(params.name, params.symbol, params.total_supply, get_contract_address()),
+                ref token_constructor_args
             );
 
             let (token_address, _) = deploy_syscall(

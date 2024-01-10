@@ -73,17 +73,18 @@ mod GovernanceToken {
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, name: felt252, symbol: felt252, total_supply: u128) {
+    fn constructor(
+        ref self: ContractState,
+        name: felt252,
+        symbol: felt252,
+        total_supply: u128,
+        recipient: ContractAddress
+    ) {
         self.name.write(name);
         self.symbol.write(symbol);
         self.total_supply.write(total_supply);
-        self.balances.write(get_caller_address(), total_supply);
-        self
-            .emit(
-                Transfer {
-                    from: Zero::zero(), to: get_caller_address(), value: total_supply.into()
-                }
-            );
+        self.balances.write(recipient, total_supply);
+        self.emit(Transfer { from: Zero::zero(), to: recipient, value: total_supply.into() });
     }
 
     #[derive(starknet::Event, Drop)]
