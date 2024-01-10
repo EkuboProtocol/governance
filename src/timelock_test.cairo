@@ -1,6 +1,9 @@
 use array::{Array, ArrayTrait, SpanTrait};
 use debug::PrintTrait;
-use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait, Timelock, TimelockConfig, TimelockConfigStorePacking, ExecutionState, ExecutionStateStorePacking};
+use governance::timelock::{
+    ITimelockDispatcher, ITimelockDispatcherTrait, Timelock, TimelockConfig,
+    TimelockConfigStorePacking, ExecutionState, ExecutionStateStorePacking
+};
 use governance::governance_token_test::{deploy as deploy_token};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::governance_token::{IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait};

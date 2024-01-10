@@ -295,7 +295,7 @@ mod Governor {
             let data = call.execute();
 
             self.emit(Executed { id, });
-            
+
             data
         }
 
