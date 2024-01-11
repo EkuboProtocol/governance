@@ -3,8 +3,45 @@ use core::traits::TryInto;
 use core::result::ResultTrait;
 use starknet::{ContractAddress};
 use starknet::account::{Call};
-use core::integer::{u128_to_felt252, u64_try_from_felt252, u128_safe_divmod};
 use starknet::storage_access::{StorePacking};
+use governance::utils::timestamps::{ThreeU64TupleStorePacking, TwoU64TupleStorePacking};
+
+#[derive(Copy, Drop, Serde)]
+struct ExecutionState {
+    started: u64,
+    executed: u64,
+    canceled: u64
+}
+
+impl ExecutionStateStorePacking of StorePacking<ExecutionState, felt252> {
+    #[inline(always)]
+    fn pack(value: ExecutionState) -> felt252 {
+        ThreeU64TupleStorePacking::pack((value.started, value.executed, value.canceled))
+    }
+    #[inline(always)]
+    fn unpack(value: felt252) -> ExecutionState {
+        let (started, executed, canceled) = ThreeU64TupleStorePacking::unpack(value);
+        ExecutionState { started, executed, canceled }
+    }
+}
+
+#[derive(Copy, Drop, Serde)]
+struct TimelockConfig {
+    delay: u64,
+    window: u64,
+}
+
+impl TimelockConfigStorePacking of StorePacking<TimelockConfig, u128> {
+    #[inline(always)]
+    fn pack(value: TimelockConfig) -> u128 {
+        TwoU64TupleStorePacking::pack((value.delay, value.window))
+    }
+    #[inline(always)]
+    fn unpack(value: u128) -> TimelockConfig {
+        let (delay, window) = TwoU64TupleStorePacking::unpack(value);
+        TimelockConfig { delay, window }
+    }
+}
 
 #[starknet::interface]
 trait ITimelock<TStorage> {
@@ -32,93 +69,17 @@ trait ITimelock<TStorage> {
     fn configure(ref self: TStorage, config: TimelockConfig);
 }
 
-
-const TWO_POW_64: u128 = 0x10000000000000000;
-
-#[inline(always)]
-impl ThreeU64TupleStorePacking of StorePacking<(u64, u64, u64), felt252> {
-    fn pack(value: (u64, u64, u64)) -> felt252 {
-        let (a, b, c) = value;
-        u256 { low: TwoU64TupleStorePacking::pack((a, b)), high: c.into() }.try_into().unwrap()
-    }
-    fn unpack(value: felt252) -> (u64, u64, u64) {
-        let u256_value: u256 = value.into();
-        let (a, b) = TwoU64TupleStorePacking::unpack(u256_value.low);
-        (a, b, (u256_value.high).try_into().unwrap())
-    }
-}
-
-#[inline(always)]
-impl TwoU64TupleStorePacking of StorePacking<(u64, u64), u128> {
-    fn pack(value: (u64, u64)) -> u128 {
-        let (a, b) = value;
-        a.into() + b.into() * TWO_POW_64
-    }
-    fn unpack(value: u128) -> (u64, u64) {
-        let (q, r) = u128_safe_divmod(value, TWO_POW_64.try_into().unwrap());
-        (r.try_into().unwrap(), q.try_into().unwrap())
-    }
-}
-
-#[derive(Copy, Drop, Serde)]
-struct ExecutionState {
-    started: u64,
-    executed: u64,
-    canceled: u64
-}
-
-#[inline(always)]
-impl ExecutionStateStorePacking of StorePacking<ExecutionState, felt252> {
-    fn pack(value: ExecutionState) -> felt252 {
-        ThreeU64TupleStorePacking::pack((value.started, value.executed, value.canceled))
-    }
-    fn unpack(value: felt252) -> ExecutionState {
-        let (started, executed, canceled) = ThreeU64TupleStorePacking::unpack(value);
-        ExecutionState { started, executed, canceled }
-    }
-}
-
-#[derive(Copy, Drop, Serde)]
-struct TimelockConfig {
-    delay: u64,
-    window: u64,
-}
-
-#[inline(always)]
-impl TimelockConfigStorePacking of StorePacking<TimelockConfig, u128> {
-    fn pack(value: TimelockConfig) -> u128 {
-        TwoU64TupleStorePacking::pack((value.delay, value.window))
-    }
-    fn unpack(value: u128) -> TimelockConfig {
-        let (delay, window) = TwoU64TupleStorePacking::unpack(value);
-        TimelockConfig { delay, window }
-    }
-}
-
 #[derive(Copy, Drop, Serde)]
 struct ExecutionWindow {
     earliest: u64,
     latest: u64
 }
 
-#[inline(always)]
-impl ExecutionWindowStorePacking of StorePacking<ExecutionWindow, u128> {
-    fn pack(value: ExecutionWindow) -> u128 {
-        TwoU64TupleStorePacking::pack((value.earliest, value.latest))
-    }
-    fn unpack(value: u128) -> ExecutionWindow {
-        let (earliest, latest) = TwoU64TupleStorePacking::unpack(value);
-        ExecutionWindow { earliest, latest, }
-    }
-}
-
-
 #[starknet::contract]
 mod Timelock {
     use super::{
         ITimelock, ContractAddress, Call, TimelockConfig, ExecutionState,
-        TimelockConfigStorePacking, ExecutionStateStorePacking, ExecutionWindow,
-        ExecutionWindowStorePacking, TwoU64TupleStorePacking, ThreeU64TupleStorePacking
+        TimelockConfigStorePacking, ExecutionStateStorePacking, ExecutionWindow
     };
     use governance::call_trait::{CallTrait, HashCall};
     use hash::{LegacyHash};
@@ -285,7 +246,7 @@ mod Timelock {
 
             let latest = earliest + configuration.window;
 
-            ExecutionWindow { earliest: earliest, latest: latest }
+            ExecutionWindow { earliest, latest }
         }
 
         fn get_owner(self: @ContractState) -> ContractAddress {

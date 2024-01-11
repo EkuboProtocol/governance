@@ -5,6 +5,7 @@ mod governance_token;
 mod governor;
 mod interfaces;
 mod timelock;
+mod utils;
 
 #[cfg(test)]
 mod airdrop_test;
