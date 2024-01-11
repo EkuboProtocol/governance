@@ -163,7 +163,6 @@ mod Timelock {
             let execution_state = self.execution_state.read(id);
 
             assert(execution_state.started.is_zero(), 'ALREADY_QUEUED');
-            assert(execution_state.canceled.is_non_zero(), 'PREVIOUSLY_CANCELED');
 
             self
                 .execution_state
