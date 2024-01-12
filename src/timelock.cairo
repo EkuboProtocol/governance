@@ -1,10 +1,10 @@
 use core::option::OptionTrait;
-use core::traits::TryInto;
 use core::result::ResultTrait;
+use core::traits::TryInto;
+use governance::utils::timestamps::{ThreeU64TupleStorePacking, TwoU64TupleStorePacking};
 use starknet::account::{Call};
 use starknet::contract_address::{ContractAddress};
 use starknet::storage_access::{StorePacking};
-use governance::utils::timestamps::{ThreeU64TupleStorePacking, TwoU64TupleStorePacking};
 
 #[derive(Copy, Drop, Serde)]
 struct ExecutionState {
@@ -77,16 +77,16 @@ struct ExecutionWindow {
 
 #[starknet::contract]
 mod Timelock {
-    use super::{
-        ITimelock, ContractAddress, Call, TimelockConfig, ExecutionState,
-        TimelockConfigStorePacking, ExecutionStateStorePacking, ExecutionWindow
-    };
+    use core::hash::LegacyHash;
     use governance::call_trait::{CallTrait, HashCall};
     use starknet::{
         get_caller_address, get_contract_address, SyscallResult, syscalls::call_contract_syscall,
         ContractAddressIntoFelt252, get_block_timestamp
     };
-    use core::hash::LegacyHash;
+    use super::{
+        ITimelock, ContractAddress, Call, TimelockConfig, ExecutionState,
+        TimelockConfigStorePacking, ExecutionStateStorePacking, ExecutionWindow
+    };
 
     #[derive(starknet::Event, Drop)]
     struct Queued {

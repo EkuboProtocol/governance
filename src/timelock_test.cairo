@@ -1,11 +1,11 @@
 use array::{Array, ArrayTrait, SpanTrait};
 use debug::PrintTrait;
+use governance::governance_token_test::{deploy as deploy_token, IGovernanceTokenDispatcher};
+use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::timelock::{
     ITimelockDispatcher, ITimelockDispatcherTrait, Timelock, TimelockConfig,
     TimelockConfigStorePacking, ExecutionState, ExecutionStateStorePacking
 };
-use governance::governance_token_test::{deploy as deploy_token, IGovernanceTokenDispatcher};
-use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use starknet::account::{Call};
 use starknet::class_hash::Felt252TryIntoClassHash;
 use starknet::{

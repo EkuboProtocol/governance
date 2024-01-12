@@ -2,8 +2,8 @@ use governance::airdrop::{IAirdropDispatcher};
 use governance::governance_token::{IGovernanceTokenDispatcher};
 use governance::governor::{Config as GovernorConfig};
 use governance::governor::{IGovernorDispatcher};
-use starknet::{ContractAddress};
 use governance::timelock::{ITimelockDispatcher, TimelockConfig};
+use starknet::{ContractAddress};
 
 #[derive(Copy, Drop, Serde)]
 struct AirdropConfig {
