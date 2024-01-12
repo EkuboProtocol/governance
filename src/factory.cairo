@@ -2,19 +2,13 @@ use governance::airdrop::{IAirdropDispatcher};
 use governance::governance_token::{IGovernanceTokenDispatcher};
 use governance::governor::{Config as GovernorConfig};
 use governance::governor::{IGovernorDispatcher};
-use governance::timelock::{ITimelockDispatcher};
 use starknet::{ContractAddress};
+use governance::timelock::{ITimelockDispatcher, TimelockConfig};
 
 #[derive(Copy, Drop, Serde)]
 struct AirdropConfig {
     root: felt252,
     total: u128,
-}
-
-#[derive(Copy, Drop, Serde)]
-struct TimelockConfig {
-    delay: u64,
-    window: u64,
 }
 
 #[derive(Copy, Drop, Serde)]

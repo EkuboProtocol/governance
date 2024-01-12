@@ -7,17 +7,14 @@ use governance::airdrop::{Airdrop};
 use governance::airdrop::{IAirdropDispatcherTrait};
 use governance::factory::{
     IFactoryDispatcher, IFactoryDispatcherTrait, Factory, DeploymentParameters, AirdropConfig,
-    TimelockConfig,
 };
 use governance::governance_token::{GovernanceToken};
 use governance::governance_token::{IGovernanceTokenDispatcherTrait};
 use governance::governor::{Config as GovernorConfig};
 use governance::governor::{Governor};
-
 use governance::governor::{IGovernorDispatcherTrait};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
-use governance::timelock::{ITimelockDispatcherTrait};
-use governance::timelock::{Timelock};
+use governance::timelock::{Timelock, ITimelockDispatcherTrait, TimelockConfig};
 use starknet::class_hash::{Felt252TryIntoClassHash};
 use starknet::testing::{set_contract_address, set_block_timestamp, pop_log};
 use starknet::{
@@ -99,5 +96,6 @@ fn test_deploy() {
             },
         'governor.config'
     );
-    assert(result.timelock.get_configuration() == (320, 60), 'timelock config');
+    assert(result.timelock.get_configuration().delay == 320, 'timelock config (delay)');
+    assert(result.timelock.get_configuration().window == 60, 'timelock config (window)');
 }
