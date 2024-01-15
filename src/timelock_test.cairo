@@ -1,12 +1,11 @@
-use core::array::{Array, ArrayTrait, SpanTrait};
-use core::option::{OptionTrait};
-use core::result::{Result, ResultTrait};
-use core::traits::{TryInto};
-
-use governance::governance_token::{IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait};
-use governance::governance_token_test::{deploy as deploy_token};
+use array::{Array, ArrayTrait, SpanTrait};
+use debug::PrintTrait;
+use governance::governance_token_test::{deploy as deploy_token, IGovernanceTokenDispatcher};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
-use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait, Timelock};
+use governance::timelock::{
+    ITimelockDispatcher, ITimelockDispatcherTrait, Timelock, TimelockConfig,
+    TimelockConfigStorePacking, ExecutionState, ExecutionStateStorePacking
+};
 use starknet::account::{Call};
 use starknet::class_hash::Felt252TryIntoClassHash;
 use starknet::{
@@ -30,9 +29,9 @@ fn deploy(owner: ContractAddress, delay: u64, window: u64) -> ITimelockDispatche
 fn test_deploy() {
     let timelock = deploy(contract_address_const::<2300>(), 10239, 3600);
 
-    let (window, delay) = timelock.get_configuration();
-    assert(window == 10239, 'window');
-    assert(delay == 3600, 'delay');
+    let configuration = timelock.get_configuration();
+    assert(configuration.delay == 10239, 'delay');
+    assert(configuration.window == 3600, 'window');
     let owner = timelock.get_owner();
     assert(owner == contract_address_const::<2300>(), 'owner');
 }
@@ -70,9 +69,9 @@ fn test_queue_execute() {
 
     let id = timelock.queue(single_call(transfer_call(token, recipient, 500_u256)));
 
-    let (earliest, latest) = timelock.get_execution_window(id);
-    assert(earliest == 86401, 'earliest');
-    assert(latest == 90001, 'latest');
+    let execution_window = timelock.get_execution_window(id);
+    assert(execution_window.earliest == 86401, 'earliest');
+    assert(execution_window.latest == 90001, 'latest');
 
     set_block_timestamp(86401);
 
@@ -134,8 +133,8 @@ fn test_queue_executed_too_early() {
 
     let id = timelock.queue(single_call(transfer_call(token, recipient, 500_u256)));
 
-    let (earliest, latest) = timelock.get_execution_window(id);
-    set_block_timestamp(earliest - 1);
+    let execution_window = timelock.get_execution_window(id);
+    set_block_timestamp(execution_window.earliest - 1);
     timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
 }
 
@@ -153,7 +152,7 @@ fn test_queue_executed_too_late() {
 
     let id = timelock.queue(single_call(transfer_call(token, recipient, 500_u256)));
 
-    let (earliest, latest) = timelock.get_execution_window(id);
-    set_block_timestamp(latest);
+    let execution_window = timelock.get_execution_window(id);
+    set_block_timestamp(execution_window.latest);
     timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
 }

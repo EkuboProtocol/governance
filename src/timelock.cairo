@@ -1,6 +1,47 @@
+use core::option::OptionTrait;
 use core::result::ResultTrait;
+use core::traits::TryInto;
+use governance::utils::timestamps::{ThreeU64TupleStorePacking, TwoU64TupleStorePacking};
 use starknet::account::{Call};
-use starknet::{ContractAddress};
+use starknet::contract_address::{ContractAddress};
+use starknet::storage_access::{StorePacking};
+
+#[derive(Copy, Drop, Serde)]
+struct ExecutionState {
+    started: u64,
+    executed: u64,
+    canceled: u64
+}
+
+impl ExecutionStateStorePacking of StorePacking<ExecutionState, felt252> {
+    #[inline(always)]
+    fn pack(value: ExecutionState) -> felt252 {
+        ThreeU64TupleStorePacking::pack((value.started, value.executed, value.canceled))
+    }
+    #[inline(always)]
+    fn unpack(value: felt252) -> ExecutionState {
+        let (started, executed, canceled) = ThreeU64TupleStorePacking::unpack(value);
+        ExecutionState { started, executed, canceled }
+    }
+}
+
+#[derive(Copy, Drop, Serde)]
+struct TimelockConfig {
+    delay: u64,
+    window: u64,
+}
+
+impl TimelockConfigStorePacking of StorePacking<TimelockConfig, u128> {
+    #[inline(always)]
+    fn pack(value: TimelockConfig) -> u128 {
+        TwoU64TupleStorePacking::pack((value.delay, value.window))
+    }
+    #[inline(always)]
+    fn unpack(value: u128) -> TimelockConfig {
+        let (delay, window) = TwoU64TupleStorePacking::unpack(value);
+        TimelockConfig { delay, window }
+    }
+}
 
 #[starknet::interface]
 trait ITimelock<TStorage> {
@@ -14,33 +55,38 @@ trait ITimelock<TStorage> {
     fn execute(ref self: TStorage, calls: Span<Call>) -> Array<Span<felt252>>;
 
     // Return the execution window, i.e. the start and end timestamp in which the call can be executed
-    fn get_execution_window(self: @TStorage, id: felt252) -> (u64, u64);
+    fn get_execution_window(self: @TStorage, id: felt252) -> ExecutionWindow;
 
     // Get the current owner
     fn get_owner(self: @TStorage) -> ContractAddress;
 
     // Returns the delay and the window for call execution
-    fn get_configuration(self: @TStorage) -> (u64, u64);
+    fn get_configuration(self: @TStorage) -> TimelockConfig;
 
     // Transfer ownership, i.e. the address that can queue and cancel calls. This must be self-called via #queue.
     fn transfer(ref self: TStorage, to: ContractAddress);
     // Configure the delay and the window for call execution. This must be self-called via #queue.
-    fn configure(ref self: TStorage, delay: u64, window: u64);
+    fn configure(ref self: TStorage, config: TimelockConfig);
+}
+
+#[derive(Copy, Drop, Serde)]
+struct ExecutionWindow {
+    earliest: u64,
+    latest: u64
 }
 
 #[starknet::contract]
 mod Timelock {
-    use core::array::{ArrayTrait, SpanTrait};
-    use core::hash::{LegacyHash};
-    use core::num::traits::zero::{Zero};
-    use core::result::{ResultTrait};
-    use core::traits::{Into};
+    use core::hash::LegacyHash;
     use governance::call_trait::{CallTrait, HashCall};
     use starknet::{
         get_caller_address, get_contract_address, SyscallResult, syscalls::call_contract_syscall,
         ContractAddressIntoFelt252, get_block_timestamp
     };
-    use super::{ITimelock, ContractAddress, Call};
+    use super::{
+        ITimelock, ContractAddress, Call, TimelockConfig, ExecutionState,
+        TimelockConfigStorePacking, ExecutionStateStorePacking, ExecutionWindow
+    };
 
     #[derive(starknet::Event, Drop)]
     struct Queued {
@@ -69,18 +115,15 @@ mod Timelock {
     #[storage]
     struct Storage {
         owner: ContractAddress,
-        delay: u64,
-        window: u64,
-        execution_started: LegacyMap<felt252, u64>,
-        executed: LegacyMap<felt252, u64>,
-        canceled: LegacyMap<felt252, u64>,
+        config: TimelockConfig,
+        // started_executed_canceled
+        execution_state: LegacyMap<felt252, ExecutionState>,
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, owner: ContractAddress, delay: u64, window: u64) {
+    fn constructor(ref self: ContractState, owner: ContractAddress, config: TimelockConfig) {
         self.owner.write(owner);
-        self.delay.write(delay);
-        self.window.write(window);
+        self.config.write(config);
     }
 
     // Take a list of calls and convert it to a unique identifier for the execution
@@ -113,10 +156,15 @@ mod Timelock {
             self.check_owner();
 
             let id = to_id(calls);
+            let execution_state = self.execution_state.read(id);
 
-            assert(self.execution_started.read(id).is_zero(), 'ALREADY_QUEUED');
+            assert(execution_state.started.is_zero(), 'ALREADY_QUEUED');
 
-            self.execution_started.write(id, get_block_timestamp());
+            self
+                .execution_state
+                .write(
+                    id, ExecutionState { started: get_block_timestamp(), executed: 0, canceled: 0 }
+                );
 
             self.emit(Queued { id, calls, });
 
@@ -125,10 +173,20 @@ mod Timelock {
 
         fn cancel(ref self: ContractState, id: felt252) {
             self.check_owner();
-            assert(self.execution_started.read(id).is_non_zero(), 'DOES_NOT_EXIST');
-            assert(self.executed.read(id).is_zero(), 'ALREADY_EXECUTED');
+            let execution_state = self.execution_state.read(id);
+            assert(execution_state.started.is_non_zero(), 'DOES_NOT_EXIST');
+            assert(execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
 
-            self.execution_started.write(id, 0);
+            self
+                .execution_state
+                .write(
+                    id,
+                    ExecutionState {
+                        started: 0,
+                        executed: execution_state.executed,
+                        canceled: execution_state.canceled
+                    }
+                );
 
             self.emit(Canceled { id, });
         }
@@ -136,15 +194,26 @@ mod Timelock {
         fn execute(ref self: ContractState, mut calls: Span<Call>) -> Array<Span<felt252>> {
             let id = to_id(calls);
 
-            assert(self.executed.read(id).is_zero(), 'ALREADY_EXECUTED');
+            let execution_state = self.execution_state.read(id);
 
-            let (earliest, latest) = self.get_execution_window(id);
+            assert(execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
+
+            let execution_window = self.get_execution_window(id);
             let time_current = get_block_timestamp();
 
-            assert(time_current >= earliest, 'TOO_EARLY');
-            assert(time_current < latest, 'TOO_LATE');
+            assert(time_current >= execution_window.earliest, 'TOO_EARLY');
+            assert(time_current < execution_window.latest, 'TOO_LATE');
 
-            self.executed.write(id, time_current);
+            self
+                .execution_state
+                .write(
+                    id,
+                    ExecutionState {
+                        started: execution_state.started,
+                        executed: time_current,
+                        canceled: execution_state.canceled
+                    }
+                );
 
             let mut results: Array<Span<felt252>> = ArrayTrait::new();
 
@@ -160,26 +229,27 @@ mod Timelock {
             results
         }
 
-        fn get_execution_window(self: @ContractState, id: felt252) -> (u64, u64) {
-            let start_time = self.execution_started.read(id);
+        fn get_execution_window(self: @ContractState, id: felt252) -> ExecutionWindow {
+            let start_time = self.execution_state.read(id).started;
 
             // this is how we prevent the 0 timestamp from being considered valid
             assert(start_time != 0, 'DOES_NOT_EXIST');
 
-            let (delay, window) = (self.get_configuration());
+            let configuration = (self.get_configuration());
 
-            let earliest = start_time + delay;
-            let latest = earliest + window;
+            let earliest = start_time + configuration.delay;
 
-            (earliest, latest)
+            let latest = earliest + configuration.window;
+
+            ExecutionWindow { earliest, latest }
         }
 
         fn get_owner(self: @ContractState) -> ContractAddress {
             self.owner.read()
         }
 
-        fn get_configuration(self: @ContractState) -> (u64, u64) {
-            (self.delay.read(), self.window.read())
+        fn get_configuration(self: @ContractState) -> TimelockConfig {
+            self.config.read()
         }
 
         fn transfer(ref self: ContractState, to: ContractAddress) {
@@ -188,11 +258,10 @@ mod Timelock {
             self.owner.write(to);
         }
 
-        fn configure(ref self: ContractState, delay: u64, window: u64) {
+        fn configure(ref self: ContractState, config: TimelockConfig) {
             self.check_self_call();
 
-            self.delay.write(delay);
-            self.window.write(window);
+            self.config.write(config);
         }
     }
 }
