@@ -78,6 +78,7 @@ struct ExecutionWindow {
 #[starknet::contract]
 mod Timelock {
     use core::hash::LegacyHash;
+    use core::num::traits::zero::{Zero};
     use governance::call_trait::{CallTrait, HashCall};
     use starknet::{
         get_caller_address, get_contract_address, SyscallResult, syscalls::call_contract_syscall,
@@ -87,7 +88,6 @@ mod Timelock {
         ITimelock, ContractAddress, Call, TimelockConfig, ExecutionState,
         TimelockConfigStorePacking, ExecutionStateStorePacking, ExecutionWindow
     };
-    use core::num::traits::zero::{Zero};
 
 
     #[derive(starknet::Event, Drop)]
