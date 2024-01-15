@@ -87,6 +87,8 @@ mod Timelock {
         ITimelock, ContractAddress, Call, TimelockConfig, ExecutionState,
         TimelockConfigStorePacking, ExecutionStateStorePacking, ExecutionWindow
     };
+    use core::num::traits::zero::{Zero};
+
 
     #[derive(starknet::Event, Drop)]
     struct Queued {

@@ -1,5 +1,4 @@
-use array::{Array, ArrayTrait, SpanTrait};
-use debug::PrintTrait;
+use core::array::{Array, ArrayTrait, SpanTrait};
 use governance::governance_token_test::{deploy as deploy_token, IGovernanceTokenDispatcher};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::timelock::{
