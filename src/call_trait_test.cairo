@@ -44,9 +44,7 @@ fn test_hash_address_entry_point_one() {
 #[test]
 #[available_gas(300000000)]
 fn test_hash_address_data_one() {
-    let mut calldata: Array<felt252> = ArrayTrait::new();
-    calldata.append(1);
-    let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: calldata };
+    let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: array![1] };
 
     assert(
         LegacyHash::hash(
@@ -59,10 +57,7 @@ fn test_hash_address_data_one() {
 #[test]
 #[available_gas(300000000)]
 fn test_hash_address_data_one_two() {
-    let mut calldata: Array<felt252> = ArrayTrait::new();
-    calldata.append(1);
-    calldata.append(2);
-    let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: calldata };
+    let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: array![1, 2] };
 
     assert(
         LegacyHash::hash(

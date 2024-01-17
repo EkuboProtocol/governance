@@ -50,9 +50,7 @@ fn transfer_call(
 }
 
 fn single_call(call: Call) -> Span<Call> {
-    let mut calls: Array<Call> = ArrayTrait::new();
-    calls.append(call);
-    return calls.span();
+    return array![call].span();
 }
 
 #[test]

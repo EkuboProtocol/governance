@@ -33,11 +33,9 @@ fn deploy(token: ContractAddress, root: felt252) -> IAirdropDispatcher {
 #[test]
 #[available_gas(3000000)]
 fn test_compute_pedersen_root_example_lt() {
-    let mut arr = ArrayTrait::new();
-    arr.append(1235);
     assert(
         compute_pedersen_root(
-            1234, arr.span()
+            1234, array![1235].span()
         ) == 0x24e78083d17aa2e76897f44cfdad51a09276dd00a3468adc7e635d76d432a3b,
         'example'
     );
@@ -46,11 +44,9 @@ fn test_compute_pedersen_root_example_lt() {
 #[test]
 #[available_gas(3000000)]
 fn test_compute_pedersen_root_example_gt() {
-    let mut arr = ArrayTrait::new();
-    arr.append(1233);
     assert(
         compute_pedersen_root(
-            1234, arr.span()
+            1234, array![1233].span()
         ) == 0x2488766c14e4bfd8299750797eeb07b7045398df03ea13cf33f0c0c6645d5f9,
         'example'
     );
@@ -59,11 +55,9 @@ fn test_compute_pedersen_root_example_gt() {
 #[test]
 #[available_gas(3000000)]
 fn test_compute_pedersen_root_example_eq() {
-    let mut arr = ArrayTrait::new();
-    arr.append(1234);
     assert(
         compute_pedersen_root(
-            1234, arr.span()
+            1234, array![1234].span()
         ) == 0x7a7148565b76ae90576733160aa3194a41ce528ee1434a64a9da50dcbf6d3ca,
         'example'
     );
@@ -72,19 +66,15 @@ fn test_compute_pedersen_root_example_eq() {
 #[test]
 #[available_gas(3000000)]
 fn test_compute_pedersen_root_empty() {
-    let mut arr = ArrayTrait::new();
-    assert(compute_pedersen_root(1234, arr.span()) == 1234, 'example');
+    assert(compute_pedersen_root(1234, array![].span()) == 1234, 'example');
 }
 
 #[test]
 #[available_gas(3000000)]
 fn test_compute_pedersen_root_recursive() {
-    let mut arr = ArrayTrait::new();
-    arr.append(1234);
-    arr.append(1234);
     assert(
         compute_pedersen_root(
-            1234, arr.span()
+            1234, array![1234, 1234].span()
         ) == 0xc92a4f7aa8979b0202770b378e46de07bebe0836f8ceece5a47ccf3929c6b0,
         'example'
     );
@@ -151,10 +141,7 @@ fn test_invalid_proof_single_entry() {
     let airdrop = deploy(token.contract_address, leaf);
 
     token.transfer(airdrop.contract_address, 6789);
-    let mut proof = ArrayTrait::new();
-    proof.append(1);
-
-    airdrop.claim(claim, proof);
+    airdrop.claim(claim, array![1]);
 }
 
 #[test]
@@ -196,15 +183,11 @@ fn test_claim_two_claims() {
     let airdrop = deploy(token.contract_address, root);
     token.transfer(airdrop.contract_address, 6789 + 789 + 1);
 
-    let mut proof_a = ArrayTrait::new();
-    proof_a.append(leaf_b);
-    airdrop.claim(claim_a, proof_a);
+    airdrop.claim(claim_a, array![leaf_b]);
     assert(token.balance_of(airdrop.contract_address) == (789 + 1), 'claim a taken');
     assert(token.balance_of(claim_a.claimee) == 6789, 'received');
 
-    let mut proof_b = ArrayTrait::new();
-    proof_b.append(leaf_a);
-    airdrop.claim(claim_b, proof_b);
+    airdrop.claim(claim_b, array![leaf_a]);
     assert(token.balance_of(airdrop.contract_address) == 1, 'claim b taken');
     assert(token.balance_of(claim_b.claimee) == 789, 'received');
 }

@@ -11,7 +11,7 @@ struct Claim {
 #[starknet::interface]
 trait IAirdrop<TStorage> {
     // Claims the given allotment of tokens
-    fn claim(ref self: TStorage, claim: Claim, proof: Array::<felt252>);
+    fn claim(ref self: TStorage, claim: Claim, proof: Array<felt252>);
 
     // Return the root of the airdrop
     fn get_root(self: @TStorage) -> felt252;
