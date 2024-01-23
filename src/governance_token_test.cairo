@@ -9,13 +9,13 @@ use governance::governance_token::{
     GovernanceToken::{DelegatedSnapshotStorePacking, DelegatedSnapshot},
 };
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
-use starknet::class_hash::Felt252TryIntoClassHash;
 use starknet::testing::{set_contract_address, set_block_timestamp, pop_log};
 use starknet::{
-    get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress,
+    get_contract_address, syscalls::deploy_syscall, ClassHash, contract_address_const,
+    ContractAddress,
 };
 
-fn deploy(
+pub fn deploy(
     name: felt252, symbol: felt252, supply: u128
 ) -> (IGovernanceTokenDispatcher, IERC20Dispatcher) {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
@@ -129,14 +129,14 @@ fn test_deploy_constructor() {
 #[test]
 #[available_gas(3000000)]
 fn test_transfer_entire_balance() {
-    let (token, erc20) = deploy('Governor Token', 'GT', 12345);
+    let (_, erc20) = deploy('Governor Token', 'GT', 12345);
 
     let recipient = contract_address_const::<12345>();
     erc20.transfer(recipient, 12345);
     assert(erc20.balance_of(get_contract_address()) == 0, 'zero after');
     assert(erc20.balance_of(recipient) == 12345, '12345 after');
 
-    pop_log::<GovernanceToken::Transfer>(erc20.contract_address);
+    pop_log::<GovernanceToken::Transfer>(erc20.contract_address).unwrap();
     let log = pop_log::<GovernanceToken::Transfer>(erc20.contract_address).unwrap();
     assert(log.from == get_contract_address(), 'from');
     assert(log.to == recipient, 'to');
@@ -155,7 +155,7 @@ fn test_transfer_lt_total_balance() {
     assert(erc20.balance_of(recipient) == 45, '45 transferred');
     assert(erc20.balanceOf(recipient) == 45, '45 transferred');
 
-    pop_log::<GovernanceToken::Transfer>(erc20.contract_address);
+    pop_log::<GovernanceToken::Transfer>(erc20.contract_address).unwrap();
     let log = pop_log::<GovernanceToken::Transfer>(erc20.contract_address).unwrap();
     assert(log.from == get_contract_address(), 'from');
     assert(log.to == recipient, 'to');
@@ -176,7 +176,7 @@ fn test_transfer_gt_total_balance() {
 #[available_gas(3000000)]
 #[should_panic(expected: ('TRANSFER_AMOUNT_OVERFLOW', 'ENTRYPOINT_FAILED'))]
 fn test_transfer_overflow() {
-    let (token, erc20) = deploy('Governor Token', 'GT', 12345);
+    let (_, erc20) = deploy('Governor Token', 'GT', 12345);
 
     let recipient = contract_address_const::<12345>();
     erc20.transfer(recipient, u256 { high: 1, low: 0 });
@@ -186,7 +186,7 @@ fn test_transfer_overflow() {
 #[available_gas(3000000)]
 #[should_panic(expected: ('ORDER', 'ENTRYPOINT_FAILED'))]
 fn test_get_average_delegated_order_same() {
-    let (token, erc20) = deploy('Governor Token', 'GT', 12345);
+    let (token, _) = deploy('Governor Token', 'GT', 12345);
 
     token.get_average_delegated(contract_address_const::<12345>(), 0, 0);
 }
@@ -195,7 +195,7 @@ fn test_get_average_delegated_order_same() {
 #[available_gas(3000000)]
 #[should_panic(expected: ('ORDER', 'ENTRYPOINT_FAILED'))]
 fn test_get_average_delegated_order_backwards() {
-    let (token, erc20) = deploy('Governor Token', 'GT', 12345);
+    let (token, _) = deploy('Governor Token', 'GT', 12345);
 
     token.get_average_delegated(contract_address_const::<12345>(), 1, 0);
 }
@@ -204,7 +204,7 @@ fn test_get_average_delegated_order_backwards() {
 #[available_gas(3000000)]
 #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
 fn test_get_average_delegated_future() {
-    let (token, erc20) = deploy('Governor Token', 'GT', 12345);
+    let (token, _) = deploy('Governor Token', 'GT', 12345);
 
     token.get_average_delegated(contract_address_const::<12345>(), 0, 1);
 }
@@ -213,7 +213,7 @@ fn test_get_average_delegated_future() {
 #[available_gas(3000000)]
 #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
 fn test_get_average_delegated_future_non_zero() {
-    let (token, erc20) = deploy('Governor Token', 'GT', 12345);
+    let (token, _) = deploy('Governor Token', 'GT', 12345);
 
     set_block_timestamp(5);
 
@@ -223,7 +223,7 @@ fn test_get_average_delegated_future_non_zero() {
 #[test]
 #[available_gas(3000000)]
 fn test_approve_sets_allowance() {
-    let (token, erc20) = deploy('Governor Token', 'GT', 12345);
+    let (_, erc20) = deploy('Governor Token', 'GT', 12345);
 
     let spender = contract_address_const::<12345>();
     erc20.approve(spender, 5151);
@@ -233,7 +233,7 @@ fn test_approve_sets_allowance() {
 #[test]
 #[available_gas(3000000)]
 fn test_approve_allows_transfer_from() {
-    let (token, erc20) = deploy('Governor Token', 'GT', 12345);
+    let (_, erc20) = deploy('Governor Token', 'GT', 12345);
 
     let owner = get_contract_address();
     let spender = contract_address_const::<12345>();
@@ -251,7 +251,7 @@ fn test_approve_allows_transfer_from() {
 #[available_gas(3000000)]
 #[should_panic(expected: ('TRANSFER_FROM_ALLOWANCE', 'ENTRYPOINT_FAILED'))]
 fn test_transfer_from_insufficient_allowance() {
-    let (token, erc20) = deploy('Governor Token', 'GT', 12345);
+    let (_, erc20) = deploy('Governor Token', 'GT', 12345);
 
     let owner = get_contract_address();
     let spender = contract_address_const::<12345>();
@@ -265,17 +265,16 @@ fn test_transfer_from_insufficient_allowance() {
 #[available_gas(3000000)]
 #[should_panic(expected: ('APPROVE_AMOUNT_OVERFLOW', 'ENTRYPOINT_FAILED'))]
 fn test_approve_overflow() {
-    let (token, erc20) = deploy('Governor Token', 'GT', 12345);
+    let (_, erc20) = deploy('Governor Token', 'GT', 12345);
 
     let spender = contract_address_const::<12345>();
-    let recipient = contract_address_const::<12346>();
     erc20.approve(spender, u256 { high: 1, low: 0 });
 }
 
 #[test]
 #[available_gas(30000000)]
 fn test_delegate_count_lags() {
-    let (token, erc20) = deploy('Governor Token', 'GT', 12345);
+    let (token, _) = deploy('Governor Token', 'GT', 12345);
     let delegatee = contract_address_const::<12345>();
 
     set_block_timestamp(2);
@@ -296,7 +295,7 @@ fn test_delegate_count_lags() {
 #[test]
 #[available_gas(30000000)]
 fn test_get_delegated_cumulative() {
-    let (token, erc20) = deploy('Governor Token', 'GT', 12345);
+    let (token, _) = deploy('Governor Token', 'GT', 12345);
     let delegatee = contract_address_const::<12345>();
 
     set_block_timestamp(2);
@@ -313,7 +312,7 @@ fn test_get_delegated_cumulative() {
 #[available_gas(30000000)]
 #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
 fn test_get_delegated_cumulative_fails_future() {
-    let (token, erc20) = deploy('Governor Token', 'GT', 12345);
+    let (token, _) = deploy('Governor Token', 'GT', 12345);
 
     token.get_delegated_cumulative(delegate: contract_address_const::<12345>(), timestamp: 1);
 }
@@ -322,7 +321,7 @@ fn test_get_delegated_cumulative_fails_future() {
 #[available_gas(30000000)]
 #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
 fn test_get_delegated_cumulative_fails_future_non_zero_ts() {
-    let (token, erc20) = deploy('Governor Token', 'GT', 12345);
+    let (token, _) = deploy('Governor Token', 'GT', 12345);
 
     set_block_timestamp(5);
 
@@ -333,7 +332,7 @@ fn test_get_delegated_cumulative_fails_future_non_zero_ts() {
 #[available_gas(30000000)]
 #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
 fn test_get_delegated_at_fails_future() {
-    let (token, erc20) = deploy('Governor Token', 'GT', 12345);
+    let (token, _) = deploy('Governor Token', 'GT', 12345);
 
     token.get_delegated_at(delegate: contract_address_const::<12345>(), timestamp: 1);
 }
@@ -342,7 +341,7 @@ fn test_get_delegated_at_fails_future() {
 #[available_gas(30000000)]
 #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
 fn test_get_delegated_at_fails_future_non_zero_ts() {
-    let (token, erc20) = deploy('Governor Token', 'GT', 12345);
+    let (token, _) = deploy('Governor Token', 'GT', 12345);
 
     set_block_timestamp(5);
 
@@ -352,7 +351,7 @@ fn test_get_delegated_at_fails_future_non_zero_ts() {
 #[test]
 #[available_gas(30000000)]
 fn test_get_average_delegated() {
-    let (token, erc20) = deploy('Governor Token', 'GT', 12345);
+    let (token, _) = deploy('Governor Token', 'GT', 12345);
     let delegatee = contract_address_const::<12345>();
 
     set_block_timestamp(10);
@@ -407,7 +406,7 @@ fn test_transfer_delegates_moved() {
 #[test]
 #[available_gas(30000000)]
 fn test_delegate_undelegate() {
-    let (token, erc20) = deploy('Governor Token', 'GT', 12345);
+    let (token, _) = deploy('Governor Token', 'GT', 12345);
     let delegatee = contract_address_const::<12345>();
 
     set_block_timestamp(2);

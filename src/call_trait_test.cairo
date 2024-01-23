@@ -8,7 +8,7 @@ use starknet::{contract_address_const, account::{Call}};
 #[test]
 #[available_gas(300000000)]
 fn test_hash_empty() {
-    let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: ArrayTrait::new() };
+    let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: array![].span() };
     assert(
         LegacyHash::hash(
             0, @call
@@ -20,7 +20,7 @@ fn test_hash_empty() {
 #[test]
 #[available_gas(300000000)]
 fn test_hash_address_one() {
-    let call = Call { to: contract_address_const::<1>(), selector: 0, calldata: ArrayTrait::new() };
+    let call = Call { to: contract_address_const::<1>(), selector: 0, calldata: array![].span() };
     assert(
         LegacyHash::hash(
             0, @call
@@ -32,7 +32,7 @@ fn test_hash_address_one() {
 #[test]
 #[available_gas(300000000)]
 fn test_hash_address_entry_point_one() {
-    let call = Call { to: contract_address_const::<0>(), selector: 1, calldata: ArrayTrait::new() };
+    let call = Call { to: contract_address_const::<0>(), selector: 1, calldata: array![].span() };
     assert(
         LegacyHash::hash(
             0, @call
@@ -44,7 +44,7 @@ fn test_hash_address_entry_point_one() {
 #[test]
 #[available_gas(300000000)]
 fn test_hash_address_data_one() {
-    let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: array![1] };
+    let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: array![1].span() };
 
     assert(
         LegacyHash::hash(
@@ -57,7 +57,9 @@ fn test_hash_address_data_one() {
 #[test]
 #[available_gas(300000000)]
 fn test_hash_address_data_one_two() {
-    let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: array![1, 2] };
+    let call = Call {
+        to: contract_address_const::<0>(), selector: 0, calldata: array![1, 2].span()
+    };
 
     assert(
         LegacyHash::hash(
@@ -71,8 +73,7 @@ fn test_hash_address_data_one_two() {
 #[available_gas(300000000)]
 #[should_panic(expected: ('CONTRACT_NOT_DEPLOYED',))]
 fn test_execute_contract_not_deployed() {
-    let mut calldata: Array<felt252> = ArrayTrait::new();
-    let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: calldata };
+    let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: array![].span() };
     call.execute();
 }
 
@@ -83,8 +84,7 @@ fn test_execute_contract_not_deployed() {
 fn test_execute_invalid_entry_point() {
     let (token, _) = deploy_token('TIMELOCK', 'TL', 1);
 
-    let mut calldata: Array<felt252> = ArrayTrait::new();
-    let call = Call { to: token.contract_address, selector: 0, calldata: calldata };
+    let call = Call { to: token.contract_address, selector: 0, calldata: array![].span() };
 
     call.execute();
 }
@@ -96,12 +96,11 @@ fn test_execute_invalid_entry_point() {
 fn test_execute_invalid_call_data_too_short() {
     let (token, _) = deploy_token('TIMELOCK', 'TL', 1);
 
-    let mut calldata: Array<felt252> = ArrayTrait::new();
     let call = Call {
         to: token.contract_address,
         // transfer
         selector: 0x83afd3f4caedc6eebf44246fe54e38c95e3179a5ec9ea81740eca5b482d12e,
-        calldata: calldata
+        calldata: array![].span()
     };
 
     call.execute();
@@ -113,14 +112,14 @@ fn test_execute_invalid_call_data_too_short() {
 fn test_execute_valid_call_data() {
     let (token, _) = deploy_token('TIMELOCK', 'TL', 1);
 
-    let mut calldata: Array<felt252> = ArrayTrait::new();
+    let mut calldata: Array<felt252> = array![];
     Serde::serialize(@(contract_address_const::<1>(), 1_u256), ref calldata);
 
     let call = Call {
         to: token.contract_address,
         // transfer
         selector: 0x83afd3f4caedc6eebf44246fe54e38c95e3179a5ec9ea81740eca5b482d12e,
-        calldata: calldata
+        calldata: calldata.span()
     };
 
     call.execute();

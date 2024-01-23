@@ -1,17 +1,17 @@
 use core::array::{Array};
-use core::integer::{u128_safe_divmod, u128_as_non_zero};
+use core::integer::{u128_safe_divmod};
 use core::option::{Option, OptionTrait};
 use core::traits::{Into, TryInto};
 use governance::governance_token::{IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait};
 use starknet::account::{Call};
-use starknet::{ContractAddress, StorePacking};
+use starknet::{ContractAddress, storage_access::{StorePacking}};
 
 #[derive(Copy, Drop, Serde, PartialEq)]
-struct ProposalTimestamps {
+pub struct ProposalTimestamps {
     // the timestamp when the proposal was created
-    creation: u64,
+    pub creation: u64,
     // the timestamp when the proposal was executed
-    executed: u64,
+    pub executed: u64,
 }
 
 const TWO_POW_64: u128 = 0x10000000000000000_u128;
@@ -22,7 +22,7 @@ impl ProposalTimestampsStorePacking of StorePacking<ProposalTimestamps, u128> {
     }
 
     fn unpack(value: u128) -> ProposalTimestamps {
-        let (executed, creation) = u128_safe_divmod(value, u128_as_non_zero(TWO_POW_64));
+        let (executed, creation) = u128_safe_divmod(value, TWO_POW_64.try_into().unwrap());
         ProposalTimestamps {
             creation: creation.try_into().unwrap(), executed: executed.try_into().unwrap()
         }
@@ -30,33 +30,33 @@ impl ProposalTimestampsStorePacking of StorePacking<ProposalTimestamps, u128> {
 }
 
 #[derive(Copy, Drop, Serde, starknet::Store, PartialEq)]
-struct ProposalInfo {
+pub struct ProposalInfo {
     // the address of the proposer
-    proposer: ContractAddress,
+    pub proposer: ContractAddress,
     // the relevant timestamps
-    timestamps: ProposalTimestamps,
+    pub timestamps: ProposalTimestamps,
     // how many yes votes have been collected
-    yea: u128,
+    pub yea: u128,
     // how many no votes have been collected
-    nay: u128,
+    pub nay: u128,
 }
 
 #[derive(Copy, Drop, Serde, starknet::Store, PartialEq)]
-struct Config {
+pub struct Config {
     // how long after a proposal is created does voting start
-    voting_start_delay: u64,
+    pub voting_start_delay: u64,
     // the period during which votes are collected
-    voting_period: u64,
+    pub voting_period: u64,
     // over how many seconds the voting weight is averaged for proposal voting as well as creation/cancellation
-    voting_weight_smoothing_duration: u64,
+    pub voting_weight_smoothing_duration: u64,
     // how many total votes must be collected for the proposal
-    quorum: u128,
+    pub quorum: u128,
     // the minimum amount of average votes required to create a proposal
-    proposal_creation_threshold: u128,
+    pub proposal_creation_threshold: u128,
 }
 
 #[starknet::interface]
-trait IGovernor<TStorage> {
+pub trait IGovernor<TStorage> {
     // Propose executing the given call from this contract.
     fn propose(ref self: TStorage, call: Call) -> felt252;
 
@@ -80,7 +80,7 @@ trait IGovernor<TStorage> {
 }
 
 #[starknet::contract]
-mod Governor {
+pub mod Governor {
     use core::hash::{LegacyHash};
     use core::num::traits::zero::{Zero};
     use governance::call_trait::{HashCall, CallTrait};
@@ -93,28 +93,28 @@ mod Governor {
 
 
     #[derive(starknet::Event, Drop)]
-    struct Proposed {
-        id: felt252,
-        proposer: ContractAddress,
-        call: Call,
+    pub struct Proposed {
+        pub id: felt252,
+        pub proposer: ContractAddress,
+        pub call: Call,
     }
 
     #[derive(starknet::Event, Drop)]
-    struct Voted {
-        id: felt252,
-        voter: ContractAddress,
-        weight: u128,
-        yea: bool,
+    pub struct Voted {
+        pub id: felt252,
+        pub voter: ContractAddress,
+        pub weight: u128,
+        pub yea: bool,
     }
 
     #[derive(starknet::Event, Drop)]
-    struct Canceled {
-        id: felt252,
+    pub struct Canceled {
+        pub id: felt252,
     }
 
     #[derive(starknet::Event, Drop)]
-    struct Executed {
-        id: felt252,
+    pub struct Executed {
+        pub id: felt252,
     }
 
     #[derive(starknet::Event, Drop)]
@@ -142,7 +142,7 @@ mod Governor {
         self.config.write(config);
     }
 
-    #[external(v0)]
+    #[abi(embed_v0)]
     impl GovernorImpl of IGovernor<ContractState> {
         fn propose(ref self: ContractState, call: Call) -> felt252 {
             let id = LegacyHash::hash(0, @call);

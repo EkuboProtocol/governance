@@ -1,18 +1,18 @@
 use core::array::{Array, ArrayTrait, SpanTrait};
-use governance::governance_token_test::{deploy as deploy_token, IGovernanceTokenDispatcher};
+use governance::governance_token::{IGovernanceTokenDispatcher};
+use governance::governance_token_test::{deploy as deploy_token};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::timelock::{
     ITimelockDispatcher, ITimelockDispatcherTrait, Timelock, TimelockConfig,
     TimelockConfigStorePacking, ExecutionState, ExecutionStateStorePacking
 };
 use starknet::account::{Call};
-use starknet::class_hash::Felt252TryIntoClassHash;
 use starknet::{
-    get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress,
-    get_block_timestamp, testing::set_block_timestamp
+    get_contract_address, syscalls::{deploy_syscall}, ClassHash, contract_address_const,
+    ContractAddress, get_block_timestamp, testing::set_block_timestamp
 };
 
-fn deploy(owner: ContractAddress, delay: u64, window: u64) -> ITimelockDispatcher {
+pub(crate) fn deploy(owner: ContractAddress, delay: u64, window: u64) -> ITimelockDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
     Serde::serialize(@(owner, delay, window), ref constructor_args);
 
@@ -35,7 +35,7 @@ fn test_deploy() {
     assert(owner == contract_address_const::<2300>(), 'owner');
 }
 
-fn transfer_call(
+pub(crate) fn transfer_call(
     token: IGovernanceTokenDispatcher, recipient: ContractAddress, amount: u256
 ) -> Call {
     let mut calldata: Array<felt252> = ArrayTrait::new();
@@ -45,11 +45,11 @@ fn transfer_call(
         to: token.contract_address,
         // transfer
         selector: 0x83afd3f4caedc6eebf44246fe54e38c95e3179a5ec9ea81740eca5b482d12e,
-        calldata: calldata
+        calldata: calldata.span()
     }
 }
 
-fn single_call(call: Call) -> Span<Call> {
+pub(crate) fn single_call(call: Call) -> Span<Call> {
     return array![call].span();
 }
 
@@ -108,7 +108,7 @@ fn test_queue_execute_twice() {
 
     let recipient = contract_address_const::<12345>();
 
-    let id = timelock.queue(single_call(transfer_call(token, recipient, 500_u256)));
+    timelock.queue(single_call(transfer_call(token, recipient, 500_u256)));
 
     set_block_timestamp(86401);
 

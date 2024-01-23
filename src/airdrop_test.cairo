@@ -13,10 +13,10 @@ use governance::governance_token::{
 };
 use governance::governance_token_test::{deploy as deploy_token};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
-use starknet::class_hash::Felt252TryIntoClassHash;
 use starknet::testing::{pop_log};
 use starknet::{
-    get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress
+    get_contract_address, syscalls::{deploy_syscall}, ClassHash, contract_address_const,
+    ContractAddress
 };
 
 fn deploy(token: ContractAddress, root: felt252) -> IAirdropDispatcher {
@@ -99,8 +99,8 @@ fn test_claim_single_recipient() {
     let log = pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
     assert(log.claim == claim, 'claim');
 
-    pop_log::<GovernanceToken::Transfer>(token.contract_address);
-    pop_log::<GovernanceToken::Transfer>(token.contract_address);
+    pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
+    pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
     let log = pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
     assert(log.from == airdrop.contract_address, 'from');
     assert(log.to == claim.claimee, 'to');

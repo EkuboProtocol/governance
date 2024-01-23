@@ -1,7 +1,7 @@
 use starknet::{ContractAddress};
 
 #[starknet::interface]
-trait IERC20<TStorage> {
+pub trait IERC20<TStorage> {
     fn name(self: @TStorage) -> felt252;
     fn symbol(self: @TStorage) -> felt252;
     fn decimals(self: @TStorage) -> u8;

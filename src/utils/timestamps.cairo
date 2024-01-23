@@ -1,9 +1,9 @@
-use core::integer::{u128_to_felt252, u64_try_from_felt252, u128_safe_divmod};
+use core::integer::{u128_safe_divmod};
 use starknet::storage_access::{StorePacking};
 
 const TWO_POW_64: u128 = 0x10000000000000000;
 
-impl ThreeU64TupleStorePacking of StorePacking<(u64, u64, u64), felt252> {
+pub(crate) impl ThreeU64TupleStorePacking of StorePacking<(u64, u64, u64), felt252> {
     #[inline(always)]
     fn pack(value: (u64, u64, u64)) -> felt252 {
         let (a, b, c) = value;
@@ -17,7 +17,7 @@ impl ThreeU64TupleStorePacking of StorePacking<(u64, u64, u64), felt252> {
     }
 }
 
-impl TwoU64TupleStorePacking of StorePacking<(u64, u64), u128> {
+pub(crate) impl TwoU64TupleStorePacking of StorePacking<(u64, u64), u128> {
     #[inline(always)]
     fn pack(value: (u64, u64)) -> u128 {
         let (a, b) = value;

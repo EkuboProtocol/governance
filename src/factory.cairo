@@ -6,40 +6,40 @@ use governance::timelock::{ITimelockDispatcher, TimelockConfig};
 use starknet::{ContractAddress};
 
 #[derive(Copy, Drop, Serde)]
-struct AirdropConfig {
-    root: felt252,
-    total: u128,
+pub struct AirdropConfig {
+    pub root: felt252,
+    pub total: u128,
 }
 
 #[derive(Copy, Drop, Serde)]
-struct DeploymentParameters {
-    name: felt252,
-    symbol: felt252,
-    total_supply: u128,
-    governor_config: GovernorConfig,
-    timelock_config: TimelockConfig,
-    airdrop_config: Option<AirdropConfig>,
+pub struct DeploymentParameters {
+    pub name: felt252,
+    pub symbol: felt252,
+    pub total_supply: u128,
+    pub governor_config: GovernorConfig,
+    pub timelock_config: TimelockConfig,
+    pub airdrop_config: Option<AirdropConfig>,
 }
 
 #[derive(Copy, Drop, Serde)]
-struct DeploymentResult {
-    token: IGovernanceTokenDispatcher,
-    governor: IGovernorDispatcher,
-    timelock: ITimelockDispatcher,
-    airdrop: Option<IAirdropDispatcher>,
+pub struct DeploymentResult {
+    pub token: IGovernanceTokenDispatcher,
+    pub governor: IGovernorDispatcher,
+    pub timelock: ITimelockDispatcher,
+    pub airdrop: Option<IAirdropDispatcher>,
 }
 
 // This contract makes it easy to deploy a set of governance contracts from a block explorer just by specifying parameters
 #[starknet::interface]
-trait IFactory<TContractState> {
+pub trait IFactory<TContractState> {
     fn deploy(self: @TContractState, params: DeploymentParameters) -> DeploymentResult;
 }
 
 #[starknet::contract]
-mod Factory {
+pub mod Factory {
     use core::result::{ResultTrait};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
-    use starknet::{ClassHash, deploy_syscall, get_caller_address, get_contract_address};
+    use starknet::{ClassHash, syscalls::{deploy_syscall}, get_caller_address, get_contract_address};
     use super::{
         IFactory, DeploymentParameters, DeploymentResult, ContractAddress,
         IGovernanceTokenDispatcher, IAirdropDispatcher, IGovernorDispatcher, ITimelockDispatcher
@@ -67,7 +67,7 @@ mod Factory {
         self.timelock.write(timelock);
     }
 
-    #[external(v0)]
+    #[abi(embed_v0)]
     impl FactoryImpl of IFactory<ContractState> {
         fn deploy(self: @ContractState, params: DeploymentParameters) -> DeploymentResult {
             let mut token_constructor_args: Array<felt252> = ArrayTrait::new();

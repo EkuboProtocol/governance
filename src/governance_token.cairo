@@ -1,7 +1,7 @@
 use starknet::{ContractAddress};
 
 #[starknet::interface]
-trait IGovernanceToken<TStorage> {
+pub trait IGovernanceToken<TStorage> {
     // Delegate tokens from the caller to the given delegate address
     fn delegate(ref self: TStorage, to: ContractAddress);
 
@@ -26,24 +26,23 @@ trait IGovernanceToken<TStorage> {
 }
 
 #[starknet::contract]
-mod GovernanceToken {
-    use core::integer::{u256_safe_divmod, u256_as_non_zero};
+pub mod GovernanceToken {
     use core::num::traits::zero::{Zero};
     use core::option::{OptionTrait};
     use core::traits::{Into, TryInto};
     use governance::interfaces::erc20::{IERC20};
-    use starknet::{get_caller_address, get_block_timestamp, StorePacking};
+    use starknet::{get_caller_address, get_block_timestamp, storage_access::{StorePacking}};
     use super::{IGovernanceToken, ContractAddress};
 
     #[derive(Copy, Drop, PartialEq)]
-    struct DelegatedSnapshot {
-        timestamp: u64,
-        delegated_cumulative: u256,
+    pub struct DelegatedSnapshot {
+        pub timestamp: u64,
+        pub delegated_cumulative: u256,
     }
 
     const TWO_POW_64: u128 = 0x10000000000000000_u128;
 
-    impl DelegatedSnapshotStorePacking of StorePacking<DelegatedSnapshot, felt252> {
+    pub(crate) impl DelegatedSnapshotStorePacking of StorePacking<DelegatedSnapshot, felt252> {
         fn pack(value: DelegatedSnapshot) -> felt252 {
             (value.delegated_cumulative
                 + u256 { high: value.timestamp.into() * TWO_POW_64, low: 0 })
@@ -51,9 +50,9 @@ mod GovernanceToken {
                 .unwrap()
         }
         fn unpack(value: felt252) -> DelegatedSnapshot {
-            let (timestamp, delegated_cumulative, _) = u256_safe_divmod(
-                value.into(), u256_as_non_zero(u256 { low: 0, high: TWO_POW_64 })
-            );
+            let (timestamp, delegated_cumulative) = DivRem::<
+                u256
+            >::div_rem(value.into(), u256 { low: 0, high: TWO_POW_64 }.into().try_into().unwrap());
             DelegatedSnapshot { timestamp: timestamp.low.try_into().unwrap(), delegated_cumulative }
         }
     }
@@ -88,23 +87,23 @@ mod GovernanceToken {
     }
 
     #[derive(starknet::Event, Drop)]
-    struct Transfer {
-        from: ContractAddress,
-        to: ContractAddress,
-        value: u256,
+    pub struct Transfer {
+        pub from: ContractAddress,
+        pub to: ContractAddress,
+        pub value: u256,
     }
 
     #[derive(starknet::Event, Drop)]
-    struct Approval {
-        owner: ContractAddress,
-        spender: ContractAddress,
-        value: u256
+    pub struct Approval {
+        pub owner: ContractAddress,
+        pub spender: ContractAddress,
+        pub value: u256
     }
 
     #[derive(starknet::Event, Drop)]
-    struct Delegate {
-        from: ContractAddress,
-        to: ContractAddress,
+    pub struct Delegate {
+        pub from: ContractAddress,
+        pub to: ContractAddress,
     }
 
     #[derive(starknet::Event, Drop)]
@@ -181,8 +180,7 @@ mod GovernanceToken {
                             .unwrap()
                     };
 
-                    snapshot.delegated_cumulative
-                        + ((timestamp - snapshot.timestamp).into() * delegated_amount).into()
+                    snapshot.delegated_cumulative + (difference.into() * delegated_amount).into()
                 };
             }
             let mid = (min_index + max_index_exclusive) / 2;
@@ -220,7 +218,7 @@ mod GovernanceToken {
         }
     }
 
-    #[external(v0)]
+    #[abi(embed_v0)]
     impl ERC20Impl of IERC20<ContractState> {
         fn name(self: @ContractState) -> felt252 {
             self.name.read()
@@ -314,7 +312,7 @@ mod GovernanceToken {
         }
     }
 
-    #[external(v0)]
+    #[abi(embed_v0)]
     impl TokenImpl of IGovernanceToken<ContractState> {
         fn delegate(ref self: ContractState, to: ContractAddress) {
             let caller = get_caller_address();

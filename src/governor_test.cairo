@@ -19,10 +19,9 @@ use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait};
 use governance::timelock_test::{single_call, transfer_call, deploy as deploy_timelock};
 use governance::{test_utils as utils};
 use starknet::account::{Call};
-use starknet::class_hash::Felt252TryIntoClassHash;
 use starknet::{
-    get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress,
-    get_block_timestamp, testing::{set_block_timestamp, set_contract_address}
+    get_contract_address, syscalls::deploy_syscall, ClassHash, contract_address_const,
+    ContractAddress, get_block_timestamp, testing::{set_block_timestamp, set_contract_address}
 };
 
 
@@ -49,7 +48,7 @@ fn create_proposal(governance: IGovernorDispatcher, token: IGovernanceTokenDispa
     set_block_timestamp(start_time);
     set_contract_address(proposer);
     let id = governance.propose(transfer_call);
-    set_contract_address(utils::zero_address());
+    set_contract_address(Zero::zero());
     id
 }
 
@@ -258,7 +257,6 @@ fn test_vote_before_voting_start_should_fail() {
         }
     );
     let id = create_proposal(governance, token);
-    let start_time = utils::timestamp();
     let voter = utils::voter();
 
     // Delegate token to the voter to give him voting power.
@@ -348,7 +346,6 @@ fn test_cancel_by_proposer() {
         }
     );
     let proposer = utils::proposer();
-    let start_time = utils::timestamp();
 
     let id = create_proposal(governance, token);
 
@@ -383,14 +380,13 @@ fn test_cancel_by_non_proposer() {
         }
     );
     let user = utils::user();
-    let proposer = utils::proposer();
     let mut current_timestamp = utils::timestamp();
 
     let id = create_proposal(governance, token);
 
     // Delegate token to user so that proposer looses his threshold.
-    set_contract_address(utils::zero_address());
-    token.delegate(utils::zero_address());
+    set_contract_address(Zero::zero());
+    token.delegate(Zero::zero());
 
     // Fast forward one smoothing duration
     current_timestamp += 30;
@@ -429,8 +425,6 @@ fn test_cancel_by_non_proposer_threshold_not_breached_should_fail() {
         }
     );
     let user = utils::user();
-    let proposer = utils::proposer();
-    let mut current_timestamp = utils::timestamp();
 
     let id = create_proposal(governance, token);
 
@@ -496,12 +490,12 @@ fn test_execute_valid_proposal() {
     set_block_timestamp(current_timestamp); // voting period ends
 
     // Execute the proposal. Caller address should be 0.
-    set_contract_address(utils::zero_address());
+    set_contract_address(Zero::zero());
 
     // Send 100 tokens to the gov contract - this is because
     // the proposal calls transfer() which requires gov to have tokens.
     erc20.transfer(governance.contract_address, 100);
-    // set_caller_address(utils::zero_address());
+    // set_caller_address(Zero::zero());
 
     let transfer_call = transfer_call(token: token, recipient: utils::recipient(), amount: 100);
     governance.execute(transfer_call);
@@ -526,7 +520,7 @@ fn test_execute_before_voting_ends_should_fail() {
             proposal_creation_threshold: 50,
         }
     );
-    let id = create_proposal(governance, token);
+    create_proposal(governance, token);
     let mut current_timestamp = utils::timestamp();
 
     current_timestamp += 3601;
@@ -553,7 +547,7 @@ fn test_execute_quorum_not_met_should_fail() {
             proposal_creation_threshold: 50,
         }
     );
-    let id = create_proposal(governance, token);
+    create_proposal(governance, token);
     let mut current_timestamp = utils::timestamp();
 
     current_timestamp += 3661;
@@ -569,7 +563,6 @@ fn test_execute_quorum_not_met_should_fail() {
 #[available_gas(100000000)]
 #[should_panic(expected: ('NO_MAJORITY', 'ENTRYPOINT_FAILED'))]
 fn test_execute_no_majority_should_fail() {
-    let deployer = get_contract_address();
     let (token, erc20) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         voting_token: token,
@@ -630,7 +623,6 @@ fn test_execute_no_majority_should_fail() {
 #[available_gas(100000000)]
 #[should_panic(expected: ('QUORUM_NOT_MET', 'ENTRYPOINT_FAILED'))]
 fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_start() {
-    let deployer = get_contract_address();
     let (token, erc20) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
         voting_token: token,
@@ -719,12 +711,12 @@ fn test_execute_already_executed_should_fail() {
     set_block_timestamp(current_timestamp); // voting period ends
 
     // Execute the proposal. Caller address should be 0.
-    set_contract_address(utils::zero_address());
+    set_contract_address(Zero::zero());
 
     // Send 100 tokens to the gov contract - this is because
     // the proposal calls transfer() which requires gov to have tokens.
     erc20.transfer(governance.contract_address, 100);
-    // set_caller_address(utils::zero_address());
+    // set_caller_address(Zero::zero());
 
     let transfer_call = transfer_call(token: token, recipient: utils::recipient(), amount: 100);
     governance.execute(transfer_call);
@@ -743,7 +735,7 @@ fn queue_with_timelock_call(timelock: ITimelockDispatcher, calls: Span<Call>) ->
         to: timelock.contract_address,
         // queue
         selector: 0x2c5ecd2faa027574e2101f9b6bdc19dec3f76beff12aa506ac3391be0022e46,
-        calldata: calldata
+        calldata: calldata.span()
     }
 }
 
@@ -786,7 +778,7 @@ fn test_proposal_e2e() {
     set_block_timestamp(start_time + 5 + 3600 + 60);
     let mut result = governance.execute(queue_with_timelock_call(timelock, timelock_calls));
     assert(result.len() == 1, '1 result');
-    let queued_call_id = result.pop_front();
+    result.pop_front().unwrap();
     set_block_timestamp(start_time + 5 + 3600 + 60 + 60);
     assert(erc20.balance_of(timelock.contract_address) == 200, 'balance before t');
     assert(erc20.balance_of(recipient) == 0, 'balance before r');

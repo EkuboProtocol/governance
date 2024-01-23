@@ -15,10 +15,10 @@ use governance::governor::{Governor};
 use governance::governor::{IGovernorDispatcherTrait};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::timelock::{Timelock, ITimelockDispatcherTrait, TimelockConfig};
-use starknet::class_hash::{Felt252TryIntoClassHash};
 use starknet::testing::{set_contract_address, set_block_timestamp, pop_log};
 use starknet::{
-    get_contract_address, deploy_syscall, ClassHash, contract_address_const, ContractAddress,
+    get_contract_address, syscalls::deploy_syscall, ClassHash, contract_address_const,
+    ContractAddress,
 };
 
 fn deploy() -> IFactoryDispatcher {

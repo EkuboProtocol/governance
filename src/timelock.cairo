@@ -7,13 +7,13 @@ use starknet::contract_address::{ContractAddress};
 use starknet::storage_access::{StorePacking};
 
 #[derive(Copy, Drop, Serde)]
-struct ExecutionState {
-    started: u64,
-    executed: u64,
-    canceled: u64
+pub struct ExecutionState {
+    pub started: u64,
+    pub executed: u64,
+    pub canceled: u64
 }
 
-impl ExecutionStateStorePacking of StorePacking<ExecutionState, felt252> {
+pub(crate) impl ExecutionStateStorePacking of StorePacking<ExecutionState, felt252> {
     #[inline(always)]
     fn pack(value: ExecutionState) -> felt252 {
         ThreeU64TupleStorePacking::pack((value.started, value.executed, value.canceled))
@@ -26,12 +26,12 @@ impl ExecutionStateStorePacking of StorePacking<ExecutionState, felt252> {
 }
 
 #[derive(Copy, Drop, Serde)]
-struct TimelockConfig {
-    delay: u64,
-    window: u64,
+pub struct TimelockConfig {
+    pub delay: u64,
+    pub window: u64,
 }
 
-impl TimelockConfigStorePacking of StorePacking<TimelockConfig, u128> {
+pub(crate) impl TimelockConfigStorePacking of StorePacking<TimelockConfig, u128> {
     #[inline(always)]
     fn pack(value: TimelockConfig) -> u128 {
         TwoU64TupleStorePacking::pack((value.delay, value.window))
@@ -44,7 +44,7 @@ impl TimelockConfigStorePacking of StorePacking<TimelockConfig, u128> {
 }
 
 #[starknet::interface]
-trait ITimelock<TStorage> {
+pub trait ITimelock<TStorage> {
     // Queue a list of calls to be executed after the delay. Only the owner may call this.
     fn queue(ref self: TStorage, calls: Span<Call>) -> felt252;
 
@@ -70,19 +70,19 @@ trait ITimelock<TStorage> {
 }
 
 #[derive(Copy, Drop, Serde)]
-struct ExecutionWindow {
-    earliest: u64,
-    latest: u64
+pub struct ExecutionWindow {
+    pub earliest: u64,
+    pub latest: u64
 }
 
 #[starknet::contract]
-mod Timelock {
+pub mod Timelock {
     use core::hash::LegacyHash;
     use core::num::traits::zero::{Zero};
     use governance::call_trait::{CallTrait, HashCall};
     use starknet::{
         get_caller_address, get_contract_address, SyscallResult, syscalls::call_contract_syscall,
-        ContractAddressIntoFelt252, get_block_timestamp
+        get_block_timestamp
     };
     use super::{
         ITimelock, ContractAddress, Call, TimelockConfig, ExecutionState,
@@ -91,19 +91,19 @@ mod Timelock {
 
 
     #[derive(starknet::Event, Drop)]
-    struct Queued {
-        id: felt252,
-        calls: Span<Call>,
+    pub struct Queued {
+        pub id: felt252,
+        pub calls: Span<Call>,
     }
 
     #[derive(starknet::Event, Drop)]
-    struct Canceled {
-        id: felt252,
+    pub struct Canceled {
+        pub id: felt252,
     }
 
     #[derive(starknet::Event, Drop)]
-    struct Executed {
-        id: felt252,
+    pub struct Executed {
+        pub id: felt252,
     }
 
     #[derive(starknet::Event, Drop)]
@@ -131,7 +131,7 @@ mod Timelock {
     // Take a list of calls and convert it to a unique identifier for the execution
     // Two lists of calls will always have the same ID if they are equivalent
     // A list of calls can only be queued and executed once. To make 2 different calls, add an empty call.
-    fn to_id(mut calls: Span<Call>) -> felt252 {
+    pub fn to_id(mut calls: Span<Call>) -> felt252 {
         let mut state = 0;
         loop {
             match calls.pop_front() {
@@ -152,7 +152,7 @@ mod Timelock {
         }
     }
 
-    #[external(v0)]
+    #[abi(embed_v0)]
     impl TimelockImpl of ITimelock<ContractState> {
         fn queue(ref self: ContractState, calls: Span<Call>) -> felt252 {
             self.check_owner();

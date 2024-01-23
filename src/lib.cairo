@@ -1,23 +1,27 @@
-mod airdrop;
+pub mod airdrop;
 
 #[cfg(test)]
-mod airdrop_test;
-mod call_trait;
+pub(crate) mod airdrop_test;
+pub mod call_trait;
 #[cfg(test)]
-mod call_trait_test;
-mod factory;
+pub(crate) mod call_trait_test;
+pub mod factory;
 #[cfg(test)]
-mod factory_test;
-mod governance_token;
+pub(crate) mod factory_test;
+pub mod governance_token;
 #[cfg(test)]
-mod governance_token_test;
-mod governor;
+pub(crate) mod governance_token_test;
+pub mod governor;
 #[cfg(test)]
-mod governor_test;
-mod interfaces;
+pub(crate) mod governor_test;
 #[cfg(test)]
-mod test_utils;
-mod timelock;
+pub(crate) mod test_utils;
+pub mod timelock;
 #[cfg(test)]
-mod timelock_test;
-mod utils;
+pub(crate) mod timelock_test;
+pub(crate) mod interfaces {
+    pub(crate) mod erc20;
+}
+pub(crate) mod utils {
+    pub(crate) mod timestamps;
+}
