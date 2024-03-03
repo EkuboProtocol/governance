@@ -85,7 +85,7 @@ fn test_compute_pedersen_root_recursive() {
 fn test_claim_single_recipient() {
     let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
 
-    let claim = Claim { claimee: contract_address_const::<2345>(), amount: 6789, };
+    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
 
     let leaf = LegacyHash::hash(0, claim);
 
@@ -114,7 +114,7 @@ fn test_claim_single_recipient() {
 fn test_double_claim() {
     let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
 
-    let claim = Claim { claimee: contract_address_const::<2345>(), amount: 6789, };
+    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
 
     let leaf = LegacyHash::hash(0, claim);
 
@@ -134,7 +134,7 @@ fn test_double_claim() {
 fn test_invalid_proof_single_entry() {
     let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
 
-    let claim = Claim { claimee: contract_address_const::<2345>(), amount: 6789, };
+    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
 
     let leaf = LegacyHash::hash(0, claim);
 
@@ -150,7 +150,7 @@ fn test_invalid_proof_single_entry() {
 fn test_invalid_proof_fake_entry() {
     let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
 
-    let claim = Claim { claimee: contract_address_const::<2345>(), amount: 6789, };
+    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
 
     let leaf = LegacyHash::hash(0, claim);
 
@@ -159,7 +159,7 @@ fn test_invalid_proof_fake_entry() {
     token.transfer(airdrop.contract_address, 6789);
     let proof = ArrayTrait::new();
 
-    airdrop.claim(Claim { claimee: contract_address_const::<2345>(), amount: 6789 + 1, }, proof);
+    airdrop.claim(Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 + 1, }, proof);
 }
 
 
@@ -168,8 +168,8 @@ fn test_invalid_proof_fake_entry() {
 fn test_claim_two_claims() {
     let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
 
-    let claim_a = Claim { claimee: contract_address_const::<2345>(), amount: 6789, };
-    let claim_b = Claim { claimee: contract_address_const::<3456>(), amount: 789, };
+    let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
+    let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789, };
 
     let leaf_a = LegacyHash::hash(0, claim_a);
     let leaf_b = LegacyHash::hash(0, claim_b);

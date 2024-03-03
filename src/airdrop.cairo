@@ -4,23 +4,27 @@ use starknet::{ContractAddress};
 
 #[derive(Copy, Drop, Serde, Hash, PartialEq)]
 pub struct Claim {
+    // the unique ID of the claim
+    pub id: u64,
+    // the address that will receive the token
     pub claimee: ContractAddress,
+    // the amount of token the address is entitled to
     pub amount: u128,
 }
 
 #[starknet::interface]
 pub trait IAirdrop<TStorage> {
-    // Claims the given allotment of tokens
-    fn claim(ref self: TStorage, claim: Claim, proof: Array<felt252>);
-
     // Return the root of the airdrop
     fn get_root(self: @TStorage) -> felt252;
 
     // Return the token being dropped
     fn get_token(self: @TStorage) -> IERC20Dispatcher;
 
-    // Return whether the claim has been claimed (always false for invalid claims)
-    fn is_claimed(self: @TStorage, claim: Claim) -> bool;
+    // Claims the given allotment of tokens
+    fn claim(ref self: TStorage, claim: Claim, proof: Array<felt252>);
+
+    // Return whether the claim with the given ID has been claimed
+    fn is_claimed(self: @TStorage, claim_id: u64) -> bool;
 }
 
 #[starknet::contract]
@@ -28,7 +32,9 @@ pub mod Airdrop {
     use core::array::{ArrayTrait, SpanTrait};
     use core::hash::{LegacyHash};
     use governance::interfaces::erc20::{IERC20DispatcherTrait};
+    use governance::utils::exp2::{exp2};
     use super::{IAirdrop, ContractAddress, Claim, IERC20Dispatcher};
+    use core::num::traits::zero::{Zero};
 
     pub(crate) fn lt<X, +Copy<X>, +Into<X, u256>>(lhs: @X, rhs: @X) -> bool {
         let a: u256 = (*lhs).into();
@@ -57,7 +63,7 @@ pub mod Airdrop {
     struct Storage {
         root: felt252,
         token: IERC20Dispatcher,
-        claimed: LegacyMap<felt252, bool>,
+        claimed_bitmap: LegacyMap<u64, u128>,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -77,20 +83,14 @@ pub mod Airdrop {
         self.token.write(token);
     }
 
+    #[inline(always)]
+    fn claim_id_to_bitmap_index(claim_id: u64) -> (u64, u8) {
+        let (word, index) = DivRem::div_rem(claim_id, 128_u64.try_into().unwrap());
+        (word, index.try_into().unwrap())
+    }
+
     #[abi(embed_v0)]
     impl AirdropImpl of IAirdrop<ContractState> {
-        fn claim(ref self: ContractState, claim: Claim, proof: Array::<felt252>) {
-            let leaf = LegacyHash::hash(0, claim);
-
-            assert(!self.claimed.read(leaf), 'ALREADY_CLAIMED');
-            assert(self.root.read() == compute_pedersen_root(leaf, proof.span()), 'INVALID_PROOF');
-            self.claimed.write(leaf, true);
-
-            self.token.read().transfer(claim.claimee, u256 { high: 0, low: claim.amount });
-
-            self.emit(Claimed { claim });
-        }
-
         fn get_root(self: @ContractState) -> felt252 {
             self.root.read()
         }
@@ -99,8 +99,27 @@ pub mod Airdrop {
             self.token.read()
         }
 
-        fn is_claimed(self: @ContractState, claim: Claim) -> bool {
-            self.claimed.read(LegacyHash::hash(0, claim))
+        fn claim(ref self: ContractState, claim: Claim, proof: Array::<felt252>) {
+            assert(!self.is_claimed(claim.id), 'ALREADY_CLAIMED');
+
+            let leaf = LegacyHash::hash(0, claim);
+            assert(self.root.read() == compute_pedersen_root(leaf, proof.span()), 'INVALID_PROOF');
+
+            let (word, index) = claim_id_to_bitmap_index(claim.id);
+            let bitmap = self.claimed_bitmap.read(word);
+
+            self.claimed_bitmap.write(word, bitmap | exp2(index.try_into().unwrap()));
+
+            self.token.read().transfer(claim.claimee, u256 { high: 0, low: claim.amount });
+
+            self.emit(Claimed { claim });
+        }
+
+
+        fn is_claimed(self: @ContractState, claim_id: u64) -> bool {
+            let (word, index) = claim_id_to_bitmap_index(claim_id);
+            let bitmap = self.claimed_bitmap.read(word);
+            (bitmap & exp2(index)).is_non_zero()
         }
     }
 }
