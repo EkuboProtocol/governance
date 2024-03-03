@@ -100,7 +100,7 @@ pub mod Airdrop {
         }
 
         fn claim(ref self: ContractState, claim: Claim, proof: Array::<felt252>) {
-            let leaf = LegacyHash::hash(0, claim);
+            let leaf = LegacyHash::hash(selector!("ekubo::governance::airdrop::Claim"), claim);
             assert(self.root.read() == compute_pedersen_root(leaf, proof.span()), 'INVALID_PROOF');
 
             assert(!self.is_claimed(claim.id), 'ALREADY_CLAIMED');
