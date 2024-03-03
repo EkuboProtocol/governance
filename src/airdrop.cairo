@@ -31,10 +31,10 @@ pub trait IAirdrop<TStorage> {
 pub mod Airdrop {
     use core::array::{ArrayTrait, SpanTrait};
     use core::hash::{LegacyHash};
+    use core::num::traits::zero::{Zero};
     use governance::interfaces::erc20::{IERC20DispatcherTrait};
     use governance::utils::exp2::{exp2};
     use super::{IAirdrop, ContractAddress, Claim, IERC20Dispatcher};
-    use core::num::traits::zero::{Zero};
 
     pub(crate) fn lt<X, +Copy<X>, +Into<X, u256>>(lhs: @X, rhs: @X) -> bool {
         let a: u256 = (*lhs).into();
@@ -114,7 +114,6 @@ pub mod Airdrop {
 
             self.emit(Claimed { claim });
         }
-
 
         fn is_claimed(self: @ContractState, claim_id: u64) -> bool {
             let (word, index) = claim_id_to_bitmap_index(claim_id);

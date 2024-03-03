@@ -23,6 +23,6 @@ pub(crate) mod interfaces {
     pub(crate) mod erc20;
 }
 pub(crate) mod utils {
-    pub(crate) mod timestamps;
     pub(crate) mod exp2;
+    pub(crate) mod timestamps;
 }

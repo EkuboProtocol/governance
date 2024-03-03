@@ -159,7 +159,10 @@ fn test_invalid_proof_fake_entry() {
     token.transfer(airdrop.contract_address, 6789);
     let proof = ArrayTrait::new();
 
-    airdrop.claim(Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 + 1, }, proof);
+    airdrop
+        .claim(
+            Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 + 1, }, proof
+        );
 }
 
 
