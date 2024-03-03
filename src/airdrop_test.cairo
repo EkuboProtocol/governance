@@ -31,57 +31,43 @@ fn deploy(token: ContractAddress, root: felt252) -> IAirdropDispatcher {
 }
 
 #[test]
-#[available_gas(3000000)]
 fn test_compute_pedersen_root_example_lt() {
-    assert(
-        compute_pedersen_root(
-            1234, array![1235].span()
-        ) == 0x24e78083d17aa2e76897f44cfdad51a09276dd00a3468adc7e635d76d432a3b,
-        'example'
+    assert_eq!(
+        compute_pedersen_root(1234, array![1235].span()),
+        0x24e78083d17aa2e76897f44cfdad51a09276dd00a3468adc7e635d76d432a3b
     );
 }
 
 #[test]
-#[available_gas(3000000)]
 fn test_compute_pedersen_root_example_gt() {
-    assert(
-        compute_pedersen_root(
-            1234, array![1233].span()
-        ) == 0x2488766c14e4bfd8299750797eeb07b7045398df03ea13cf33f0c0c6645d5f9,
-        'example'
+    assert_eq!(
+        compute_pedersen_root(1234, array![1233].span()),
+        0x2488766c14e4bfd8299750797eeb07b7045398df03ea13cf33f0c0c6645d5f9
     );
 }
 
 #[test]
-#[available_gas(3000000)]
 fn test_compute_pedersen_root_example_eq() {
-    assert(
-        compute_pedersen_root(
-            1234, array![1234].span()
-        ) == 0x7a7148565b76ae90576733160aa3194a41ce528ee1434a64a9da50dcbf6d3ca,
-        'example'
+    assert_eq!(
+        compute_pedersen_root(1234, array![1234].span()),
+        0x7a7148565b76ae90576733160aa3194a41ce528ee1434a64a9da50dcbf6d3ca
     );
 }
 
 #[test]
-#[available_gas(3000000)]
 fn test_compute_pedersen_root_empty() {
-    assert(compute_pedersen_root(1234, array![].span()) == 1234, 'example');
+    assert_eq!(compute_pedersen_root(1234, array![].span()), 1234);
 }
 
 #[test]
-#[available_gas(3000000)]
 fn test_compute_pedersen_root_recursive() {
-    assert(
-        compute_pedersen_root(
-            1234, array![1234, 1234].span()
-        ) == 0xc92a4f7aa8979b0202770b378e46de07bebe0836f8ceece5a47ccf3929c6b0,
-        'example'
+    assert_eq!(
+        compute_pedersen_root(1234, array![1234, 1234].span()),
+        0xc92a4f7aa8979b0202770b378e46de07bebe0836f8ceece5a47ccf3929c6b0
     );
 }
 
 #[test]
-#[available_gas(3000000)]
 fn test_claim_single_recipient() {
     let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
 
@@ -97,16 +83,15 @@ fn test_claim_single_recipient() {
     airdrop.claim(claim, proof);
 
     let log = pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
-    assert(log.claim == claim, 'claim');
+    assert_eq!(log.claim, claim);
 
     pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
     pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
     let log = pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
-    assert(log.from == airdrop.contract_address, 'from');
-    assert(log.to == claim.claimee, 'to');
-    assert(log.value == claim.amount.into(), 'amount');
+    assert_eq!(log.from, airdrop.contract_address);
+    assert_eq!(log.to, claim.claimee);
+    assert_eq!(log.value, claim.amount.into());
 }
-
 
 #[test]
 #[available_gas(4000000)]
@@ -127,9 +112,7 @@ fn test_double_claim() {
     airdrop.claim(claim, proof);
 }
 
-
 #[test]
-#[available_gas(3000000)]
 #[should_panic(expected: ('INVALID_PROOF', 'ENTRYPOINT_FAILED'))]
 fn test_invalid_proof_single_entry() {
     let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
@@ -145,7 +128,6 @@ fn test_invalid_proof_single_entry() {
 }
 
 #[test]
-#[available_gas(3000000)]
 #[should_panic(expected: ('INVALID_PROOF', 'ENTRYPOINT_FAILED'))]
 fn test_invalid_proof_fake_entry() {
     let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
@@ -187,10 +169,10 @@ fn test_claim_two_claims() {
     token.transfer(airdrop.contract_address, 6789 + 789 + 1);
 
     airdrop.claim(claim_a, array![leaf_b]);
-    assert(token.balance_of(airdrop.contract_address) == (789 + 1), 'claim a taken');
-    assert(token.balance_of(claim_a.claimee) == 6789, 'received');
+    assert_eq!(token.balance_of(airdrop.contract_address), (789 + 1));
+    assert_eq!(token.balance_of(claim_a.claimee), 6789);
 
     airdrop.claim(claim_b, array![leaf_a]);
-    assert(token.balance_of(airdrop.contract_address) == 1, 'claim b taken');
-    assert(token.balance_of(claim_b.claimee) == 789, 'received');
+    assert_eq!(token.balance_of(airdrop.contract_address), 1);
+    assert_eq!(token.balance_of(claim_b.claimee), 789);
 }

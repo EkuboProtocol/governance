@@ -2,7 +2,7 @@ use core::array::{Array};
 use governance::interfaces::erc20::{IERC20Dispatcher};
 use starknet::{ContractAddress};
 
-#[derive(Copy, Drop, Serde, Hash, PartialEq)]
+#[derive(Copy, Drop, Serde, Hash, PartialEq, Debug)]
 pub struct Claim {
     // the unique ID of the claim
     pub id: u64,
@@ -100,10 +100,10 @@ pub mod Airdrop {
         }
 
         fn claim(ref self: ContractState, claim: Claim, proof: Array::<felt252>) {
-            assert(!self.is_claimed(claim.id), 'ALREADY_CLAIMED');
-
             let leaf = LegacyHash::hash(0, claim);
             assert(self.root.read() == compute_pedersen_root(leaf, proof.span()), 'INVALID_PROOF');
+
+            assert(!self.is_claimed(claim.id), 'ALREADY_CLAIMED');
 
             let (word, index) = claim_id_to_bitmap_index(claim.id);
             let bitmap = self.claimed_bitmap.read(word);

@@ -108,7 +108,6 @@ fn test_governance_token_delegated_snapshot_store_unpack() {
 }
 
 #[test]
-#[available_gas(3000000)]
 fn test_deploy_constructor() {
     let (_, erc20) = deploy('Governor Token', 'GT', 12345);
     assert(erc20.name() == 'Governor Token', 'name');
@@ -127,7 +126,6 @@ fn test_deploy_constructor() {
 }
 
 #[test]
-#[available_gas(3000000)]
 fn test_transfer_entire_balance() {
     let (_, erc20) = deploy('Governor Token', 'GT', 12345);
 
@@ -144,7 +142,6 @@ fn test_transfer_entire_balance() {
 }
 
 #[test]
-#[available_gas(3000000)]
 fn test_transfer_lt_total_balance() {
     let (_, erc20) = deploy('Governor Token', 'GT', 12345);
 
@@ -163,7 +160,6 @@ fn test_transfer_lt_total_balance() {
 }
 
 #[test]
-#[available_gas(3000000)]
 #[should_panic(expected: ('TRANSFER_INSUFFICIENT_BALANCE', 'ENTRYPOINT_FAILED'))]
 fn test_transfer_gt_total_balance() {
     let (_, erc20) = deploy('Governor Token', 'GT', 12345);
@@ -173,7 +169,6 @@ fn test_transfer_gt_total_balance() {
 }
 
 #[test]
-#[available_gas(3000000)]
 #[should_panic(expected: ('TRANSFER_AMOUNT_OVERFLOW', 'ENTRYPOINT_FAILED'))]
 fn test_transfer_overflow() {
     let (_, erc20) = deploy('Governor Token', 'GT', 12345);
@@ -183,7 +178,6 @@ fn test_transfer_overflow() {
 }
 
 #[test]
-#[available_gas(3000000)]
 #[should_panic(expected: ('ORDER', 'ENTRYPOINT_FAILED'))]
 fn test_get_average_delegated_order_same() {
     let (token, _) = deploy('Governor Token', 'GT', 12345);
@@ -192,7 +186,6 @@ fn test_get_average_delegated_order_same() {
 }
 
 #[test]
-#[available_gas(3000000)]
 #[should_panic(expected: ('ORDER', 'ENTRYPOINT_FAILED'))]
 fn test_get_average_delegated_order_backwards() {
     let (token, _) = deploy('Governor Token', 'GT', 12345);
@@ -201,7 +194,6 @@ fn test_get_average_delegated_order_backwards() {
 }
 
 #[test]
-#[available_gas(3000000)]
 #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
 fn test_get_average_delegated_future() {
     let (token, _) = deploy('Governor Token', 'GT', 12345);
@@ -210,7 +202,6 @@ fn test_get_average_delegated_future() {
 }
 
 #[test]
-#[available_gas(3000000)]
 #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
 fn test_get_average_delegated_future_non_zero() {
     let (token, _) = deploy('Governor Token', 'GT', 12345);
@@ -221,7 +212,6 @@ fn test_get_average_delegated_future_non_zero() {
 }
 
 #[test]
-#[available_gas(3000000)]
 fn test_approve_sets_allowance() {
     let (_, erc20) = deploy('Governor Token', 'GT', 12345);
 
@@ -231,7 +221,6 @@ fn test_approve_sets_allowance() {
 }
 
 #[test]
-#[available_gas(3000000)]
 fn test_approve_allows_transfer_from() {
     let (_, erc20) = deploy('Governor Token', 'GT', 12345);
 
@@ -248,7 +237,6 @@ fn test_approve_allows_transfer_from() {
 }
 
 #[test]
-#[available_gas(3000000)]
 #[should_panic(expected: ('TRANSFER_FROM_ALLOWANCE', 'ENTRYPOINT_FAILED'))]
 fn test_transfer_from_insufficient_allowance() {
     let (_, erc20) = deploy('Governor Token', 'GT', 12345);
@@ -262,7 +250,6 @@ fn test_transfer_from_insufficient_allowance() {
 }
 
 #[test]
-#[available_gas(3000000)]
 #[should_panic(expected: ('APPROVE_AMOUNT_OVERFLOW', 'ENTRYPOINT_FAILED'))]
 fn test_approve_overflow() {
     let (_, erc20) = deploy('Governor Token', 'GT', 12345);

@@ -24,7 +24,6 @@ pub(crate) fn deploy(owner: ContractAddress, delay: u64, window: u64) -> ITimelo
 }
 
 #[test]
-#[available_gas(3000000)]
 fn test_deploy() {
     let timelock = deploy(contract_address_const::<2300>(), 10239, 3600);
 
@@ -77,7 +76,6 @@ fn test_queue_execute() {
 }
 
 #[test]
-#[available_gas(3000000)]
 #[should_panic(expected: ('DOES_NOT_EXIST', 'ENTRYPOINT_FAILED'))]
 fn test_queue_cancel() {
     set_block_timestamp(1);
@@ -136,7 +134,6 @@ fn test_queue_executed_too_early() {
 }
 
 #[test]
-#[available_gas(3000000)]
 #[should_panic(expected: ('TOO_LATE', 'ENTRYPOINT_FAILED'))]
 fn test_queue_executed_too_late() {
     set_block_timestamp(1);

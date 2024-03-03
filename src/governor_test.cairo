@@ -57,7 +57,6 @@ fn create_proposal(governance: IGovernorDispatcher, token: IGovernanceTokenDispa
 /////////////////////////////
 
 #[test]
-#[available_gas(3000000)]
 fn test_governance_deploy() {
     let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
@@ -84,7 +83,6 @@ fn test_governance_deploy() {
 // PROPOSAL CREATION TESTS
 /////////////////////////////
 #[test]
-#[available_gas(3000000)]
 fn test_propose() {
     let (token, _) = deploy_token('Governor', 'GT', 1000);
     let governance = deploy(
@@ -135,7 +133,6 @@ fn test_propose_already_exists_should_fail() {
 }
 
 #[test]
-#[available_gas(3000000)]
 #[should_panic(expected: ('THRESHOLD', 'ENTRYPOINT_FAILED'))]
 fn test_propose_below_threshold_should_fail() {
     let (token, _) = deploy_token('Governor', 'GT', 1000);
