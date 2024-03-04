@@ -1,4 +1,4 @@
-use core::array::{Array};
+use core::array::{Array,Span};
 use governance::interfaces::erc20::{IERC20Dispatcher};
 use starknet::{ContractAddress};
 
@@ -21,7 +21,7 @@ pub trait IAirdrop<TStorage> {
     fn get_token(self: @TStorage) -> IERC20Dispatcher;
 
     // Claims the given allotment of tokens
-    fn claim(ref self: TStorage, claim: Claim, proof: Array<felt252>);
+    fn claim(ref self: TStorage, claim: Claim, proof: Span<felt252>);
 
     // Return whether the claim with the given ID has been claimed
     fn is_claimed(self: @TStorage, claim_id: u64) -> bool;
@@ -99,18 +99,20 @@ pub mod Airdrop {
             self.token.read()
         }
 
-        fn claim(ref self: ContractState, claim: Claim, proof: Array::<felt252>) {
+        fn claim(ref self: ContractState, claim: Claim, proof: Span<felt252>) {
             let leaf = LegacyHash::hash(selector!("ekubo::governance::airdrop::Claim"), claim);
-            assert(self.root.read() == compute_pedersen_root(leaf, proof.span()), 'INVALID_PROOF');
+            assert(self.root.read() == compute_pedersen_root(leaf, proof), 'INVALID_PROOF');
 
-            assert(!self.is_claimed(claim.id), 'ALREADY_CLAIMED');
-
+            // this is copied in from is_claimed because we only want to read the bitmap once
             let (word, index) = claim_id_to_bitmap_index(claim.id);
             let bitmap = self.claimed_bitmap.read(word);
+            let already_claimed = (bitmap & exp2(index)).is_non_zero();
+
+            assert(!already_claimed, 'ALREADY_CLAIMED');
 
             self.claimed_bitmap.write(word, bitmap | exp2(index.try_into().unwrap()));
 
-            self.token.read().transfer(claim.claimee, u256 { high: 0, low: claim.amount });
+            self.token.read().transfer(claim.claimee, claim.amount.into());
 
             self.emit(Claimed { claim });
         }
