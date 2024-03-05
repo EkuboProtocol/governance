@@ -134,7 +134,6 @@ fn test_claim_128_single_recipient_tree() {
 }
 
 #[test]
-#[available_gas(4000000)]
 fn test_double_claim() {
     let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
 
@@ -150,7 +149,6 @@ fn test_double_claim() {
 }
 
 #[test]
-#[available_gas(4000000)]
 fn test_double_claim_128_single_recipient_tree() {
     let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
 
@@ -202,7 +200,6 @@ fn test_invalid_proof_fake_entry() {
 
 
 #[test]
-#[available_gas(30000000)]
 fn test_claim_two_claims() {
     let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
 
@@ -224,6 +221,25 @@ fn test_claim_two_claims() {
     airdrop.claim(claim_b, array![leaf_a].span());
     assert_eq!(token.balance_of(airdrop.contract_address), 1);
     assert_eq!(token.balance_of(claim_b.claimee), 789);
+}
+
+#[test]
+fn test_claim_two_claims_via_claim_128() {
+    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+
+    let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
+    let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789, };
+
+    let leaf_a = hash_claim(claim_a);
+    let leaf_b = hash_claim(claim_b);
+
+    let root = hash_function(leaf_a, leaf_b);
+
+    let airdrop = deploy(token.contract_address, root);
+    token.transfer(airdrop.contract_address, 6789 + 789 + 1);
+
+    assert_eq!(airdrop.claim_128(array![claim_a, claim_b].span(), array![].span()), 2);
+    assert_eq!(airdrop.claim_128(array![claim_a, claim_b].span(), array![].span()), 0);
 }
 
 fn test_claim_is_valid(root: felt252, claim: Claim, proof: Array<felt252>) {

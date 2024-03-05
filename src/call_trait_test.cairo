@@ -6,7 +6,6 @@ use governance::governance_token_test::{deploy as deploy_token};
 use starknet::{contract_address_const, account::{Call}};
 
 #[test]
-#[available_gas(300000000)]
 fn test_hash_empty() {
     let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: array![].span() };
     assert(
@@ -18,7 +17,6 @@ fn test_hash_empty() {
 }
 
 #[test]
-#[available_gas(300000000)]
 fn test_hash_address_one() {
     let call = Call { to: contract_address_const::<1>(), selector: 0, calldata: array![].span() };
     assert(
@@ -30,7 +28,6 @@ fn test_hash_address_one() {
 }
 
 #[test]
-#[available_gas(300000000)]
 fn test_hash_address_entry_point_one() {
     let call = Call { to: contract_address_const::<0>(), selector: 1, calldata: array![].span() };
     assert(
@@ -42,7 +39,6 @@ fn test_hash_address_entry_point_one() {
 }
 
 #[test]
-#[available_gas(300000000)]
 fn test_hash_address_data_one() {
     let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: array![1].span() };
 
@@ -55,7 +51,6 @@ fn test_hash_address_data_one() {
 }
 
 #[test]
-#[available_gas(300000000)]
 fn test_hash_address_data_one_two() {
     let call = Call {
         to: contract_address_const::<0>(), selector: 0, calldata: array![1, 2].span()
@@ -70,7 +65,6 @@ fn test_hash_address_data_one_two() {
 }
 
 #[test]
-#[available_gas(300000000)]
 #[should_panic(expected: ('CONTRACT_NOT_DEPLOYED',))]
 fn test_execute_contract_not_deployed() {
     let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: array![].span() };
@@ -79,7 +73,6 @@ fn test_execute_contract_not_deployed() {
 
 
 #[test]
-#[available_gas(300000000)]
 #[should_panic(expected: ('ENTRYPOINT_NOT_FOUND',))]
 fn test_execute_invalid_entry_point() {
     let (token, _) = deploy_token('TIMELOCK', 'TL', 1);
@@ -91,7 +84,6 @@ fn test_execute_invalid_entry_point() {
 
 
 #[test]
-#[available_gas(300000000)]
 #[should_panic(expected: ('Failed to deserialize param #1', 'ENTRYPOINT_FAILED'))]
 fn test_execute_invalid_call_data_too_short() {
     let (token, _) = deploy_token('TIMELOCK', 'TL', 1);
@@ -108,7 +100,6 @@ fn test_execute_invalid_call_data_too_short() {
 
 
 #[test]
-#[available_gas(300000000)]
 fn test_execute_valid_call_data() {
     let (token, _) = deploy_token('TIMELOCK', 'TL', 1);
 

@@ -259,7 +259,6 @@ fn test_approve_overflow() {
 }
 
 #[test]
-#[available_gas(30000000)]
 fn test_delegate_count_lags() {
     let (token, _) = deploy('Governor Token', 'GT', 12345);
     let delegatee = contract_address_const::<12345>();
@@ -280,7 +279,6 @@ fn test_delegate_count_lags() {
 
 
 #[test]
-#[available_gas(30000000)]
 fn test_get_delegated_cumulative() {
     let (token, _) = deploy('Governor Token', 'GT', 12345);
     let delegatee = contract_address_const::<12345>();
@@ -296,7 +294,6 @@ fn test_get_delegated_cumulative() {
 }
 
 #[test]
-#[available_gas(30000000)]
 #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
 fn test_get_delegated_cumulative_fails_future() {
     let (token, _) = deploy('Governor Token', 'GT', 12345);
@@ -305,7 +302,6 @@ fn test_get_delegated_cumulative_fails_future() {
 }
 
 #[test]
-#[available_gas(30000000)]
 #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
 fn test_get_delegated_cumulative_fails_future_non_zero_ts() {
     let (token, _) = deploy('Governor Token', 'GT', 12345);
@@ -316,7 +312,6 @@ fn test_get_delegated_cumulative_fails_future_non_zero_ts() {
 }
 
 #[test]
-#[available_gas(30000000)]
 #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
 fn test_get_delegated_at_fails_future() {
     let (token, _) = deploy('Governor Token', 'GT', 12345);
@@ -325,7 +320,6 @@ fn test_get_delegated_at_fails_future() {
 }
 
 #[test]
-#[available_gas(30000000)]
 #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
 fn test_get_delegated_at_fails_future_non_zero_ts() {
     let (token, _) = deploy('Governor Token', 'GT', 12345);
@@ -336,7 +330,6 @@ fn test_get_delegated_at_fails_future_non_zero_ts() {
 }
 
 #[test]
-#[available_gas(30000000)]
 fn test_get_average_delegated() {
     let (token, _) = deploy('Governor Token', 'GT', 12345);
     let delegatee = contract_address_const::<12345>();
@@ -371,7 +364,6 @@ fn test_get_average_delegated() {
 
 
 #[test]
-#[available_gas(30000000)]
 fn test_transfer_delegates_moved() {
     let (token, erc20) = deploy('Governor Token', 'GT', 12345);
     let delegatee = contract_address_const::<12345>();
@@ -391,7 +383,6 @@ fn test_transfer_delegates_moved() {
 
 
 #[test]
-#[available_gas(30000000)]
 fn test_delegate_undelegate() {
     let (token, _) = deploy('Governor Token', 'GT', 12345);
     let delegatee = contract_address_const::<12345>();

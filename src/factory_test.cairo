@@ -45,7 +45,6 @@ fn deploy() -> IFactoryDispatcher {
 
 
 #[test]
-#[available_gas(30000000)]
 fn test_deploy() {
     let factory = deploy();
 
