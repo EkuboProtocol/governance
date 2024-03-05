@@ -90,10 +90,10 @@ pub mod Airdrop {
         self.token.write(token);
     }
 
-    const BITMAP_SIZE: NonZero<u64> = 128;
+    const BITMAP_SIZE: u64 = 128;
 
     fn claim_id_to_bitmap_index(claim_id: u64) -> (u64, u8) {
-        let (word, index) = DivRem::div_rem(claim_id, BITMAP_SIZE);
+        let (word, index) = DivRem::div_rem(claim_id, BITMAP_SIZE.try_into().unwrap());
         (word, index.try_into().unwrap())
     }
 
@@ -108,34 +108,42 @@ pub mod Airdrop {
 
         let mut last_claim_id: Option<u64> = Option::None;
 
-        while let Option::Some(claim) = claims
-            .pop_front() {
-                if let Option::Some(last_id) = last_claim_id {
-                    assert(last_id == (*claim.id - 1), 'SEQUENTIAL');
-                };
+        loop {
+            match claims.pop_front() {
+                Option::Some(claim) => {
+                    match last_claim_id {
+                        Option::Some(last_id) => {
+                            assert(last_id == (*claim.id - 1), 'SEQUENTIAL');
+                        },
+                        Option::None => {},
+                    };
 
-                claim_hashes.append(hash_claim(*claim));
-                last_claim_id = Option::Some(*claim.id);
+                    claim_hashes.append(hash_claim(*claim));
+                    last_claim_id = Option::Some(*claim.id);
+                },
+                Option::None => { break (); }
             };
+        };
 
         // will eventually contain an array of length 1
         let mut current_layer: Span<felt252> = claim_hashes.span();
 
-        while current_layer
-            .len()
-            .is_non_one() {
-                let mut next_layer: Array<felt252> = ArrayTrait::new();
+        loop {
+            if current_layer.len().is_one() {
+                break ();
+            }
+            let mut next_layer: Array<felt252> = ArrayTrait::new();
 
-                while let Option::Some(hash) = current_layer
-                    .pop_front() {
-                        next_layer
-                            .append(
-                                hash_function(*hash, *current_layer.pop_front().unwrap_or(hash))
-                            );
-                    };
-
-                current_layer = next_layer.span();
+            match current_layer.pop_front() {
+                Option::Some(hash) => {
+                    next_layer
+                        .append(hash_function(*hash, *current_layer.pop_front().unwrap_or(hash)));
+                },
+                Option::None => {}
             };
+
+            current_layer = next_layer.span();
+        };
 
         *current_layer.pop_front().unwrap()
     }
@@ -179,7 +187,7 @@ pub mod Airdrop {
 
             // groups that cross bitmap boundaries should just make multiple calls
             // this code already reduces the number of pedersens in the verification by a factor of ~7
-            let (word, index_u64) = DivRem::div_rem(*claims.at(0).id, BITMAP_SIZE);
+            let (word, index_u64) = DivRem::div_rem(*claims.at(0).id, BITMAP_SIZE.try_into().unwrap());
             assert(index_u64 == 0, 'FIRST_CLAIM_MUST_BE_MULT_128');
 
             let root_of_group = compute_root_of_group(claims);
@@ -194,17 +202,21 @@ pub mod Airdrop {
             let mut index: u8 = 0;
             let mut unclaimed: Array<Claim> = ArrayTrait::new();
 
-            while let Option::Some(claim) = claims
-                .pop_front() {
-                    let already_claimed = (bitmap & exp2(index)).is_non_zero();
+            loop {
+                match claims.pop_front() {
+                    Option::Some(claim) => {
+                        let already_claimed = (bitmap & exp2(index)).is_non_zero();
 
-                    if !already_claimed {
-                        bitmap = bitmap | exp2(index);
-                        unclaimed.append(*claim);
-                    }
+                        if !already_claimed {
+                            bitmap = bitmap | exp2(index);
+                            unclaimed.append(*claim);
+                        }
 
-                    index += 1;
+                        index += 1;
+                    },
+                    Option::None => { break (); }
                 };
+            };
 
             self.claimed_bitmap.write(word, bitmap);
 
@@ -213,11 +225,17 @@ pub mod Airdrop {
             // the event emittance and transfers are separated from the above to prevent re-entrance
             let token = self.token.read();
 
-            while let Option::Some(claim) = unclaimed
-                .pop_front() {
-                    token.transfer(claim.claimee, claim.amount.into());
-                    self.emit(Claimed { claim });
+            loop {
+                match unclaimed.pop_front() {
+                    Option::Some(claim) => {
+                        token.transfer(claim.claimee, claim.amount.into());
+                        self.emit(Claimed { claim });
+                    },
+                    Option::None => {
+                        break ();
+                    }
                 };
+            };
 
             // never fails because we assert claims length at the beginning so we know it's less than 128
             num_claimed.try_into().unwrap()
