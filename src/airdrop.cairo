@@ -101,7 +101,7 @@ pub mod Airdrop {
         LegacyHash::hash(selector!("ekubo::governance::airdrop::Claim"), claim)
     }
 
-    pub(crate) fn compute_root_of_group(mut claims: Span<Claim>) -> felt252 {
+    pub fn compute_root_of_group(mut claims: Span<Claim>) -> felt252 {
         assert(!claims.is_empty(), 'NO_CLAIMS');
 
         let mut claim_hashes: Array<felt252> = ArrayTrait::new();

@@ -6,7 +6,7 @@ use core::result::{Result, ResultTrait};
 use core::traits::{TryInto, Into};
 use governance::airdrop::{
     IAirdropDispatcher, IAirdropDispatcherTrait, Airdrop,
-    Airdrop::{compute_pedersen_root, hash_function, hash_claim}, Claim
+    Airdrop::{compute_pedersen_root, hash_function, hash_claim, compute_root_of_group}, Claim
 };
 use governance::governance_token::{
     IGovernanceTokenDispatcherTrait, GovernanceToken, IGovernanceTokenDispatcher
@@ -586,4 +586,33 @@ fn test_multiple_claims_from_generated_tree() {
         );
     let log = pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
     assert_eq!(log.claim, claim_0);
+}
+
+
+#[test]
+fn test_claim_128_large_tree() {
+    let mut i: u64 = 0;
+
+    let mut claims: Array<Claim> = array![];
+
+    while (i < 320) {
+        claims.append(Claim { id: i, amount: 3, claimee: contract_address_const::<0xcdee>() });
+        i += 1;
+    };
+
+    let s1 = compute_root_of_group(claims.span().slice(0, 128));
+    let s2 = compute_root_of_group(claims.span().slice(128, 128));
+    let s3 = compute_root_of_group(claims.span().slice(256, 64));
+
+    let rl = hash_function(s1, s2);
+    let rr = hash_function(s3, s3);
+    let root = hash_function(rl, rr);
+
+    let (_, token) = deploy_token('AIRDROP', 'AD', 960);
+    let airdrop = deploy(token.contract_address, root);
+    token.transfer(airdrop.contract_address, 960);
+
+    assert_eq!(airdrop.claim_128(claims.span().slice(0, 128), array![s2, rr].span()), 128);
+    assert_eq!(airdrop.claim_128(claims.span().slice(128, 128), array![s1, rr].span()), 128);
+    assert_eq!(airdrop.claim_128(claims.span().slice(256, 64), array![s3, rl].span()), 64);
 }
