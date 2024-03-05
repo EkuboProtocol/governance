@@ -46,7 +46,7 @@ pub mod Airdrop {
     use governance::utils::exp2::{exp2};
     use super::{IAirdrop, ContractAddress, Claim, IERC20Dispatcher};
 
-    #[inline(always)]
+
     pub(crate) fn hash_function(a: felt252, b: felt252) -> felt252 {
         let a_u256: u256 = a.into();
         if a_u256 < b.into() {
@@ -92,65 +92,50 @@ pub mod Airdrop {
 
     const BITMAP_SIZE: NonZero<u64> = 128;
 
-    #[inline(always)]
     fn claim_id_to_bitmap_index(claim_id: u64) -> (u64, u8) {
         let (word, index) = DivRem::div_rem(claim_id, BITMAP_SIZE);
         (word, index.try_into().unwrap())
     }
 
-    #[inline(always)]
-    pub(crate) fn hash_claim(claim: Claim) -> felt252 {
+    pub fn hash_claim(claim: Claim) -> felt252 {
         LegacyHash::hash(selector!("ekubo::governance::airdrop::Claim"), claim)
     }
 
-    pub(crate) fn compute_root_of_group(claims: Span<Claim>) -> felt252 {
+    pub(crate) fn compute_root_of_group(mut claims: Span<Claim>) -> felt252 {
         assert(!claims.is_empty(), 'NO_CLAIMS');
 
         let mut claim_hashes: Array<felt252> = ArrayTrait::new();
 
         let mut last_claim_id: Option<u64> = Option::None;
 
-        let mut claims_for_hashing = claims;
-        loop {
-            match claims_for_hashing.pop_front() {
-                Option::Some(claim) => {
-                    match last_claim_id {
-                        Option::Some(last_id) => {
-                            assert(last_id == (*claim.id - 1), 'SEQUENTIAL');
-                        },
-                        Option::None => {}
-                    };
+        while let Option::Some(claim) = claims
+            .pop_front() {
+                if let Option::Some(last_id) = last_claim_id {
+                    assert(last_id == (*claim.id - 1), 'SEQUENTIAL');
+                };
 
-                    claim_hashes.append(hash_claim(*claim));
-                    last_claim_id = Option::Some(*claim.id);
-                },
-                Option::None => { break (); }
+                claim_hashes.append(hash_claim(*claim));
+                last_claim_id = Option::Some(*claim.id);
             };
-        };
 
         // will eventually contain an array of length 1
         let mut current_layer: Span<felt252> = claim_hashes.span();
 
-        loop {
-            if (current_layer.len().is_one()) {
-                break ();
-            }
-            let mut next_layer: Array<felt252> = ArrayTrait::new();
+        while current_layer
+            .len()
+            .is_non_one() {
+                let mut next_layer: Array<felt252> = ArrayTrait::new();
 
-            loop {
-                match current_layer.pop_front() {
-                    Option::Some(hash) => {
+                while let Option::Some(hash) = current_layer
+                    .pop_front() {
                         next_layer
                             .append(
                                 hash_function(*hash, *current_layer.pop_front().unwrap_or(hash))
                             );
-                    },
-                    Option::None => { break (); }
-                }
-            };
+                    };
 
-            current_layer = next_layer.span();
-        };
+                current_layer = next_layer.span();
+            };
 
         *current_layer.pop_front().unwrap()
     }
@@ -190,7 +175,7 @@ pub mod Airdrop {
         fn claim_128(
             ref self: ContractState, mut claims: Span<Claim>, remaining_proof: Span<felt252>
         ) -> u8 {
-            assert(claims.len() <= 128, 'TOO_MANY_CLAIMS');
+            assert(claims.len() < 129, 'TOO_MANY_CLAIMS');
 
             // groups that cross bitmap boundaries should just make multiple calls
             // this code already reduces the number of pedersens in the verification by a factor of ~7
@@ -209,21 +194,17 @@ pub mod Airdrop {
             let mut index: u8 = 0;
             let mut unclaimed: Array<Claim> = ArrayTrait::new();
 
-            loop {
-                match claims.pop_front() {
-                    Option::Some(claim) => {
-                        let already_claimed = (bitmap & exp2(index)).is_non_zero();
+            while let Option::Some(claim) = claims
+                .pop_front() {
+                    let already_claimed = (bitmap & exp2(index)).is_non_zero();
 
-                        if !already_claimed {
-                            bitmap = bitmap | exp2(index);
-                            unclaimed.append(*claim);
-                        }
+                    if !already_claimed {
+                        bitmap = bitmap | exp2(index);
+                        unclaimed.append(*claim);
+                    }
 
-                        index += 1;
-                    },
-                    Option::None => { break (); }
+                    index += 1;
                 };
-            };
 
             self.claimed_bitmap.write(word, bitmap);
 
@@ -232,15 +213,11 @@ pub mod Airdrop {
             // the event emittance and transfers are separated from the above to prevent re-entrance
             let token = self.token.read();
 
-            loop {
-                match unclaimed.pop_front() {
-                    Option::Some(claim) => {
-                        token.transfer(claim.claimee, claim.amount.into());
-                        self.emit(Claimed { claim });
-                    },
-                    Option::None => { break (); }
+            while let Option::Some(claim) = unclaimed
+                .pop_front() {
+                    token.transfer(claim.claimee, claim.amount.into());
+                    self.emit(Claimed { claim });
                 };
-            };
 
             // never fails because we assert claims length at the beginning so we know it's less than 128
             num_claimed.try_into().unwrap()

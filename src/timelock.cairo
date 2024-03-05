@@ -14,11 +14,10 @@ pub struct ExecutionState {
 }
 
 pub(crate) impl ExecutionStateStorePacking of StorePacking<ExecutionState, felt252> {
-    #[inline(always)]
     fn pack(value: ExecutionState) -> felt252 {
         ThreeU64TupleStorePacking::pack((value.started, value.executed, value.canceled))
     }
-    #[inline(always)]
+
     fn unpack(value: felt252) -> ExecutionState {
         let (started, executed, canceled) = ThreeU64TupleStorePacking::unpack(value);
         ExecutionState { started, executed, canceled }
@@ -32,11 +31,10 @@ pub struct TimelockConfig {
 }
 
 pub(crate) impl TimelockConfigStorePacking of StorePacking<TimelockConfig, u128> {
-    #[inline(always)]
     fn pack(value: TimelockConfig) -> u128 {
         TwoU64TupleStorePacking::pack((value.delay, value.window))
     }
-    #[inline(always)]
+
     fn unpack(value: u128) -> TimelockConfig {
         let (delay, window) = TwoU64TupleStorePacking::unpack(value);
         TimelockConfig { delay, window }
