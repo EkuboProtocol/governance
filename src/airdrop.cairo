@@ -40,8 +40,8 @@ pub trait IAirdrop<TStorage> {
 pub mod Airdrop {
     use core::array::{ArrayTrait, SpanTrait};
     use core::hash::{LegacyHash};
-    use core::num::traits::zero::{Zero};
     use core::num::traits::one::{One};
+    use core::num::traits::zero::{Zero};
     use governance::interfaces::erc20::{IERC20DispatcherTrait};
     use governance::utils::exp2::{exp2};
     use super::{IAirdrop, ContractAddress, Claim, IERC20Dispatcher};
@@ -206,6 +206,8 @@ pub mod Airdrop {
             let mut index: u8 = 0;
             let mut num_claimed: u8 = 0;
 
+            let mut claims_to_execute: Array<Claim> = ArrayTrait::new();
+
             loop {
                 match claims_for_claiming.pop_front() {
                     Option::Some(claim) => {
@@ -213,12 +215,7 @@ pub mod Airdrop {
 
                         if !already_claimed {
                             bitmap = bitmap | exp2(index);
-
-                            // todo: this assumes the token will not reenter this contract
-                            self.token.read().transfer(*claim.claimee, (*claim.amount).into());
-
-                            self.emit(Claimed { claim: *claim });
-
+                            claims_to_execute.append(*claim);
                             num_claimed += 1;
                         }
 
@@ -229,7 +226,19 @@ pub mod Airdrop {
             };
 
             self.claimed_bitmap.write(word, bitmap);
-            
+
+            let token = self.token.read();
+
+            loop {
+                match claims_to_execute.pop_front() {
+                    Option::Some(claim) => {
+                        token.transfer(claim.claimee, claim.amount.into());
+                        self.emit(Claimed { claim });
+                    },
+                    Option::None => { break (); }
+                };
+            };
+
             num_claimed
         }
 
