@@ -27,6 +27,11 @@ pub trait IAirdrop<TStorage> {
     // Panics if the proof is invalid.
     fn claim(ref self: TStorage, claim: Claim, proof: Span<felt252>) -> bool;
 
+    // Claims the batch of up to 128 claims that must be aligned with a single bitmap, i.e. the id of the first must be a multiple of 128
+    // and the claims should be sequentially in order. The proof verification is optimized in this method.
+    // Returns the number of claims that were executed
+    fn claim_128(ref self: TStorage, claims: Span<Claim>, remaining_proof: Span<felt252>) -> u8;
+
     // Return whether the claim with the given ID has been claimed
     fn is_claimed(self: @TStorage, claim_id: u64) -> bool;
 }
@@ -35,13 +40,13 @@ pub trait IAirdrop<TStorage> {
 pub mod Airdrop {
     use core::array::{ArrayTrait, SpanTrait};
     use core::hash::{LegacyHash};
-    use core::num::traits::zero::{Zero};
     use core::num::traits::one::{One};
+    use core::num::traits::zero::{Zero};
     use governance::interfaces::erc20::{IERC20DispatcherTrait};
     use governance::utils::exp2::{exp2};
     use super::{IAirdrop, ContractAddress, Claim, IERC20Dispatcher};
 
-    #[inline(always)]
+
     pub(crate) fn hash_function(a: felt252, b: felt252) -> felt252 {
         let a_u256: u256 = a.into();
         if a_u256 < b.into() {
@@ -85,15 +90,54 @@ pub mod Airdrop {
         self.token.write(token);
     }
 
-    #[inline(always)]
+    const BITMAP_SIZE: NonZero<u64> = 128;
+
     fn claim_id_to_bitmap_index(claim_id: u64) -> (u64, u8) {
-        let (word, index) = DivRem::div_rem(claim_id, 128_u64.try_into().unwrap());
+        let (word, index) = DivRem::div_rem(claim_id, BITMAP_SIZE);
         (word, index.try_into().unwrap())
     }
 
-    #[inline(always)]
-    fn hash_claim(claim: Claim) -> felt252 {
+    pub fn hash_claim(claim: Claim) -> felt252 {
         LegacyHash::hash(selector!("ekubo::governance::airdrop::Claim"), claim)
+    }
+
+    pub fn compute_root_of_group(mut claims: Span<Claim>) -> felt252 {
+        assert(!claims.is_empty(), 'NO_CLAIMS');
+
+        let mut claim_hashes: Array<felt252> = ArrayTrait::new();
+
+        let mut last_claim_id: Option<u64> = Option::None;
+
+        while let Option::Some(claim) = claims
+            .pop_front() {
+                if let Option::Some(last_id) = last_claim_id {
+                    assert(last_id == (*claim.id - 1), 'SEQUENTIAL');
+                };
+
+                claim_hashes.append(hash_claim(*claim));
+                last_claim_id = Option::Some(*claim.id);
+            };
+
+        // will eventually contain an array of length 1
+        let mut current_layer: Span<felt252> = claim_hashes.span();
+
+        while current_layer
+            .len()
+            .is_non_one() {
+                let mut next_layer: Array<felt252> = ArrayTrait::new();
+
+                while let Option::Some(hash) = current_layer
+                    .pop_front() {
+                        next_layer
+                            .append(
+                                hash_function(*hash, *current_layer.pop_front().unwrap_or(hash))
+                            );
+                    };
+
+                current_layer = next_layer.span();
+            };
+
+        *current_layer.pop_front().unwrap()
     }
 
     #[abi(embed_v0)]
@@ -126,6 +170,57 @@ pub mod Airdrop {
 
                 true
             }
+        }
+
+        fn claim_128(
+            ref self: ContractState, mut claims: Span<Claim>, remaining_proof: Span<felt252>
+        ) -> u8 {
+            assert(claims.len() < 129, 'TOO_MANY_CLAIMS');
+
+            // groups that cross bitmap boundaries should just make multiple calls
+            // this code already reduces the number of pedersens in the verification by a factor of ~7
+            let (word, index_u64) = DivRem::div_rem(*claims.at(0).id, BITMAP_SIZE);
+            assert(index_u64 == 0, 'FIRST_CLAIM_MUST_BE_MULT_128');
+
+            let root_of_group = compute_root_of_group(claims);
+
+            assert(
+                self.root.read() == compute_pedersen_root(root_of_group, remaining_proof),
+                'INVALID_PROOF'
+            );
+
+            let mut bitmap = self.claimed_bitmap.read(word);
+
+            let mut index: u8 = 0;
+            let mut unclaimed: Array<Claim> = ArrayTrait::new();
+
+            while let Option::Some(claim) = claims
+                .pop_front() {
+                    let already_claimed = (bitmap & exp2(index)).is_non_zero();
+
+                    if !already_claimed {
+                        bitmap = bitmap | exp2(index);
+                        unclaimed.append(*claim);
+                    }
+
+                    index += 1;
+                };
+
+            self.claimed_bitmap.write(word, bitmap);
+
+            let num_claimed = unclaimed.len();
+
+            // the event emittance and transfers are separated from the above to prevent re-entrance
+            let token = self.token.read();
+
+            while let Option::Some(claim) = unclaimed
+                .pop_front() {
+                    token.transfer(claim.claimee, claim.amount.into());
+                    self.emit(Claimed { claim });
+                };
+
+            // never fails because we assert claims length at the beginning so we know it's less than 128
+            num_claimed.try_into().unwrap()
         }
 
         fn is_claimed(self: @ContractState, claim_id: u64) -> bool {
