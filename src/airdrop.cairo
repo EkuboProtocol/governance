@@ -1,4 +1,4 @@
-use core::array::{Array,Span};
+use core::array::{Array, Span};
 use governance::interfaces::erc20::{IERC20Dispatcher};
 use starknet::{ContractAddress};
 
@@ -20,8 +20,12 @@ pub trait IAirdrop<TStorage> {
     // Return the token being dropped
     fn get_token(self: @TStorage) -> IERC20Dispatcher;
 
-    // Claims the given allotment of tokens
-    fn claim(ref self: TStorage, claim: Claim, proof: Span<felt252>);
+    // Claims the given allotment of tokens.
+    // Because this method is idempotent, it does not revert in case of a second submission of the same claim. 
+    // This makes it simpler to batch many claims together in a single transaction.
+    // Returns true iff the claim was processed. Returns false if the claim was already claimed.
+    // Panics if the proof is invalid.
+    fn claim(ref self: TStorage, claim: Claim, proof: Span<felt252>) -> bool;
 
     // Return whether the claim with the given ID has been claimed
     fn is_claimed(self: @TStorage, claim_id: u64) -> bool;
@@ -32,30 +36,28 @@ pub mod Airdrop {
     use core::array::{ArrayTrait, SpanTrait};
     use core::hash::{LegacyHash};
     use core::num::traits::zero::{Zero};
+    use core::num::traits::one::{One};
     use governance::interfaces::erc20::{IERC20DispatcherTrait};
     use governance::utils::exp2::{exp2};
     use super::{IAirdrop, ContractAddress, Claim, IERC20Dispatcher};
 
-    pub(crate) fn lt<X, +Copy<X>, +Into<X, u256>>(lhs: @X, rhs: @X) -> bool {
-        let a: u256 = (*lhs).into();
-        let b: u256 = (*rhs).into();
-        return a < b;
+    #[inline(always)]
+    pub(crate) fn hash_function(a: felt252, b: felt252) -> felt252 {
+        let a_u256: u256 = a.into();
+        if a_u256 < b.into() {
+            core::pedersen::pedersen(a, b)
+        } else {
+            core::pedersen::pedersen(b, a)
+        }
     }
 
     // Compute the pedersen root of a merkle tree by combining the current node with each sibling up the tree
     pub(crate) fn compute_pedersen_root(current: felt252, mut proof: Span<felt252>) -> felt252 {
         match proof.pop_front() {
             Option::Some(proof_element) => {
-                compute_pedersen_root(
-                    if lt(@current, proof_element) {
-                        core::pedersen::pedersen(current, *proof_element)
-                    } else {
-                        core::pedersen::pedersen(*proof_element, current)
-                    },
-                    proof
-                )
+                compute_pedersen_root(hash_function(current, *proof_element), proof)
             },
-            Option::None(()) => { current },
+            Option::None => { current },
         }
     }
 
@@ -89,6 +91,11 @@ pub mod Airdrop {
         (word, index.try_into().unwrap())
     }
 
+    #[inline(always)]
+    fn hash_claim(claim: Claim) -> felt252 {
+        LegacyHash::hash(selector!("ekubo::governance::airdrop::Claim"), claim)
+    }
+
     #[abi(embed_v0)]
     impl AirdropImpl of IAirdrop<ContractState> {
         fn get_root(self: @ContractState) -> felt252 {
@@ -99,8 +106,8 @@ pub mod Airdrop {
             self.token.read()
         }
 
-        fn claim(ref self: ContractState, claim: Claim, proof: Span<felt252>) {
-            let leaf = LegacyHash::hash(selector!("ekubo::governance::airdrop::Claim"), claim);
+        fn claim(ref self: ContractState, claim: Claim, proof: Span<felt252>) -> bool {
+            let leaf = hash_claim(claim);
             assert(self.root.read() == compute_pedersen_root(leaf, proof), 'INVALID_PROOF');
 
             // this is copied in from is_claimed because we only want to read the bitmap once
@@ -108,13 +115,17 @@ pub mod Airdrop {
             let bitmap = self.claimed_bitmap.read(word);
             let already_claimed = (bitmap & exp2(index)).is_non_zero();
 
-            assert(!already_claimed, 'ALREADY_CLAIMED');
+            if already_claimed {
+                false
+            } else {
+                self.claimed_bitmap.write(word, bitmap | exp2(index.try_into().unwrap()));
 
-            self.claimed_bitmap.write(word, bitmap | exp2(index.try_into().unwrap()));
+                self.token.read().transfer(claim.claimee, claim.amount.into());
 
-            self.token.read().transfer(claim.claimee, claim.amount.into());
+                self.emit(Claimed { claim });
 
-            self.emit(Claimed { claim });
+                true
+            }
         }
 
         fn is_claimed(self: @ContractState, claim_id: u64) -> bool {
