@@ -6,7 +6,7 @@ use core::result::{Result, ResultTrait};
 use core::traits::{TryInto, Into};
 use governance::airdrop::{
     IAirdropDispatcher, IAirdropDispatcherTrait, Airdrop,
-    Airdrop::{compute_pedersen_root, hash_function}, Claim
+    Airdrop::{compute_pedersen_root, hash_function, hash_claim}, Claim
 };
 use governance::governance_token::{
     IGovernanceTokenDispatcherTrait, GovernanceToken, IGovernanceTokenDispatcher
@@ -41,10 +41,7 @@ fn test_selector() {
 #[test]
 fn test_hash() {
     assert_eq!(
-        LegacyHash::hash(
-            selector!("ekubo::governance::airdrop::Claim"),
-            Claim { id: 123, claimee: contract_address_const::<456>(), amount: 789 }
-        ),
+        hash_claim(Claim { id: 123, claimee: contract_address_const::<456>(), amount: 789 }),
         0x0760b337026a91a6f2af99a0654f7fdff5d5c8d4e565277e787b99e17b1742a3
     );
 }
@@ -92,7 +89,7 @@ fn test_claim_single_recipient() {
 
     let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
 
-    let leaf = LegacyHash::hash(selector!("ekubo::governance::airdrop::Claim"), claim);
+    let leaf = hash_claim(claim);
 
     let airdrop = deploy(token.contract_address, leaf);
 
@@ -112,13 +109,38 @@ fn test_claim_single_recipient() {
 }
 
 #[test]
+fn test_claim_128_single_recipient_tree() {
+    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+
+    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
+
+    let leaf = hash_claim(claim);
+
+    let airdrop = deploy(token.contract_address, leaf);
+
+    token.transfer(airdrop.contract_address, 6789);
+
+    assert_eq!(airdrop.claim_128(array![claim].span(), array![].span()), 1);
+
+    let log = pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
+    assert_eq!(log.claim, claim);
+
+    pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
+    pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
+    let log = pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
+    assert_eq!(log.from, airdrop.contract_address);
+    assert_eq!(log.to, claim.claimee);
+    assert_eq!(log.value, claim.amount.into());
+}
+
+#[test]
 #[available_gas(4000000)]
 fn test_double_claim() {
     let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
 
     let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
 
-    let leaf = LegacyHash::hash(selector!("ekubo::governance::airdrop::Claim"), claim);
+    let leaf = hash_claim(claim);
 
     let airdrop = deploy(token.contract_address, leaf);
 
@@ -128,13 +150,29 @@ fn test_double_claim() {
 }
 
 #[test]
+#[available_gas(4000000)]
+fn test_double_claim_128_single_recipient_tree() {
+    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+
+    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
+
+    let leaf = hash_claim(claim);
+
+    let airdrop = deploy(token.contract_address, leaf);
+
+    token.transfer(airdrop.contract_address, 6789);
+    assert_eq!(airdrop.claim_128(array![claim].span(), array![].span()), 1);
+    assert_eq!(airdrop.claim_128(array![claim].span(), array![].span()), 0);
+}
+
+#[test]
 #[should_panic(expected: ('INVALID_PROOF', 'ENTRYPOINT_FAILED'))]
 fn test_invalid_proof_single_entry() {
     let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
 
     let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
 
-    let leaf = LegacyHash::hash(selector!("ekubo::governance::airdrop::Claim"), claim);
+    let leaf = hash_claim(claim);
 
     let airdrop = deploy(token.contract_address, leaf);
 
@@ -149,7 +187,7 @@ fn test_invalid_proof_fake_entry() {
 
     let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
 
-    let leaf = LegacyHash::hash(selector!("ekubo::governance::airdrop::Claim"), claim);
+    let leaf = hash_claim(claim);
 
     let airdrop = deploy(token.contract_address, leaf);
 
@@ -171,8 +209,8 @@ fn test_claim_two_claims() {
     let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
     let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789, };
 
-    let leaf_a = LegacyHash::hash(selector!("ekubo::governance::airdrop::Claim"), claim_a);
-    let leaf_b = LegacyHash::hash(selector!("ekubo::governance::airdrop::Claim"), claim_b);
+    let leaf_a = hash_claim(claim_a);
+    let leaf_b = hash_claim(claim_b);
 
     let root = hash_function(leaf_a, leaf_b);
 

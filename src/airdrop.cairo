@@ -90,6 +90,8 @@ pub mod Airdrop {
         self.token.write(token);
     }
 
+    const BITMAP_SIZE: NonZero<u64> = 128;
+
     #[inline(always)]
     fn claim_id_to_bitmap_index(claim_id: u64) -> (u64, u8) {
         let (word, index) = DivRem::div_rem(claim_id, BITMAP_SIZE);
@@ -97,11 +99,9 @@ pub mod Airdrop {
     }
 
     #[inline(always)]
-    fn hash_claim(claim: Claim) -> felt252 {
+    pub(crate) fn hash_claim(claim: Claim) -> felt252 {
         LegacyHash::hash(selector!("ekubo::governance::airdrop::Claim"), claim)
     }
-
-    const BITMAP_SIZE: NonZero<u64> = 128;
 
     #[abi(embed_v0)]
     impl AirdropImpl of IAirdrop<ContractState> {
@@ -203,34 +203,34 @@ pub mod Airdrop {
             let mut bitmap = self.claimed_bitmap.read(word);
 
             let mut claims_for_claiming = claims;
-            let mut index = 0;
-            let mut number_claimed: u8 = 0;
+            let mut index: u8 = 0;
+            let mut num_claimed: u8 = 0;
 
             loop {
                 match claims_for_claiming.pop_front() {
                     Option::Some(claim) => {
-                        let this_index = index;
-                        index += 1;
-
-                        let already_claimed = (bitmap & exp2(this_index)).is_non_zero();
+                        let already_claimed = (bitmap & exp2(index)).is_non_zero();
 
                         if !already_claimed {
-                            bitmap = bitmap | exp2(index.try_into().unwrap());
+                            bitmap = bitmap | exp2(index);
 
+                            // todo: this assumes the token will not reenter this contract
                             self.token.read().transfer(*claim.claimee, (*claim.amount).into());
 
                             self.emit(Claimed { claim: *claim });
 
-                            number_claimed += 1;
+                            num_claimed += 1;
                         }
+
+                        index += 1;
                     },
                     Option::None => { break (); }
                 };
             };
 
             self.claimed_bitmap.write(word, bitmap);
-
-            number_claimed
+            
+            num_claimed
         }
 
         fn is_claimed(self: @ContractState, claim_id: u64) -> bool {
