@@ -236,10 +236,30 @@ fn test_claim_two_claims_via_claim_128() {
     let root = hash_function(leaf_a, leaf_b);
 
     let airdrop = deploy(token.contract_address, root);
-    token.transfer(airdrop.contract_address, 6789 + 789 + 1);
+    token.transfer(airdrop.contract_address, 6789 + 789);
 
     assert_eq!(airdrop.claim_128(array![claim_a, claim_b].span(), array![].span()), 2);
     assert_eq!(airdrop.claim_128(array![claim_a, claim_b].span(), array![].span()), 0);
+}
+
+#[test]
+#[should_panic(expected: ('INVALID_PROOF', 'ENTRYPOINT_FAILED'))]
+fn test_claim_three_claims_one_invalid_via_claim_128() {
+    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+
+    let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
+    let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789, };
+    let claim_b_2 = Claim { id: 2, claimee: contract_address_const::<3456>(), amount: 789, };
+
+    let leaf_a = hash_claim(claim_a);
+    let leaf_b = hash_claim(claim_b);
+
+    let root = hash_function(leaf_a, leaf_b);
+
+    let airdrop = deploy(token.contract_address, root);
+    token.transfer(airdrop.contract_address, 6789 + 789 + 789);
+
+    assert_eq!(airdrop.claim_128(array![claim_a, claim_b, claim_b_2].span(), array![].span()), 3);
 }
 
 fn test_claim_is_valid(root: felt252, claim: Claim, proof: Array<felt252>) {
