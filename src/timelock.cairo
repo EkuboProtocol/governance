@@ -135,12 +135,14 @@ pub mod Timelock {
     // Take a list of calls and convert it to a unique identifier for the execution
     // Two lists of calls will always have the same ID if they are equivalent
     // A list of calls can only be queued and executed once. To make 2 different calls, add an empty call.
-    pub(crate) fn to_id(mut calls: Span<Call>) -> felt252 {
+    pub fn to_id(mut calls: Span<Call>) -> felt252 {
         let mut state = selector!("ekubo::governance::Timelock");
-        while let Option::Some(call) = calls.pop_front() {
-            state = LegacyHash::hash(state, call);
-        };
-        state
+        loop {
+            match calls.pop_front() {
+                Option::Some(call) => { state = LegacyHash::hash(state, call) },
+                Option::None => { break state; }
+            };
+        }
     }
 
     #[generate_trait]
@@ -221,8 +223,11 @@ pub mod Timelock {
 
             let mut results: Array<Span<felt252>> = ArrayTrait::new();
 
-            while let Option::Some(call) = calls.pop_front() {
-                results.append(call.execute());
+            loop {
+                match calls.pop_front() {
+                    Option::Some(call) => { results.append(call.execute()); },
+                    Option::None => { break; }
+                };
             };
 
             self.emit(Executed { id, });
