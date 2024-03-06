@@ -98,7 +98,6 @@ fn test_execute_invalid_call_data_too_short() {
     call.execute();
 }
 
-
 #[test]
 fn test_execute_valid_call_data() {
     let (token, _) = deploy_token('TIMELOCK', 'TL', 1);

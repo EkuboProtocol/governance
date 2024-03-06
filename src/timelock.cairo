@@ -3,6 +3,7 @@ use core::result::ResultTrait;
 use core::traits::TryInto;
 use governance::utils::timestamps::{ThreeU64TupleStorePacking, TwoU64TupleStorePacking};
 use starknet::account::{Call};
+use starknet::class_hash::{ClassHash};
 use starknet::contract_address::{ContractAddress};
 use starknet::storage_access::{StorePacking};
 
@@ -63,8 +64,12 @@ pub trait ITimelock<TStorage> {
 
     // Transfer ownership, i.e. the address that can queue and cancel calls. This must be self-called via #queue.
     fn transfer(ref self: TStorage, to: ContractAddress);
+
     // Configure the delay and the window for call execution. This must be self-called via #queue.
     fn configure(ref self: TStorage, config: TimelockConfig);
+
+    // Replace the code at this address. This must be self-called via #queue.
+    fn upgrade(ref self: TStorage, class_hash: ClassHash);
 }
 
 #[derive(Copy, Drop, Serde)]
@@ -77,13 +82,14 @@ pub struct ExecutionWindow {
 pub mod Timelock {
     use core::hash::LegacyHash;
     use core::num::traits::zero::{Zero};
+    use core::result::ResultTrait;
     use governance::call_trait::{CallTrait, HashCall};
     use starknet::{
-        get_caller_address, get_contract_address, SyscallResult, syscalls::call_contract_syscall,
-        get_block_timestamp
+        get_caller_address, get_contract_address, SyscallResult,
+        syscalls::{call_contract_syscall, replace_class_syscall}, get_block_timestamp
     };
     use super::{
-        ITimelock, ContractAddress, Call, TimelockConfig, ExecutionState,
+        ClassHash, ITimelock, ContractAddress, Call, TimelockConfig, ExecutionState,
         TimelockConfigStorePacking, ExecutionStateStorePacking, ExecutionWindow
     };
 
@@ -129,14 +135,12 @@ pub mod Timelock {
     // Take a list of calls and convert it to a unique identifier for the execution
     // Two lists of calls will always have the same ID if they are equivalent
     // A list of calls can only be queued and executed once. To make 2 different calls, add an empty call.
-    pub fn to_id(mut calls: Span<Call>) -> felt252 {
-        let mut state = 0;
-        loop {
-            match calls.pop_front() {
-                Option::Some(call) => { state = LegacyHash::hash(state, call) },
-                Option::None => { break state; }
-            };
-        }
+    pub(crate) fn to_id(mut calls: Span<Call>) -> felt252 {
+        let mut state = selector!("ekubo::governance::Timelock");
+        while let Option::Some(call) = calls.pop_front() {
+            state = LegacyHash::hash(state, call);
+        };
+        state
     }
 
     #[generate_trait]
@@ -217,11 +221,8 @@ pub mod Timelock {
 
             let mut results: Array<Span<felt252>> = ArrayTrait::new();
 
-            loop {
-                match calls.pop_front() {
-                    Option::Some(call) => { results.append(call.execute()); },
-                    Option::None => { break; }
-                };
+            while let Option::Some(call) = calls.pop_front() {
+                results.append(call.execute());
             };
 
             self.emit(Executed { id, });
@@ -262,6 +263,12 @@ pub mod Timelock {
             self.check_self_call();
 
             self.config.write(config);
+        }
+
+        fn upgrade(ref self: ContractState, class_hash: ClassHash) {
+            self.check_self_call();
+
+            replace_class_syscall(class_hash).unwrap();
         }
     }
 }
