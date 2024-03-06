@@ -198,6 +198,82 @@ fn test_invalid_proof_fake_entry() {
         );
 }
 
+#[test]
+#[should_panic(expected: ('NO_CLAIMS',))]
+fn test_compute_root_of_group_empty() {
+    compute_root_of_group(array![].span());
+}
+
+#[test]
+fn test_compute_root_of_group() {
+    assert_eq!(
+        compute_root_of_group(
+            array![Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 }].span()
+        ),
+        0x0336963eacdeee5da262a870ddfc7f8d12c6162ebdf58a805941c06d3baf8b40
+    );
+    assert_eq!(
+        compute_root_of_group(
+            array![
+                Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 },
+                Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789 }
+            ]
+                .span()
+        ),
+        0x0526f232ab9be3fef7ac6e1f8fd57f45232f9287ce58073c0436b135e1c77ea7
+    );
+    assert_eq!(
+        compute_root_of_group(
+            array![
+                Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 },
+                Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789 },
+                Claim { id: 2, claimee: contract_address_const::<4567>(), amount: 89 }
+            ]
+                .span()
+        ),
+        0x06a2f92ce1d9514d0270addf05923a6aeb568ec3fb962a40ddc62c86d0bd3846
+    );
+}
+
+
+#[test]
+fn test_compute_root_of_group_large() {
+    let mut arr: Array<Claim> = array![];
+
+    let mut i: u64 = 64;
+    while i < 256 {
+        arr
+            .append(
+                Claim { id: i, claimee: contract_address_const::<2345>(), amount: (i + 1).into() }
+            );
+        i += 1;
+    };
+
+    assert_eq!(
+        compute_root_of_group(arr.span()),
+        0x0570d1767033fda8e16a754fccc383a47bc79a60d1b97c905b354adda64355d4
+    );
+}
+
+#[test]
+fn test_compute_root_of_group_large_odd() {
+    let mut arr: Array<Claim> = array![];
+
+    let mut i: u64 = 64;
+    while i < 257 {
+        arr
+            .append(
+                Claim { id: i, claimee: contract_address_const::<2345>(), amount: (i + 1).into() }
+            );
+        i += 1;
+    };
+
+    assert_eq!(
+        compute_root_of_group(arr.span()),
+        0x360de0739531ee0f159a2d940ff6b83066a4269da0ce1e2ecad27feebf81d4
+    );
+}
+
 
 #[test]
 fn test_claim_two_claims() {
@@ -239,6 +315,29 @@ fn test_claim_two_claims_via_claim_128() {
     token.transfer(airdrop.contract_address, 6789 + 789);
 
     assert_eq!(airdrop.claim_128(array![claim_a, claim_b].span(), array![].span()), 2);
+
+    let claim_a_log = pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
+    assert_eq!(claim_a_log.claim, claim_a);
+    let claim_b_log = pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
+    assert_eq!(claim_b_log.claim, claim_b);
+
+    // pops the initial supply transfer from 0 log
+    pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
+    // pops the transfer from deployer to airdrop
+    pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
+
+    let transfer_claim_a_log = pop_log::<GovernanceToken::Transfer>(token.contract_address)
+        .unwrap();
+    assert_eq!(transfer_claim_a_log.from, airdrop.contract_address);
+    assert_eq!(transfer_claim_a_log.to, claim_a.claimee);
+    assert_eq!(transfer_claim_a_log.value, claim_a.amount.into());
+
+    let transfer_claim_b_log = pop_log::<GovernanceToken::Transfer>(token.contract_address)
+        .unwrap();
+    assert_eq!(transfer_claim_b_log.from, airdrop.contract_address);
+    assert_eq!(transfer_claim_b_log.to, claim_b.claimee);
+    assert_eq!(transfer_claim_b_log.value, claim_b.amount.into());
+
     assert_eq!(airdrop.claim_128(array![claim_a, claim_b].span(), array![].span()), 0);
 }
 
@@ -608,6 +707,52 @@ fn test_multiple_claims_from_generated_tree() {
     assert_eq!(log.claim, claim_0);
 }
 
+
+#[test]
+#[should_panic(expected: ('FIRST_CLAIM_MUST_BE_MULT_128', 'ENTRYPOINT_FAILED'))]
+fn test_claim_128_fails_if_not_id_aligned() {
+    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+
+    let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
+    let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789, };
+
+    let leaf_a = hash_claim(claim_a);
+    let leaf_b = hash_claim(claim_b);
+
+    let root = hash_function(leaf_a, leaf_b);
+
+    let airdrop = deploy(token.contract_address, root);
+
+    airdrop.claim_128(array![claim_b, claim_a].span(), array![].span());
+}
+
+
+#[test]
+#[should_panic(expected: ('CLAIMS_EMPTY', 'ENTRYPOINT_FAILED'))]
+fn test_claim_128_empty() {
+    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+
+    let airdrop = deploy(token.contract_address, 0);
+
+    airdrop.claim_128(array![].span(), array![].span());
+}
+
+#[test]
+#[should_panic(expected: ('TOO_MANY_CLAIMS', 'ENTRYPOINT_FAILED'))]
+fn test_claim_128_too_many_claims() {
+    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+
+    let airdrop = deploy(token.contract_address, 0);
+
+    let mut claims: Array<Claim> = array![];
+    let mut i: u64 = 0;
+    while i < 129 {
+        claims.append(Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, });
+        i += 1;
+    };
+
+    airdrop.claim_128(claims.span(), array![].span());
+}
 
 #[test]
 fn test_claim_128_large_tree() {

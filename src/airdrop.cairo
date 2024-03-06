@@ -176,6 +176,7 @@ pub mod Airdrop {
             ref self: ContractState, mut claims: Span<Claim>, remaining_proof: Span<felt252>
         ) -> u8 {
             assert(claims.len() < 129, 'TOO_MANY_CLAIMS');
+            assert(!claims.is_empty(), 'CLAIMS_EMPTY');
 
             // groups that cross bitmap boundaries should just make multiple calls
             // this code already reduces the number of pedersens in the verification by a factor of ~7
