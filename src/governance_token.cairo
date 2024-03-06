@@ -57,7 +57,6 @@ pub mod GovernanceToken {
         }
     }
 
-
     #[storage]
     struct Storage {
         name: felt252,

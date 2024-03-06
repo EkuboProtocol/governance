@@ -11,11 +11,8 @@ pub impl HashCall<S, +HashStateTrait<S>, +Drop<S>, +Copy<S>> of Hash<@Call, S> {
         let mut s = state.update_with((*value.to)).update_with(*value.selector);
 
         let mut data_span: Span<felt252> = *value.calldata;
-        loop {
-            match data_span.pop_front() {
-                Option::Some(word) => { s = s.update(*word); },
-                Option::None => { break; }
-            };
+        while let Option::Some(word) = data_span.pop_front() {
+            s = s.update(*word);
         };
 
         s
