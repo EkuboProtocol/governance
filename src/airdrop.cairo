@@ -134,12 +134,16 @@ pub mod Airdrop {
             }
             let mut next_layer: Array<felt252> = ArrayTrait::new();
 
-            match current_layer.pop_front() {
-                Option::Some(hash) => {
-                    next_layer
-                        .append(hash_function(*hash, *current_layer.pop_front().unwrap_or(hash)));
-                },
-                Option::None => {}
+            loop {
+                match current_layer.pop_front() {
+                    Option::Some(hash) => {
+                        next_layer
+                            .append(
+                                hash_function(*hash, *current_layer.pop_front().unwrap_or(hash))
+                            );
+                    },
+                    Option::None => { break (); }
+                };
             };
 
             current_layer = next_layer.span();
@@ -187,7 +191,9 @@ pub mod Airdrop {
 
             // groups that cross bitmap boundaries should just make multiple calls
             // this code already reduces the number of pedersens in the verification by a factor of ~7
-            let (word, index_u64) = DivRem::div_rem(*claims.at(0).id, BITMAP_SIZE.try_into().unwrap());
+            let (word, index_u64) = DivRem::div_rem(
+                *claims.at(0).id, BITMAP_SIZE.try_into().unwrap()
+            );
             assert(index_u64 == 0, 'FIRST_CLAIM_MUST_BE_MULT_128');
 
             let root_of_group = compute_root_of_group(claims);
@@ -231,9 +237,7 @@ pub mod Airdrop {
                         token.transfer(claim.claimee, claim.amount.into());
                         self.emit(Claimed { claim });
                     },
-                    Option::None => {
-                        break ();
-                    }
+                    Option::None => { break (); }
                 };
             };
 
