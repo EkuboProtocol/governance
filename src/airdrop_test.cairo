@@ -807,16 +807,18 @@ fn test_claim_128_double_claim() {
 
     assert_eq!(airdrop.claim_128(claims.span().slice(0, 128), array![s2, rr].span()), 128);
     let mut i: u64 = 0;
-    while let Option::Some(claimed) =
-        pop_log::<
-            Airdrop::Claimed
-        >(airdrop.contract_address) {
-            assert_eq!(
-                claimed.claim,
-                Claim { id: i, amount: 3, claimee: contract_address_const::<0xcdee>() }
-            );
-            i += 1;
+    loop {
+        match pop_log::<Airdrop::Claimed>(airdrop.contract_address) {
+            Option::Some(claimed) => {
+                assert_eq!(
+                    claimed.claim,
+                    Claim { id: i, amount: 3, claimee: contract_address_const::<0xcdee>() }
+                );
+                i += 1;
+            },
+            Option::None => { break (); }
         };
+    };
 
     assert_eq!(airdrop.claim_128(claims.span().slice(0, 128), array![s2, rr].span()), 0);
     assert_eq!(pop_log::<Airdrop::Claimed>(airdrop.contract_address).is_none(), true);
