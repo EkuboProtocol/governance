@@ -781,3 +781,43 @@ fn test_claim_128_large_tree() {
     assert_eq!(airdrop.claim_128(claims.span().slice(128, 128), array![s1, rr].span()), 128);
     assert_eq!(airdrop.claim_128(claims.span().slice(256, 64), array![s3, rl].span()), 64);
 }
+
+#[test]
+fn test_claim_128_double_claim() {
+    let mut i: u64 = 0;
+
+    let mut claims: Array<Claim> = array![];
+
+    while (i < 320) {
+        claims.append(Claim { id: i, amount: 3, claimee: contract_address_const::<0xcdee>() });
+        i += 1;
+    };
+
+    let s1 = compute_root_of_group(claims.span().slice(0, 128));
+    let s2 = compute_root_of_group(claims.span().slice(128, 128));
+    let s3 = compute_root_of_group(claims.span().slice(256, 64));
+
+    let rl = hash_function(s1, s2);
+    let rr = hash_function(s3, s3);
+    let root = hash_function(rl, rr);
+
+    let (_, token) = deploy_token('AIRDROP', 'AD', 960);
+    let airdrop = deploy(token.contract_address, root);
+    token.transfer(airdrop.contract_address, 960);
+
+    assert_eq!(airdrop.claim_128(claims.span().slice(0, 128), array![s2, rr].span()), 128);
+    let mut i: u64 = 0;
+    while let Option::Some(claimed) =
+        pop_log::<
+            Airdrop::Claimed
+        >(airdrop.contract_address) {
+            assert_eq!(
+                claimed.claim,
+                Claim { id: i, amount: 3, claimee: contract_address_const::<0xcdee>() }
+            );
+            i += 1;
+        };
+
+    assert_eq!(airdrop.claim_128(claims.span().slice(0, 128), array![s2, rr].span()), 0);
+    assert_eq!(pop_log::<Airdrop::Claimed>(airdrop.contract_address).is_none(), true);
+}
