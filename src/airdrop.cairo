@@ -18,7 +18,7 @@ pub trait IAirdrop<TStorage> {
     fn get_root(self: @TStorage) -> felt252;
 
     // Return the token being dropped
-    fn get_token(self: @TStorage) -> IERC20Dispatcher;
+    fn get_token(self: @TStorage) -> ContractAddress;
 
     // Claims the given allotment of tokens.
     // Because this method is idempotent, it does not revert in case of a second submission of the same claim. 
@@ -146,8 +146,8 @@ pub mod Airdrop {
             self.root.read()
         }
 
-        fn get_token(self: @ContractState) -> IERC20Dispatcher {
-            self.token.read()
+        fn get_token(self: @ContractState) -> ContractAddress {
+            self.token.read().contract_address
         }
 
         fn claim(ref self: ContractState, claim: Claim, proof: Span<felt252>) -> bool {

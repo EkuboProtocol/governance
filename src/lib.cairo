@@ -8,12 +8,12 @@ pub(crate) mod call_trait_test;
 pub mod factory;
 #[cfg(test)]
 pub(crate) mod factory_test;
-pub mod governance_token;
-#[cfg(test)]
-pub(crate) mod governance_token_test;
 pub mod governor;
 #[cfg(test)]
 pub(crate) mod governor_test;
+pub mod staker;
+#[cfg(test)]
+pub(crate) mod staker_test;
 #[cfg(test)]
 pub(crate) mod test_utils;
 pub mod timelock;
@@ -25,4 +25,9 @@ pub(crate) mod interfaces {
 pub(crate) mod utils {
     pub(crate) mod exp2;
     pub(crate) mod timestamps;
+}
+
+#[cfg(test)]
+pub(crate) mod test {
+    pub(crate) mod test_token;
 }

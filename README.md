@@ -8,7 +8,7 @@ Simple contracts for governance on Starknet.
 
 Each component of the governance contracts in this repository may be used independently.
 
-### GovernanceToken 
+### ERC20
 
 `GovernanceToken` is an ERC20 that tracks delegations as well as time-weighted average delegations for any period
 

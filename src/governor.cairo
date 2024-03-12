@@ -2,7 +2,7 @@ use core::array::{Array};
 use core::integer::{u128_safe_divmod};
 use core::option::{Option, OptionTrait};
 use core::traits::{Into, TryInto};
-use governance::governance_token::{IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait};
+use governance::staker::{IStakerDispatcher};
 use starknet::account::{Call};
 use starknet::{ContractAddress, storage_access::{StorePacking}};
 
@@ -41,7 +41,7 @@ pub struct ProposalInfo {
     pub nay: u128,
 }
 
-#[derive(Copy, Drop, Serde, starknet::Store, PartialEq)]
+#[derive(Copy, Drop, Serde, starknet::Store, PartialEq, Debug)]
 pub struct Config {
     // how long after a proposal is created does voting start
     pub voting_start_delay: u64,
@@ -70,7 +70,7 @@ pub trait IGovernor<TStorage> {
     fn execute(ref self: TStorage, call: Call) -> Span<felt252>;
 
     // Get the configuration for this governor contract.
-    fn get_voting_token(self: @TStorage) -> IGovernanceTokenDispatcher;
+    fn get_staker(self: @TStorage) -> IStakerDispatcher;
 
     // Get the configuration for this governor contract.
     fn get_config(self: @TStorage) -> Config;
@@ -84,10 +84,10 @@ pub mod Governor {
     use core::hash::{LegacyHash};
     use core::num::traits::zero::{Zero};
     use governance::call_trait::{HashCall, CallTrait};
-    use governance::governance_token::{IGovernanceTokenDispatcherTrait};
+    use governance::staker::{IStakerDispatcherTrait};
     use starknet::{get_block_timestamp, get_caller_address, contract_address_const};
     use super::{
-        ContractAddress, Array, IGovernor, IGovernanceTokenDispatcher, Config, ProposalInfo, Call,
+        IStakerDispatcher, ContractAddress, Array, IGovernor, Config, ProposalInfo, Call,
         ProposalTimestamps
     };
 
@@ -128,17 +128,15 @@ pub mod Governor {
 
     #[storage]
     struct Storage {
-        voting_token: IGovernanceTokenDispatcher,
+        staker: IStakerDispatcher,
         config: Config,
         proposals: LegacyMap<felt252, ProposalInfo>,
         voted: LegacyMap<(ContractAddress, felt252), bool>,
     }
 
     #[constructor]
-    fn constructor(
-        ref self: ContractState, voting_token: IGovernanceTokenDispatcher, config: Config
-    ) {
-        self.voting_token.write(voting_token);
+    fn constructor(ref self: ContractState, staker: IStakerDispatcher, config: Config) {
+        self.staker.write(staker);
         self.config.write(config);
     }
 
@@ -157,7 +155,7 @@ pub mod Governor {
 
             assert(
                 self
-                    .voting_token
+                    .staker
                     .read()
                     .get_average_delegated_over_last(
                         delegate: proposer, period: config.voting_weight_smoothing_duration
@@ -198,7 +196,7 @@ pub mod Governor {
             assert(!voted, 'ALREADY_VOTED');
 
             let weight = self
-                .voting_token
+                .staker
                 .read()
                 .get_average_delegated(
                     delegate: voter,
@@ -220,7 +218,7 @@ pub mod Governor {
 
         fn cancel(ref self: ContractState, id: felt252) {
             let config = self.config.read();
-            let voting_token = self.voting_token.read();
+            let voting_token = self.staker.read();
             let mut proposal = self.proposals.read(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
@@ -303,8 +301,8 @@ pub mod Governor {
             self.config.read()
         }
 
-        fn get_voting_token(self: @ContractState) -> IGovernanceTokenDispatcher {
-            self.voting_token.read()
+        fn get_staker(self: @ContractState) -> IStakerDispatcher {
+            self.staker.read()
         }
 
         fn get_proposal(self: @ContractState, id: felt252) -> ProposalInfo {

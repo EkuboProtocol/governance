@@ -8,16 +8,26 @@ use governance::airdrop::{
     IAirdropDispatcher, IAirdropDispatcherTrait, Airdrop,
     Airdrop::{compute_pedersen_root, hash_function, hash_claim, compute_root_of_group}, Claim
 };
-use governance::governance_token::{
-    IGovernanceTokenDispatcherTrait, GovernanceToken, IGovernanceTokenDispatcher
-};
-use governance::governance_token_test::{deploy as deploy_token};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+use governance::test::test_token::{TestToken};
 use starknet::testing::{pop_log};
 use starknet::{
     get_contract_address, syscalls::{deploy_syscall}, ClassHash, contract_address_const,
     ContractAddress
 };
+
+
+pub(crate) fn deploy_token(owner: ContractAddress, amount: u128) -> IERC20Dispatcher {
+    let mut constructor_args: Array<felt252> = ArrayTrait::new();
+    Serde::serialize(@(owner, amount), ref constructor_args);
+
+    let (address, _) = deploy_syscall(
+        TestToken::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true
+    )
+        .expect('DEPLOY_TOKEN_FAILED');
+    IERC20Dispatcher { contract_address: address }
+}
+
 
 fn deploy(token: ContractAddress, root: felt252) -> IAirdropDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
@@ -27,7 +37,7 @@ fn deploy(token: ContractAddress, root: felt252) -> IAirdropDispatcher {
         Airdrop::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true
     )
         .expect('DEPLOY_AD_FAILED');
-    return IAirdropDispatcher { contract_address: address };
+    IAirdropDispatcher { contract_address: address }
 }
 
 #[test]
@@ -85,7 +95,7 @@ fn test_compute_pedersen_root_recursive() {
 
 #[test]
 fn test_claim_single_recipient() {
-    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+    let token = deploy_token(get_contract_address(), 1234567);
 
     let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
 
@@ -100,9 +110,9 @@ fn test_claim_single_recipient() {
     let log = pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
     assert_eq!(log.claim, claim);
 
-    pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
-    pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
-    let log = pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
+    pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+    pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+    let log = pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
     assert_eq!(log.from, airdrop.contract_address);
     assert_eq!(log.to, claim.claimee);
     assert_eq!(log.value, claim.amount.into());
@@ -110,7 +120,7 @@ fn test_claim_single_recipient() {
 
 #[test]
 fn test_claim_128_single_recipient_tree() {
-    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+    let token = deploy_token(get_contract_address(), 1234567);
 
     let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
 
@@ -125,9 +135,9 @@ fn test_claim_128_single_recipient_tree() {
     let log = pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
     assert_eq!(log.claim, claim);
 
-    pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
-    pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
-    let log = pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
+    pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+    pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+    let log = pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
     assert_eq!(log.from, airdrop.contract_address);
     assert_eq!(log.to, claim.claimee);
     assert_eq!(log.value, claim.amount.into());
@@ -135,7 +145,7 @@ fn test_claim_128_single_recipient_tree() {
 
 #[test]
 fn test_double_claim() {
-    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+    let token = deploy_token(get_contract_address(), 1234567);
 
     let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
 
@@ -150,7 +160,7 @@ fn test_double_claim() {
 
 #[test]
 fn test_double_claim_128_single_recipient_tree() {
-    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+    let token = deploy_token(get_contract_address(), 1234567);
 
     let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
 
@@ -166,7 +176,7 @@ fn test_double_claim_128_single_recipient_tree() {
 #[test]
 #[should_panic(expected: ('INVALID_PROOF', 'ENTRYPOINT_FAILED'))]
 fn test_invalid_proof_single_entry() {
-    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+    let token = deploy_token(get_contract_address(), 1234567);
 
     let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
 
@@ -181,7 +191,7 @@ fn test_invalid_proof_single_entry() {
 #[test]
 #[should_panic(expected: ('INVALID_PROOF', 'ENTRYPOINT_FAILED'))]
 fn test_invalid_proof_fake_entry() {
-    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+    let token = deploy_token(get_contract_address(), 1234567);
 
     let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
 
@@ -277,7 +287,7 @@ fn test_compute_root_of_group_large_odd() {
 
 #[test]
 fn test_claim_two_claims() {
-    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+    let token = deploy_token(get_contract_address(), 1234567);
 
     let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
     let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789, };
@@ -291,17 +301,17 @@ fn test_claim_two_claims() {
     token.transfer(airdrop.contract_address, 6789 + 789 + 1);
 
     airdrop.claim(claim_a, array![leaf_b].span());
-    assert_eq!(token.balance_of(airdrop.contract_address), (789 + 1));
-    assert_eq!(token.balance_of(claim_a.claimee), 6789);
+    assert_eq!(token.balanceOf(airdrop.contract_address), (789 + 1));
+    assert_eq!(token.balanceOf(claim_a.claimee), 6789);
 
     airdrop.claim(claim_b, array![leaf_a].span());
-    assert_eq!(token.balance_of(airdrop.contract_address), 1);
-    assert_eq!(token.balance_of(claim_b.claimee), 789);
+    assert_eq!(token.balanceOf(airdrop.contract_address), 1);
+    assert_eq!(token.balanceOf(claim_b.claimee), 789);
 }
 
 #[test]
 fn test_claim_two_claims_via_claim_128() {
-    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+    let token = deploy_token(get_contract_address(), 1234567);
 
     let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
     let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789, };
@@ -322,18 +332,16 @@ fn test_claim_two_claims_via_claim_128() {
     assert_eq!(claim_b_log.claim, claim_b);
 
     // pops the initial supply transfer from 0 log
-    pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
+    pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
     // pops the transfer from deployer to airdrop
-    pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
+    pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
 
-    let transfer_claim_a_log = pop_log::<GovernanceToken::Transfer>(token.contract_address)
-        .unwrap();
+    let transfer_claim_a_log = pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
     assert_eq!(transfer_claim_a_log.from, airdrop.contract_address);
     assert_eq!(transfer_claim_a_log.to, claim_a.claimee);
     assert_eq!(transfer_claim_a_log.value, claim_a.amount.into());
 
-    let transfer_claim_b_log = pop_log::<GovernanceToken::Transfer>(token.contract_address)
-        .unwrap();
+    let transfer_claim_b_log = pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
     assert_eq!(transfer_claim_b_log.from, airdrop.contract_address);
     assert_eq!(transfer_claim_b_log.to, claim_b.claimee);
     assert_eq!(transfer_claim_b_log.value, claim_b.amount.into());
@@ -344,7 +352,7 @@ fn test_claim_two_claims_via_claim_128() {
 #[test]
 #[should_panic(expected: ('INVALID_PROOF', 'ENTRYPOINT_FAILED'))]
 fn test_claim_three_claims_one_invalid_via_claim_128() {
-    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+    let token = deploy_token(get_contract_address(), 1234567);
 
     let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
     let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789, };
@@ -363,7 +371,7 @@ fn test_claim_three_claims_one_invalid_via_claim_128() {
 
 fn test_claim_is_valid(root: felt252, claim: Claim, proof: Array<felt252>) {
     let pspan = proof.span();
-    let (_, token) = deploy_token('AIRDROP', 'AD', claim.amount);
+    let token = deploy_token(get_contract_address(), claim.amount);
     let airdrop = deploy(token.contract_address, root);
     token.transfer(airdrop.contract_address, claim.amount.into());
 
@@ -374,10 +382,10 @@ fn test_claim_is_valid(root: felt252, claim: Claim, proof: Array<felt252>) {
     assert_eq!(claim_log.claim, claim);
 
     // pops the initial supply transfer from 0 log
-    pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
+    pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
     // pops the transfer from deployer to airdrop
-    pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
-    let transfer_log = pop_log::<GovernanceToken::Transfer>(token.contract_address).unwrap();
+    pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+    let transfer_log = pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
     assert_eq!(transfer_log.from, airdrop.contract_address);
     assert_eq!(transfer_log.to, claim.claimee);
     assert_eq!(transfer_log.value, claim.amount.into());
@@ -519,7 +527,7 @@ fn test_double_claim_after_other_claim() {
         amount: 758639984742607224832,
     };
 
-    let (_, token) = deploy_token('AIRDROP', 'AD', claim_0.amount.into() + claim_1.amount.into());
+    let token = deploy_token(get_contract_address(), claim_0.amount.into() + claim_1.amount.into());
 
     let root = 2413984000256568988735068618807996871735886303454043475744972321149068137869;
     let airdrop = deploy(token.contract_address, root);
@@ -610,7 +618,7 @@ fn test_claim_before_funded() {
         amount: 845608158412629999616,
     };
 
-    let (_, token) = deploy_token('AIRDROP', 'AD', 0);
+    let token = deploy_token(get_contract_address(), 0);
 
     let root = 2413984000256568988735068618807996871735886303454043475744972321149068137869;
     let airdrop = deploy(token.contract_address, root);
@@ -654,7 +662,7 @@ fn test_multiple_claims_from_generated_tree() {
         amount: 758639984742607224832,
     };
 
-    let (_, token) = deploy_token('AIRDROP', 'AD', claim_0.amount.into() + claim_1.amount.into());
+    let token = deploy_token(get_contract_address(), claim_0.amount.into() + claim_1.amount.into());
 
     let root = 2413984000256568988735068618807996871735886303454043475744972321149068137869;
     let airdrop = deploy(token.contract_address, root);
@@ -711,7 +719,7 @@ fn test_multiple_claims_from_generated_tree() {
 #[test]
 #[should_panic(expected: ('FIRST_CLAIM_MUST_BE_MULT_128', 'ENTRYPOINT_FAILED'))]
 fn test_claim_128_fails_if_not_id_aligned() {
-    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+    let token = deploy_token(get_contract_address(), 1234567);
 
     let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
     let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789, };
@@ -730,7 +738,7 @@ fn test_claim_128_fails_if_not_id_aligned() {
 #[test]
 #[should_panic(expected: ('CLAIMS_EMPTY', 'ENTRYPOINT_FAILED'))]
 fn test_claim_128_empty() {
-    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+    let token = deploy_token(get_contract_address(), 1234567);
 
     let airdrop = deploy(token.contract_address, 0);
 
@@ -740,7 +748,7 @@ fn test_claim_128_empty() {
 #[test]
 #[should_panic(expected: ('TOO_MANY_CLAIMS', 'ENTRYPOINT_FAILED'))]
 fn test_claim_128_too_many_claims() {
-    let (_, token) = deploy_token('AIRDROP', 'AD', 1234567);
+    let token = deploy_token(get_contract_address(), 1234567);
 
     let airdrop = deploy(token.contract_address, 0);
 
@@ -773,7 +781,7 @@ fn test_claim_128_large_tree() {
     let rr = hash_function(s3, s3);
     let root = hash_function(rl, rr);
 
-    let (_, token) = deploy_token('AIRDROP', 'AD', 960);
+    let token = deploy_token(get_contract_address(), 960);
     let airdrop = deploy(token.contract_address, root);
     token.transfer(airdrop.contract_address, 960);
 
@@ -801,7 +809,7 @@ fn test_claim_128_double_claim() {
     let rr = hash_function(s3, s3);
     let root = hash_function(rl, rr);
 
-    let (_, token) = deploy_token('AIRDROP', 'AD', 960);
+    let token = deploy_token(get_contract_address(), 960);
     let airdrop = deploy(token.contract_address, root);
     token.transfer(airdrop.contract_address, 960);
 

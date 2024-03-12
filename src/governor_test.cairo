@@ -8,8 +8,8 @@ use core::serde::Serde;
 use core::traits::{TryInto};
 
 use governance::call_trait::{CallTrait};
-use governance::governance_token::{IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait};
-use governance::governance_token_test::{deploy as deploy_token};
+use governance::staker::{IStakerDispatcher, IStakerDispatcherTrait};
+use governance::staker_test::{deploy as deploy_staker};
 use governance::governor::{
     IGovernorDispatcher, IGovernorDispatcherTrait, Governor, Config, ProposalInfo,
     ProposalTimestamps
@@ -25,9 +25,9 @@ use starknet::{
 };
 
 
-fn deploy(voting_token: IGovernanceTokenDispatcher, config: Config) -> IGovernorDispatcher {
+fn deploy(staker: IStakerDispatcher, config: Config) -> IGovernorDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
-    Serde::serialize(@(voting_token, config), ref constructor_args);
+    Serde::serialize(@(staker, config), ref constructor_args);
 
     let (address, _) = deploy_syscall(
         Governor::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true
@@ -36,7 +36,7 @@ fn deploy(voting_token: IGovernanceTokenDispatcher, config: Config) -> IGovernor
     return IGovernorDispatcher { contract_address: address };
 }
 
-fn create_proposal(governance: IGovernorDispatcher, token: IGovernanceTokenDispatcher) -> felt252 {
+fn create_proposal(governance: IGovernorDispatcher, token: IStakerDispatcher) -> felt252 {
     let recipient = utils::recipient();
     let proposer = utils::proposer();
     let start_time = utils::timestamp();
@@ -58,9 +58,9 @@ fn create_proposal(governance: IGovernorDispatcher, token: IGovernanceTokenDispa
 
 #[test]
 fn test_governance_deploy() {
-    let (token, _) = deploy_token('Governor', 'GT', 1000);
+    let (token, staker) = deploy_staker(get_contract_address(), 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: staker,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -70,7 +70,7 @@ fn test_governance_deploy() {
         }
     );
 
-    assert(governance.get_voting_token().contract_address == token.contract_address, 'token');
+    assert(governance.get_staker().contract_address == token.contract_address, 'token');
     let config = governance.get_config();
     assert(config.voting_start_delay == 3600, 'voting_start_delay');
     assert(config.voting_period == 60, 'voting_period');
@@ -84,9 +84,9 @@ fn test_governance_deploy() {
 /////////////////////////////
 #[test]
 fn test_propose() {
-    let (token, _) = deploy_token('Governor', 'GT', 1000);
+    let (token, staker) = deploy_staker(get_contract_address(), 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -115,9 +115,9 @@ fn test_propose() {
 #[test]
 #[should_panic(expected: ('ALREADY_PROPOSED', 'ENTRYPOINT_FAILED'))]
 fn test_propose_already_exists_should_fail() {
-    let (token, _) = deploy_token('Governor', 'GT', 1000);
+    let token = deploy_staker(get_contract_address(), 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -134,9 +134,9 @@ fn test_propose_already_exists_should_fail() {
 #[test]
 #[should_panic(expected: ('THRESHOLD', 'ENTRYPOINT_FAILED'))]
 fn test_propose_below_threshold_should_fail() {
-    let (token, _) = deploy_token('Governor', 'GT', 1000);
+    let token = deploy_staker(get_contract_address(), 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -164,9 +164,9 @@ fn test_propose_below_threshold_should_fail() {
 
 #[test]
 fn test_vote_yes() {
-    let (token, _) = deploy_token('Governor', 'GT', 1000);
+    let token = deploy_staker(get_contract_address(), 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -200,9 +200,9 @@ fn test_vote_yes() {
 
 #[test]
 fn test_vote_no() {
-    let (token, _) = deploy_token('Governor', 'GT', 1000);
+    let token = deploy_staker(get_contract_address(), 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -238,9 +238,9 @@ fn test_vote_no() {
 #[should_panic(expected: ('VOTING_NOT_STARTED', 'ENTRYPOINT_FAILED'))]
 fn test_vote_before_voting_start_should_fail() {
     // Initial setup similar to propose test
-    let (token, _) = deploy_token('Governor', 'GT', 1000);
+    let token = deploy_staker(get_contract_address(), 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -263,9 +263,9 @@ fn test_vote_before_voting_start_should_fail() {
 #[test]
 #[should_panic(expected: ('ALREADY_VOTED', 'ENTRYPOINT_FAILED'))]
 fn test_vote_already_voted_should_fail() {
-    let (token, _) = deploy_token('Governor', 'GT', 1000);
+    let token = deploy_staker(get_contract_address(), 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -295,9 +295,9 @@ fn test_vote_already_voted_should_fail() {
 #[test]
 #[should_panic(expected: ('VOTING_ENDED', 'ENTRYPOINT_FAILED'))]
 fn test_vote_after_voting_period_should_fail() {
-    let (token, _) = deploy_token('Governor', 'GT', 1000);
+    let token = deploy_staker(get_contract_address(), 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -324,9 +324,9 @@ fn test_vote_after_voting_period_should_fail() {
 
 #[test]
 fn test_cancel_by_proposer() {
-    let (token, _) = deploy_token('Governor', 'GT', 1000);
+    let token = deploy_staker(get_contract_address(), 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -357,9 +357,9 @@ fn test_cancel_by_proposer() {
 
 #[test]
 fn test_cancel_by_non_proposer() {
-    let (token, _) = deploy_token('Governor', 'GT', 1000);
+    let token = deploy_staker(get_contract_address(), 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -401,9 +401,9 @@ fn test_cancel_by_non_proposer() {
 #[test]
 #[should_panic(expected: ('THRESHOLD_NOT_BREACHED', 'ENTRYPOINT_FAILED'))]
 fn test_cancel_by_non_proposer_threshold_not_breached_should_fail() {
-    let (token, _) = deploy_token('Governor', 'GT', 1000);
+    let token = deploy_staker(get_contract_address(), 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -425,9 +425,9 @@ fn test_cancel_by_non_proposer_threshold_not_breached_should_fail() {
 #[test]
 #[should_panic(expected: ('VOTING_ENDED', 'ENTRYPOINT_FAILED'))]
 fn test_cancel_after_voting_end_should_fail() {
-    let (token, _) = deploy_token('Governor', 'GT', 1000);
+    let token = deploy_staker(get_contract_address(), 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -454,9 +454,9 @@ fn test_cancel_after_voting_end_should_fail() {
 
 #[test]
 fn test_execute_valid_proposal() {
-    let (token, erc20) = deploy_token('Governor', 'GT', 1000);
+    let (token, erc20) = deploy_staker('Governor', 'GT', 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -494,9 +494,9 @@ fn test_execute_valid_proposal() {
 #[test]
 #[should_panic(expected: ('VOTING_NOT_ENDED', 'ENTRYPOINT_FAILED'))]
 fn test_execute_before_voting_ends_should_fail() {
-    let (token, _) = deploy_token('Governor', 'GT', 1000);
+    let token = deploy_staker(get_contract_address(), 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -520,9 +520,9 @@ fn test_execute_before_voting_ends_should_fail() {
 #[test]
 #[should_panic(expected: ('QUORUM_NOT_MET', 'ENTRYPOINT_FAILED'))]
 fn test_execute_quorum_not_met_should_fail() {
-    let (token, _) = deploy_token('Governor', 'GT', 1000);
+    let token = deploy_staker(get_contract_address(), 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -546,9 +546,9 @@ fn test_execute_quorum_not_met_should_fail() {
 #[test]
 #[should_panic(expected: ('NO_MAJORITY', 'ENTRYPOINT_FAILED'))]
 fn test_execute_no_majority_should_fail() {
-    let (token, erc20) = deploy_token('Governor', 'GT', 1000);
+    let (token, erc20) = deploy_staker('Governor', 'GT', 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -605,9 +605,9 @@ fn test_execute_no_majority_should_fail() {
 #[test]
 #[should_panic(expected: ('QUORUM_NOT_MET', 'ENTRYPOINT_FAILED'))]
 fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_start() {
-    let (token, erc20) = deploy_token('Governor', 'GT', 1000);
+    let (token, erc20) = deploy_staker('Governor', 'GT', 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -670,9 +670,9 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
 #[test]
 #[should_panic(expected: ('ALREADY_EXECUTED', 'ENTRYPOINT_FAILED'))]
 fn test_execute_already_executed_should_fail() {
-    let (token, erc20) = deploy_token('Governor', 'GT', 1000);
+    let (token, erc20) = deploy_staker('Governor', 'GT', 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,
@@ -722,9 +722,9 @@ fn queue_with_timelock_call(timelock: ITimelockDispatcher, calls: Span<Call>) ->
 
 #[test]
 fn test_proposal_e2e() {
-    let (token, erc20) = deploy_token('Governor', 'GT', 1000);
+    let (token, erc20) = deploy_staker('Governor', 'GT', 1000);
     let governance = deploy(
-        voting_token: token,
+        staker: token,
         config: Config {
             voting_start_delay: 3600,
             voting_period: 60,

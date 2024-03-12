@@ -1,9 +1,9 @@
 use core::array::{Array, ArrayTrait};
 use core::hash::{LegacyHash};
 use core::serde::{Serde};
+use governance::airdrop_test::{deploy_token};
 use governance::call_trait::{CallTrait, HashCall};
-use governance::governance_token_test::{deploy as deploy_token};
-use starknet::{contract_address_const, account::{Call}};
+use starknet::{contract_address_const, get_contract_address, account::{Call}};
 
 #[test]
 fn test_hash_empty() {
@@ -75,7 +75,7 @@ fn test_execute_contract_not_deployed() {
 #[test]
 #[should_panic(expected: ('ENTRYPOINT_NOT_FOUND',))]
 fn test_execute_invalid_entry_point() {
-    let (token, _) = deploy_token('TIMELOCK', 'TL', 1);
+    let token = deploy_token(get_contract_address(), 1);
 
     let call = Call { to: token.contract_address, selector: 0, calldata: array![].span() };
 
@@ -86,7 +86,7 @@ fn test_execute_invalid_entry_point() {
 #[test]
 #[should_panic(expected: ('Failed to deserialize param #1', 'ENTRYPOINT_FAILED'))]
 fn test_execute_invalid_call_data_too_short() {
-    let (token, _) = deploy_token('TIMELOCK', 'TL', 1);
+    let token = deploy_token(get_contract_address(), 1);
 
     let call = Call {
         to: token.contract_address,
@@ -100,7 +100,7 @@ fn test_execute_invalid_call_data_too_short() {
 
 #[test]
 fn test_execute_valid_call_data() {
-    let (token, _) = deploy_token('TIMELOCK', 'TL', 1);
+    let token = deploy_token(get_contract_address(), 1);
 
     let mut calldata: Array<felt252> = array![];
     Serde::serialize(@(contract_address_const::<1>(), 1_u256), ref calldata);

@@ -1,7 +1,12 @@
 use starknet::{ContractAddress};
 
 #[starknet::interface]
-pub trait IGovernanceToken<TStorage> {
+pub trait IStaker<TStorage> {
+    // Transfer the given amount from the caller into this contract and stakes it, allowing it to be delegated
+    fn stake(ref self: TStorage, amount: u128);
+    // Withdraws the staked amount from the contract to the given address
+    fn withdraw(ref self: TStorage, to: ContractAddress, amount: u128);
+
     // Delegate tokens from the caller to the given delegate address
     fn delegate(ref self: TStorage, to: ContractAddress);
 
@@ -26,13 +31,16 @@ pub trait IGovernanceToken<TStorage> {
 }
 
 #[starknet::contract]
-pub mod GovernanceToken {
+pub mod Staker {
     use core::num::traits::zero::{Zero};
     use core::option::{OptionTrait};
     use core::traits::{Into, TryInto};
-    use governance::interfaces::erc20::{IERC20};
-    use starknet::{get_caller_address, get_block_timestamp, storage_access::{StorePacking}};
-    use super::{IGovernanceToken, ContractAddress};
+    use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+    use starknet::{
+        get_caller_address, get_contract_address, get_block_timestamp,
+        storage_access::{StorePacking}
+    };
+    use super::{IStaker, ContractAddress};
 
     #[derive(Copy, Drop, PartialEq)]
     pub struct DelegatedSnapshot {
@@ -59,44 +67,17 @@ pub mod GovernanceToken {
 
     #[storage]
     struct Storage {
-        name: felt252,
-        symbol: felt252,
-        total_supply: u128,
-        balances: LegacyMap<ContractAddress, u128>,
-        allowances: LegacyMap<(ContractAddress, ContractAddress), u128>,
-        delegates: LegacyMap<ContractAddress, ContractAddress>,
-        delegated: LegacyMap<ContractAddress, u128>,
+        token: IERC20Dispatcher,
+        staked: LegacyMap<ContractAddress, u128>,
+        delegated_to: LegacyMap<ContractAddress, ContractAddress>,
+        amount_delegated: LegacyMap<ContractAddress, u128>,
         delegated_cumulative_num_snapshots: LegacyMap<ContractAddress, u64>,
         delegated_cumulative_snapshot: LegacyMap<(ContractAddress, u64), DelegatedSnapshot>,
     }
 
     #[constructor]
-    fn constructor(
-        ref self: ContractState,
-        name: felt252,
-        symbol: felt252,
-        total_supply: u128,
-        recipient: ContractAddress
-    ) {
-        self.name.write(name);
-        self.symbol.write(symbol);
-        self.total_supply.write(total_supply);
-        self.balances.write(recipient, total_supply);
-        self.emit(Transfer { from: Zero::zero(), to: recipient, value: total_supply.into() });
-    }
-
-    #[derive(starknet::Event, Drop)]
-    pub struct Transfer {
-        pub from: ContractAddress,
-        pub to: ContractAddress,
-        pub value: u256,
-    }
-
-    #[derive(starknet::Event, Drop)]
-    pub struct Approval {
-        pub owner: ContractAddress,
-        pub spender: ContractAddress,
-        pub value: u256
+    fn constructor(ref self: ContractState, token: IERC20Dispatcher) {
+        self.token.write(token);
     }
 
     #[derive(starknet::Event, Drop)]
@@ -106,11 +87,24 @@ pub mod GovernanceToken {
     }
 
     #[derive(starknet::Event, Drop)]
+    pub struct Staked {
+        pub from: ContractAddress,
+        pub amount: u128,
+    }
+
+    #[derive(starknet::Event, Drop)]
+    pub struct Withdrawn {
+        pub from: ContractAddress,
+        pub to: ContractAddress,
+        pub amount: u128,
+    }
+
+    #[derive(starknet::Event, Drop)]
     #[event]
     enum Event {
-        Transfer: Transfer,
-        Approval: Approval,
         Delegate: Delegate,
+        Staked: Staked,
+        Withdrawn: Withdrawn,
     }
 
     #[generate_trait]
@@ -118,7 +112,7 @@ pub mod GovernanceToken {
         fn insert_snapshot(
             ref self: ContractState, address: ContractAddress, timestamp: u64
         ) -> u128 {
-            let amount_delegated = self.delegated.read(address);
+            let amount_delegated = self.amount_delegated.read(address);
             let mut num_snapshots = self.delegated_cumulative_num_snapshots.read(address);
 
             if num_snapshots.is_non_zero() {
@@ -171,7 +165,7 @@ pub mod GovernanceToken {
                     let difference = timestamp - snapshot.timestamp;
                     let next = self.delegated_cumulative_snapshot.read((delegate, min_index + 1));
                     let delegated_amount = if (next.timestamp.is_zero()) {
-                        self.delegated.read(delegate)
+                        self.amount_delegated.read(delegate)
                     } else {
                         ((next.delegated_cumulative - snapshot.delegated_cumulative)
                             / (next.timestamp - snapshot.timestamp).into())
@@ -208,122 +202,47 @@ pub mod GovernanceToken {
             let timestamp = get_block_timestamp();
 
             if (from.is_non_zero()) {
-                self.delegated.write(from, self.insert_snapshot(from, timestamp) - amount);
+                self.amount_delegated.write(from, self.insert_snapshot(from, timestamp) - amount);
             }
 
             if (to.is_non_zero()) {
-                self.delegated.write(to, self.insert_snapshot(to, timestamp) + amount);
+                self.amount_delegated.write(to, self.insert_snapshot(to, timestamp) + amount);
             }
         }
     }
 
     #[abi(embed_v0)]
-    impl ERC20Impl of IERC20<ContractState> {
-        fn name(self: @ContractState) -> felt252 {
-            self.name.read()
+    impl StakerImpl of IStaker<ContractState> {
+        fn stake(ref self: ContractState, amount: u128) {
+            let from = get_caller_address();
+            assert(
+                self.token.read().transferFrom(from, get_contract_address(), amount.into()),
+                'TRANSFER_FROM_FAILED'
+            );
+            self.staked.write(from, amount + self.staked.read(from));
+            self.emit(Staked { from, amount });
         }
 
-        fn symbol(self: @ContractState) -> felt252 {
-            self.symbol.read()
+        fn withdraw(ref self: ContractState, to: ContractAddress, amount: u128) {
+            let from = get_caller_address();
+            let staked_amount = self.staked.read(from);
+            assert(staked_amount >= amount, 'INSUFFICIENT_AMOUNT_STAKED');
+            self.staked.write(from, staked_amount - amount);
+            assert(self.token.read().transfer(to, amount.into()), 'TRANSFER_FAILED');
+            self.emit(Withdrawn { from, to, amount });
         }
 
-        fn decimals(self: @ContractState) -> u8 {
-            18_u8
-        }
-
-        fn total_supply(self: @ContractState) -> u256 {
-            self.total_supply.read().into()
-        }
-
-        fn totalSupply(self: @ContractState) -> u256 {
-            self.total_supply()
-        }
-
-        fn balance_of(self: @ContractState, account: ContractAddress) -> u256 {
-            self.balances.read(account).into()
-        }
-
-        fn balanceOf(self: @ContractState, account: ContractAddress) -> u256 {
-            self.balance_of(account)
-        }
-
-        fn allowance(
-            self: @ContractState, owner: ContractAddress, spender: ContractAddress
-        ) -> u256 {
-            self.allowances.read((owner, spender)).into()
-        }
-
-        fn transfer(ref self: ContractState, recipient: ContractAddress, amount: u256) -> bool {
-            self.transfer_from(get_caller_address(), recipient, amount)
-        }
-
-        fn transfer_from(
-            ref self: ContractState,
-            sender: ContractAddress,
-            recipient: ContractAddress,
-            amount: u256
-        ) -> bool {
-            let amount_small: u128 = amount.try_into().expect('TRANSFER_AMOUNT_OVERFLOW');
-
-            let caller = get_caller_address();
-            if (sender != caller) {
-                let mut allowance = self.allowances.read((sender, caller));
-
-                assert(allowance >= amount_small, 'TRANSFER_FROM_ALLOWANCE');
-                allowance -= amount_small;
-                self.allowances.write((sender, caller), allowance);
-            }
-
-            let mut sender_balance = self.balances.read(sender);
-            assert(amount_small <= sender_balance, 'TRANSFER_INSUFFICIENT_BALANCE');
-            sender_balance -= amount_small;
-            self.balances.write(sender, sender_balance);
-
-            let mut recipient_balance = self.balances.read(recipient);
-            recipient_balance += amount_small;
-            self.balances.write(recipient, recipient_balance);
-
-            self
-                .move_delegates(
-                    self.delegates.read(sender), self.delegates.read(recipient), amount_small
-                );
-
-            self.emit(Transfer { from: sender, to: recipient, value: amount });
-            true
-        }
-
-        fn transferFrom(
-            ref self: ContractState,
-            sender: ContractAddress,
-            recipient: ContractAddress,
-            amount: u256
-        ) -> bool {
-            self.transfer_from(sender, recipient, amount)
-        }
-
-        fn approve(ref self: ContractState, spender: ContractAddress, amount: u256) -> bool {
-            let owner = get_caller_address();
-            self
-                .allowances
-                .write((owner, spender), amount.try_into().expect('APPROVE_AMOUNT_OVERFLOW'));
-            self.emit(Approval { owner, spender, value: amount });
-            true
-        }
-    }
-
-    #[abi(embed_v0)]
-    impl TokenImpl of IGovernanceToken<ContractState> {
         fn delegate(ref self: ContractState, to: ContractAddress) {
             let caller = get_caller_address();
-            let old = self.delegates.read(caller);
+            let old = self.delegated_to.read(caller);
 
-            self.delegates.write(caller, to);
-            self.move_delegates(old, to, self.balances.read(caller));
+            self.delegated_to.write(caller, to);
+            self.move_delegates(old, to, self.staked.read(caller));
             self.emit(Delegate { from: caller, to: to });
         }
 
         fn get_delegated(self: @ContractState, delegate: ContractAddress) -> u128 {
-            self.delegated.read(delegate)
+            self.amount_delegated.read(delegate)
         }
 
         fn get_delegated_at(
