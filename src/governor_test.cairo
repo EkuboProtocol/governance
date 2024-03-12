@@ -81,9 +81,10 @@ fn create_proposal(
     staker.delegate(proposer);
 
     set_block_timestamp(start_time);
+    let address_before = get_contract_address();
     set_contract_address(proposer);
     let id = governance.propose(transfer_call);
-    set_contract_address(Zero::zero());
+    set_contract_address(address_before);
     id
 }
 
@@ -94,24 +95,18 @@ fn create_proposal(
 #[test]
 fn test_governance_deploy() {
     let (staker, token) = setup_staker(get_contract_address(), 1000);
-    let governance = deploy(
-        staker: staker,
-        config: Config {
-            voting_start_delay: 3600,
-            voting_period: 60,
-            voting_weight_smoothing_duration: 30,
-            quorum: 100,
-            proposal_creation_threshold: 50,
-        }
-    );
+    let config = Config {
+        voting_start_delay: 3600,
+        voting_period: 60,
+        voting_weight_smoothing_duration: 30,
+        quorum: 100,
+        proposal_creation_threshold: 50,
+    };
+    let governance = deploy(staker: staker, config: config);
 
-    assert(governance.get_staker().contract_address == token.contract_address, 'token');
-    let config = governance.get_config();
-    assert(config.voting_start_delay == 3600, 'voting_start_delay');
-    assert(config.voting_period == 60, 'voting_period');
-    assert(config.voting_weight_smoothing_duration == 30, 'smoothing');
-    assert(config.quorum == 100, 'quorum');
-    assert(config.proposal_creation_threshold == 50, 'proposal_creation_threshold');
+    assert_eq!(governance.get_staker().get_token(), token.contract_address);
+    assert_eq!(governance.get_staker().contract_address, staker.contract_address);
+    assert_eq!(governance.get_config(), config);
 }
 
 /////////////////////////////
@@ -219,7 +214,7 @@ fn test_vote_yes() {
     set_block_timestamp(start_time + 3600);
 
     // Delegate token to the voter to give him voting power.
-    token.approve(staker.contract_address, 1000);
+    token.approve(staker.contract_address, 900);
     staker.stake();
     staker.delegate(voter);
 
@@ -233,7 +228,7 @@ fn test_vote_yes() {
 }
 
 #[test]
-fn test_vote_no() {
+fn test_vote_no_staking_after_period_starts() {
     let (staker, token) = setup_staker(get_contract_address(), 1000);
     let governance = deploy(
         staker: staker,
@@ -254,7 +249,7 @@ fn test_vote_no() {
     set_block_timestamp(start_time + 3600);
 
     // Delegate token to the voter to give him voting power.
-    token.approve(staker.contract_address, 1000);
+    token.approve(staker.contract_address, 900);
     staker.stake();
     staker.delegate(voter);
 
@@ -262,8 +257,7 @@ fn test_vote_no() {
     governance.vote(id, false); // vote no
 
     let proposal = governance.get_proposal(id);
-    assert_eq!(proposal.nay, staker.get_average_delegated_over_last(voter, 30));
-
+    assert_eq!(proposal.nay, 0);
     assert_eq!(proposal.yea, 0);
 }
 
@@ -286,7 +280,7 @@ fn test_vote_before_voting_start_should_fail() {
     let voter = utils::voter();
 
     // Delegate token to the voter to give him voting power.
-    token.approve(staker.contract_address, 1000);
+    token.approve(staker.contract_address, 900);
     staker.stake();
     staker.delegate(voter);
 
@@ -318,7 +312,7 @@ fn test_vote_already_voted_should_fail() {
     set_block_timestamp(start_time + 3600);
 
     // Delegate token to the voter to give him voting power.
-    token.approve(staker.contract_address, 1000);
+    token.approve(staker.contract_address, 900);
     staker.stake();
     staker.delegate(voter);
 
@@ -410,12 +404,7 @@ fn test_cancel_by_non_proposer() {
 
     let id = create_proposal(governance, token, staker);
 
-    token.approve(staker.contract_address, 1000);
-    staker.stake();
-    // Delegate token to user so that proposer looses his threshold.
-    set_contract_address(Zero::zero());
     staker.delegate(Zero::zero());
-
     // Fast forward one smoothing duration
     current_timestamp += 30;
     set_block_timestamp(current_timestamp);
@@ -666,7 +655,7 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
     // self-delegate tokens to get voting power
     let voter1 = utils::voter();
     let voter2 = utils::voter2();
-    
+
     token.transfer(voter1, 49);
     token.transfer(voter2, 51);
     set_contract_address(voter1);
@@ -769,7 +758,7 @@ fn queue_with_timelock_call(timelock: ITimelockDispatcher, calls: Span<Call>) ->
 
 #[test]
 fn test_proposal_e2e() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(get_contract_address(), 1200);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -787,6 +776,8 @@ fn test_proposal_e2e() {
     set_block_timestamp(start_time);
 
     let delegate = utils::delegate();
+    token.approve(staker.contract_address, 1000);
+    staker.stake();
     staker.delegate(delegate);
 
     // so the average delegation is sufficient
