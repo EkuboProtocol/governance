@@ -5,6 +5,8 @@ pub(crate) mod airdrop_test;
 pub mod call_trait;
 #[cfg(test)]
 pub(crate) mod call_trait_test;
+#[cfg(test)]
+mod e2e_test;
 pub mod factory;
 #[cfg(test)]
 pub(crate) mod factory_test;

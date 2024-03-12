@@ -13,27 +13,29 @@ pub struct Claim {
 }
 
 #[starknet::interface]
-pub trait IAirdrop<TStorage> {
+pub trait IAirdrop<TContractState> {
     // Return the root of the airdrop
-    fn get_root(self: @TStorage) -> felt252;
+    fn get_root(self: @TContractState) -> felt252;
 
     // Return the token being dropped
-    fn get_token(self: @TStorage) -> ContractAddress;
+    fn get_token(self: @TContractState) -> ContractAddress;
 
     // Claims the given allotment of tokens.
     // Because this method is idempotent, it does not revert in case of a second submission of the same claim. 
     // This makes it simpler to batch many claims together in a single transaction.
     // Returns true iff the claim was processed. Returns false if the claim was already claimed.
     // Panics if the proof is invalid.
-    fn claim(ref self: TStorage, claim: Claim, proof: Span<felt252>) -> bool;
+    fn claim(ref self: TContractState, claim: Claim, proof: Span<felt252>) -> bool;
 
     // Claims the batch of up to 128 claims that must be aligned with a single bitmap, i.e. the id of the first must be a multiple of 128
     // and the claims should be sequentially in order. The proof verification is optimized in this method.
     // Returns the number of claims that were executed
-    fn claim_128(ref self: TStorage, claims: Span<Claim>, remaining_proof: Span<felt252>) -> u8;
+    fn claim_128(
+        ref self: TContractState, claims: Span<Claim>, remaining_proof: Span<felt252>
+    ) -> u8;
 
     // Return whether the claim with the given ID has been claimed
-    fn is_claimed(self: @TStorage, claim_id: u64) -> bool;
+    fn is_claimed(self: @TContractState, claim_id: u64) -> bool;
 }
 
 #[starknet::contract]

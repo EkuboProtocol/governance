@@ -21,7 +21,7 @@ use starknet::{
     ContractAddress,
 };
 
-fn deploy() -> IFactoryDispatcher {
+pub(crate) fn deploy() -> IFactoryDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
     Serde::serialize(
         @(

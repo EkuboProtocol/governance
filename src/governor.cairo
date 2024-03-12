@@ -9,7 +9,7 @@ use starknet::{ContractAddress, storage_access::{StorePacking}};
 #[derive(Copy, Drop, Serde, PartialEq, Debug)]
 pub struct ProposalTimestamps {
     // the timestamp when the proposal was created
-    pub creation: u64,
+    pub created: u64,
     // the timestamp when the proposal was executed
     pub executed: u64,
 }
@@ -18,13 +18,13 @@ const TWO_POW_64: u128 = 0x10000000000000000_u128;
 
 impl ProposalTimestampsStorePacking of StorePacking<ProposalTimestamps, u128> {
     fn pack(value: ProposalTimestamps) -> u128 {
-        value.creation.into() + (value.executed.into() * TWO_POW_64)
+        value.created.into() + (value.executed.into() * TWO_POW_64)
     }
 
     fn unpack(value: u128) -> ProposalTimestamps {
-        let (executed, creation) = u128_safe_divmod(value, TWO_POW_64.try_into().unwrap());
+        let (executed, created) = u128_safe_divmod(value, TWO_POW_64.try_into().unwrap());
         ProposalTimestamps {
-            creation: creation.try_into().unwrap(), executed: executed.try_into().unwrap()
+            created: created.try_into().unwrap(), executed: executed.try_into().unwrap()
         }
     }
 }
@@ -56,27 +56,27 @@ pub struct Config {
 }
 
 #[starknet::interface]
-pub trait IGovernor<TStorage> {
+pub trait IGovernor<TContractState> {
     // Propose executing the given call from this contract.
-    fn propose(ref self: TStorage, call: Call) -> felt252;
+    fn propose(ref self: TContractState, call: Call) -> felt252;
 
     // Vote on the given proposal.
-    fn vote(ref self: TStorage, id: felt252, yea: bool);
+    fn vote(ref self: TContractState, id: felt252, yea: bool);
 
     // Cancel the given proposal. Cancellation can happen by any address if the average voting weight is below the proposal_creation_threshold.
-    fn cancel(ref self: TStorage, id: felt252);
+    fn cancel(ref self: TContractState, id: felt252);
 
     // Execute the given proposal.
-    fn execute(ref self: TStorage, call: Call) -> Span<felt252>;
+    fn execute(ref self: TContractState, call: Call) -> Span<felt252>;
 
     // Get the configuration for this governor contract.
-    fn get_staker(self: @TStorage) -> IStakerDispatcher;
+    fn get_staker(self: @TContractState) -> IStakerDispatcher;
 
     // Get the configuration for this governor contract.
-    fn get_config(self: @TStorage) -> Config;
+    fn get_config(self: @TContractState) -> Config;
 
     // Get the proposal info for the given proposal id.
-    fn get_proposal(self: @TStorage, id: felt252) -> ProposalInfo;
+    fn get_proposal(self: @TContractState, id: felt252) -> ProposalInfo;
 }
 
 #[starknet::contract]
@@ -140,10 +140,14 @@ pub mod Governor {
         self.config.write(config);
     }
 
+    pub fn to_call_id(call: @Call) -> felt252 {
+        LegacyHash::hash(selector!("governance::governor::Governor"), call)
+    }
+
     #[abi(embed_v0)]
     impl GovernorImpl of IGovernor<ContractState> {
         fn propose(ref self: ContractState, call: Call) -> felt252 {
-            let id = LegacyHash::hash(0, @call);
+            let id = to_call_id(@call);
 
             assert(self.proposals.read(id).proposer.is_zero(), 'ALREADY_PROPOSED');
 
@@ -170,7 +174,7 @@ pub mod Governor {
                     id,
                     ProposalInfo {
                         proposer,
-                        timestamps: ProposalTimestamps { creation: timestamp_current, executed: 0 },
+                        timestamps: ProposalTimestamps { created: timestamp_current, executed: 0 },
                         yea: 0,
                         nay: 0
                     }
@@ -187,7 +191,7 @@ pub mod Governor {
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
             let timestamp_current = get_block_timestamp();
-            let voting_start_time = (proposal.timestamps.creation + config.voting_start_delay);
+            let voting_start_time = (proposal.timestamps.created + config.voting_start_delay);
             let voter = get_caller_address();
             let voted = self.voted.read((voter, id));
 
@@ -239,7 +243,7 @@ pub mod Governor {
             }
 
             assert(
-                timestamp_current < (proposal.timestamps.creation
+                timestamp_current < (proposal.timestamps.created
                     + config.voting_start_delay
                     + config.voting_period),
                 'VOTING_ENDED'
@@ -248,7 +252,7 @@ pub mod Governor {
             proposal =
                 ProposalInfo {
                     proposer: contract_address_const::<0>(),
-                    timestamps: ProposalTimestamps { creation: 0, executed: 0 },
+                    timestamps: ProposalTimestamps { created: 0, executed: 0 },
                     yea: 0,
                     nay: 0
                 };
@@ -259,7 +263,7 @@ pub mod Governor {
         }
 
         fn execute(ref self: ContractState, call: Call) -> Span<felt252> {
-            let id = LegacyHash::hash(0, @call);
+            let id = to_call_id(@call);
 
             let config = self.config.read();
             let mut proposal = self.proposals.read(id);
@@ -273,7 +277,7 @@ pub mod Governor {
             assert(timestamp_current.is_non_zero(), 'TIMESTAMP_ZERO');
 
             assert(
-                timestamp_current >= (proposal.timestamps.creation
+                timestamp_current >= (proposal.timestamps.created
                     + config.voting_start_delay
                     + config.voting_period),
                 'VOTING_NOT_ENDED'
@@ -285,7 +289,7 @@ pub mod Governor {
             proposal
                 .timestamps =
                     ProposalTimestamps {
-                        creation: proposal.timestamps.creation, executed: timestamp_current
+                        created: proposal.timestamps.created, executed: timestamp_current
                     };
 
             self.proposals.write(id, proposal);

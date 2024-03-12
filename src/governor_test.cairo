@@ -133,7 +133,7 @@ fn test_propose() {
     assert(
         proposal == ProposalInfo {
             proposer,
-            timestamps: ProposalTimestamps { creation: start_time, executed: 0 },
+            timestamps: ProposalTimestamps { created: start_time, executed: 0 },
             yea: 0,
             nay: 0
         },
@@ -378,7 +378,7 @@ fn test_cancel_by_proposer() {
     assert(
         proposal == ProposalInfo {
             proposer: contract_address_const::<0>(),
-            timestamps: ProposalTimestamps { creation: 0, executed: 0 },
+            timestamps: ProposalTimestamps { created: 0, executed: 0 },
             yea: 0,
             nay: 0,
         },
@@ -419,7 +419,7 @@ fn test_cancel_by_non_proposer() {
         proposal,
         ProposalInfo {
             proposer: contract_address_const::<0>(),
-            timestamps: ProposalTimestamps { creation: 0, executed: 0 },
+            timestamps: ProposalTimestamps { created: 0, executed: 0 },
             yea: 0,
             nay: 0,
         }
