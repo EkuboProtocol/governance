@@ -6,7 +6,7 @@ use governance::staker::{IStakerDispatcher};
 use starknet::account::{Call};
 use starknet::{ContractAddress, storage_access::{StorePacking}};
 
-#[derive(Copy, Drop, Serde, PartialEq)]
+#[derive(Copy, Drop, Serde, PartialEq, Debug)]
 pub struct ProposalTimestamps {
     // the timestamp when the proposal was created
     pub creation: u64,
@@ -29,7 +29,7 @@ impl ProposalTimestampsStorePacking of StorePacking<ProposalTimestamps, u128> {
     }
 }
 
-#[derive(Copy, Drop, Serde, starknet::Store, PartialEq)]
+#[derive(Copy, Drop, Serde, starknet::Store, PartialEq, Debug)]
 pub struct ProposalInfo {
     // the address of the proposer
     pub proposer: ContractAddress,

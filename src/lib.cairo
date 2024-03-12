@@ -9,13 +9,11 @@ pub mod factory;
 #[cfg(test)]
 pub(crate) mod factory_test;
 pub mod governor;
-// #[cfg(test)]
-// pub(crate) mod governor_test;
+#[cfg(test)]
+pub(crate) mod governor_test;
 pub mod staker;
 #[cfg(test)]
 pub(crate) mod staker_test;
-#[cfg(test)]
-pub(crate) mod test_utils;
 pub mod timelock;
 #[cfg(test)]
 pub(crate) mod timelock_test;
