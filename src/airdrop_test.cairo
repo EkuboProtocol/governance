@@ -607,7 +607,7 @@ fn test_double_claim_after_other_claim() {
 
 #[test]
 #[should_panic(
-    expected: ('TRANSFER_INSUFFICIENT_BALANCE', 'ENTRYPOINT_FAILED', 'ENTRYPOINT_FAILED')
+    expected: ('INSUFFICIENT_TRANSFER_BALANCE', 'ENTRYPOINT_FAILED', 'ENTRYPOINT_FAILED')
 )]
 fn test_claim_before_funded() {
     let claim_0 = Claim {

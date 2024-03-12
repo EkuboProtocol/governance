@@ -42,6 +42,7 @@ pub(crate) mod TestToken {
         fn transfer(ref self: ContractState, recipient: ContractAddress, amount: u256) -> bool {
             let amount_small: u128 = amount.try_into().unwrap();
             let balance = self.balances.read(get_caller_address());
+            assert(balance >= amount_small, 'INSUFFICIENT_TRANSFER_BALANCE');
             self.balances.write(recipient, self.balances.read(recipient) + amount_small);
             self.balances.write(get_caller_address(), balance - amount_small);
             self.emit(Transfer { from: get_caller_address(), to: recipient, value: amount });
@@ -53,6 +54,15 @@ pub(crate) mod TestToken {
             recipient: ContractAddress,
             amount: u256
         ) -> bool {
+            let amount_small: u128 = amount.try_into().unwrap();
+            let allowance = self.allowances.read((sender, get_caller_address()));
+            assert(allowance >= amount_small, 'INSUFFICIENT_ALLOWANCE');
+            let balance = self.balances.read(sender);
+            assert(balance >= amount_small, 'INSUFFICIENT_TF_BALANCE');
+            self.balances.write(recipient, self.balances.read(recipient) + amount_small);
+            self.balances.write(sender, balance - amount_small);
+            self.allowances.write((sender, get_caller_address()), allowance - amount_small);
+            self.emit(Transfer { from: get_caller_address(), to: recipient, value: amount });
             true
         }
         fn approve(ref self: ContractState, spender: ContractAddress, amount: u256) -> bool {

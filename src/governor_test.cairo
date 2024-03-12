@@ -8,13 +8,13 @@ use core::serde::Serde;
 use core::traits::{TryInto};
 
 use governance::call_trait::{CallTrait};
-use governance::staker::{IStakerDispatcher, IStakerDispatcherTrait};
-use governance::staker_test::{deploy as deploy_staker};
 use governance::governor::{
     IGovernorDispatcher, IGovernorDispatcherTrait, Governor, Config, ProposalInfo,
     ProposalTimestamps
 };
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+use governance::staker::{IStakerDispatcher, IStakerDispatcherTrait};
+use governance::staker_test::{deploy as deploy_staker};
 use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait};
 use governance::timelock_test::{single_call, transfer_call, deploy as deploy_timelock};
 use governance::{test_utils as utils};

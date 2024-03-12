@@ -3,8 +3,8 @@ use core::num::traits::zero::{Zero};
 use core::option::{OptionTrait};
 use core::result::{Result, ResultTrait};
 use core::traits::{TryInto};
-use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::airdrop_test::{deploy_token};
+use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 
 use governance::staker::{
     IStakerDispatcher, IStakerDispatcherTrait, Staker,
@@ -30,77 +30,69 @@ pub fn setup(owner: ContractAddress, amount: u128) -> (IStakerDispatcher, IERC20
 
 #[test]
 fn test_governance_token_delegated_snapshot_store_pack() {
-    assert(
+    assert_eq!(
         DelegatedSnapshotStorePacking::pack(
             DelegatedSnapshot { timestamp: 0, delegated_cumulative: 0 }
-        ) == 0,
-        'zero'
+        ),
+        0
     );
-    assert(
+    assert_eq!(
         DelegatedSnapshotStorePacking::pack(
             DelegatedSnapshot { timestamp: 0, delegated_cumulative: 1 }
-        ) == 1,
-        'one cumulative'
+        ),
+        1
     );
-    assert(
+    assert_eq!(
         DelegatedSnapshotStorePacking::pack(
             DelegatedSnapshot { timestamp: 1, delegated_cumulative: 0 }
-        ) == 0x1000000000000000000000000000000000000000000000000,
-        'one timestamp'
+        ),
+        0x1000000000000000000000000000000000000000000000000
     );
-    assert(
+    assert_eq!(
         DelegatedSnapshotStorePacking::pack(
             DelegatedSnapshot { timestamp: 1, delegated_cumulative: 1 }
-        ) == 0x1000000000000000000000000000000000000000000000001,
-        'one both'
+        ),
+        0x1000000000000000000000000000000000000000000000001
     );
 
-    assert(
+    assert_eq!(
         DelegatedSnapshotStorePacking::pack(
             DelegatedSnapshot {
                 timestamp: 576460752303423488, // this timestamp equal to 2**59 is so large it's invalid
                 delegated_cumulative: 6277101735386680763835789423207666416102355444464034512895 // max u192
             }
-        ) == 3618502788666131113263695016908177884250476444008934042335404944711319814143,
-        'very large values'
+        ),
+        3618502788666131113263695016908177884250476444008934042335404944711319814143
     );
 }
 
 #[test]
 fn test_governance_token_delegated_snapshot_store_unpack() {
-    assert(
-        DelegatedSnapshotStorePacking::unpack(
-            0
-        ) == DelegatedSnapshot { timestamp: 0, delegated_cumulative: 0 },
-        'zero'
+    assert_eq!(
+        DelegatedSnapshotStorePacking::unpack(0),
+        DelegatedSnapshot { timestamp: 0, delegated_cumulative: 0 }
     );
-    assert(
-        DelegatedSnapshotStorePacking::unpack(
-            1
-        ) == DelegatedSnapshot { timestamp: 0, delegated_cumulative: 1 },
-        'one cumulative'
+    assert_eq!(
+        DelegatedSnapshotStorePacking::unpack(1),
+        DelegatedSnapshot { timestamp: 0, delegated_cumulative: 1 }
     );
-    assert(
-        DelegatedSnapshotStorePacking::unpack(
-            0x1000000000000000000000000000000000000000000000000
-        ) == DelegatedSnapshot { timestamp: 1, delegated_cumulative: 0 },
-        'one timestamp'
+    assert_eq!(
+        DelegatedSnapshotStorePacking::unpack(0x1000000000000000000000000000000000000000000000000),
+        DelegatedSnapshot { timestamp: 1, delegated_cumulative: 0 }
     );
-    assert(
-        DelegatedSnapshotStorePacking::unpack(
-            0x1000000000000000000000000000000000000000000000001
-        ) == DelegatedSnapshot { timestamp: 1, delegated_cumulative: 1 },
-        'one both'
+    assert_eq!(
+        DelegatedSnapshotStorePacking::unpack(0x1000000000000000000000000000000000000000000000001),
+        DelegatedSnapshot { timestamp: 1, delegated_cumulative: 1 }
     );
 
-    assert(
+    assert_eq!(
         DelegatedSnapshotStorePacking::unpack(
             3618502788666131113263695016908177884250476444008934042335404944711319814143
-        ) == DelegatedSnapshot {
+        ),
+        DelegatedSnapshot {
             timestamp: 576460752303423488,
             delegated_cumulative: 6277101735386680763835789423207666416102355444464034512895
-        },
-        'max both'
+        }
     );
 }
 
@@ -150,8 +142,11 @@ fn test_approve_sets_allowance() {
 
 #[test]
 fn test_delegate_count_lags() {
-    let (staker, _) = setup(get_contract_address(), 12345);
+    let (staker, token) = setup(get_contract_address(), 12345);
     let delegatee = contract_address_const::<12345>();
+
+    token.approve(staker.contract_address, 12345);
+    staker.stake();
 
     set_block_timestamp(2);
 
@@ -170,10 +165,14 @@ fn test_delegate_count_lags() {
 
 #[test]
 fn test_get_delegated_cumulative() {
-    let (staker, _) = setup(get_contract_address(), 12345);
+    let (staker, token) = setup(get_contract_address(), 12345);
     let delegatee = contract_address_const::<12345>();
 
+    token.approve(staker.contract_address, 12345);
+    staker.stake();
+
     set_block_timestamp(2);
+
     staker.delegate(delegatee);
     set_block_timestamp(4);
 
@@ -221,8 +220,11 @@ fn test_get_delegated_at_fails_future_non_zero_ts() {
 
 #[test]
 fn test_get_average_delegated() {
-    let (staker, _) = setup(get_contract_address(), 12345);
+    let (staker, token) = setup(get_contract_address(), 12345);
     let delegatee = contract_address_const::<12345>();
+
+    token.approve(staker.contract_address, 12345);
+    staker.stake();
 
     set_block_timestamp(10);
 
@@ -258,17 +260,16 @@ fn test_transfer_delegates_moved() {
     let (staker, token) = setup(get_contract_address(), 12345);
     let delegatee = contract_address_const::<12345>();
 
+    token.approve(staker.contract_address, 12345);
+    staker.stake();
+
     set_block_timestamp(2);
     staker.delegate(delegatee);
-
-    token.transfer(contract_address_const::<3456>(), 500);
+    staker.withdraw(contract_address_const::<3456>(), 500);
     set_block_timestamp(5);
 
-    assert(staker.get_delegated(delegatee) == (12345 - 500), 'delegated');
-    assert(
-        staker.get_average_delegated(delegatee, 0, 5) == ((3 * (12345 - 500)) / 5),
-        'average 3/5 seconds'
-    );
+    assert_eq!(staker.get_delegated(delegatee), (12345 - 500));
+    assert_eq!(staker.get_average_delegated(delegatee, 0, 5), ((3 * (12345 - 500)) / 5));
 }
 
 
@@ -278,6 +279,9 @@ fn test_delegate_undelegate() {
     let delegatee = contract_address_const::<12345>();
 
     set_block_timestamp(2);
+    token.approve(staker.contract_address, 12345);
+    staker.stake();
+
     staker.delegate(delegatee);
 
     set_block_timestamp(5);

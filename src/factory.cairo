@@ -65,16 +65,6 @@ pub mod Factory {
         fn deploy(
             self: @ContractState, token: ContractAddress, params: DeploymentParameters
         ) -> DeploymentResult {
-            let mut governor_constructor_args: Array<felt252> = ArrayTrait::new();
-            Serde::serialize(@(token, params.governor_config), ref governor_constructor_args);
-
-            let (governor_address, _) = deploy_syscall(
-                class_hash: self.governor_class_hash.read(),
-                contract_address_salt: 0,
-                calldata: governor_constructor_args.span(),
-                deploy_from_zero: false,
-            )
-                .unwrap();
 
             let mut staker_constructor_args: Array<felt252> = ArrayTrait::new();
             Serde::serialize(@(token), ref staker_constructor_args);
@@ -82,6 +72,17 @@ pub mod Factory {
                 class_hash: self.staker_class_hash.read(),
                 contract_address_salt: 0,
                 calldata: staker_constructor_args.span(),
+                deploy_from_zero: false,
+            )
+                .unwrap();
+
+            let mut governor_constructor_args: Array<felt252> = ArrayTrait::new();
+            Serde::serialize(@(staker_address, params.governor_config), ref governor_constructor_args);
+
+            let (governor_address, _) = deploy_syscall(
+                class_hash: self.governor_class_hash.read(),
+                contract_address_salt: 0,
+                calldata: governor_constructor_args.span(),
                 deploy_from_zero: false,
             )
                 .unwrap();

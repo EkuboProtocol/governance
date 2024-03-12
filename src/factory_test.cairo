@@ -10,6 +10,7 @@ use governance::factory::{
     IFactoryDispatcher, IFactoryDispatcherTrait, Factory, DeploymentParameters,
 };
 use governance::governor::{Config as GovernorConfig};
+use governance::staker::{Staker, IStakerDispatcherTrait};
 use governance::governor::{Governor};
 use governance::governor::{IGovernorDispatcherTrait};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
@@ -23,7 +24,7 @@ use starknet::{
 fn deploy() -> IFactoryDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
     Serde::serialize(
-        @(Airdrop::TEST_CLASS_HASH, Governor::TEST_CLASS_HASH, Timelock::TEST_CLASS_HASH),
+        @(Airdrop::TEST_CLASS_HASH, Staker::TEST_CLASS_HASH,Governor::TEST_CLASS_HASH, Timelock::TEST_CLASS_HASH),
         ref constructor_args
     );
 
@@ -63,6 +64,8 @@ fn test_deploy() {
     let drop = result.airdrop.unwrap();
     assert_eq!(drop.get_root(), 'root');
     assert_eq!(drop.get_token(), token);
+
+    assert_eq!(result.staker.get_token(), token);
 
     assert_eq!(result.governor.get_staker().contract_address, result.staker.contract_address);
     assert_eq!(

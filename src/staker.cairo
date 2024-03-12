@@ -1,32 +1,37 @@
 use starknet::{ContractAddress};
 
 #[starknet::interface]
-pub trait IStaker<TStorage> {
+pub trait IStaker<TContractState> {
+    // Returns the token this staker references
+    fn get_token(self: @TContractState) -> ContractAddress;
+
     // Transfer the given amount from the caller into this contract and stakes it, allowing it to be delegated
-    fn stake(ref self: TStorage, amount: u128);
+    fn stake(ref self: TContractState);
     // Withdraws the staked amount from the contract to the given address
-    fn withdraw(ref self: TStorage, to: ContractAddress, amount: u128);
+    fn withdraw(ref self: TContractState, to: ContractAddress, amount: u128);
 
     // Delegate tokens from the caller to the given delegate address
-    fn delegate(ref self: TStorage, to: ContractAddress);
+    fn delegate(ref self: TContractState, to: ContractAddress);
 
     // Get the currently delegated amount of token. Note this is not flash-loan resistant.
-    fn get_delegated(self: @TStorage, delegate: ContractAddress) -> u128;
+    fn get_delegated(self: @TContractState, delegate: ContractAddress) -> u128;
 
     // Get how much delegated tokens an address has at a certain timestamp.
-    fn get_delegated_at(self: @TStorage, delegate: ContractAddress, timestamp: u64) -> u128;
+    fn get_delegated_at(self: @TContractState, delegate: ContractAddress, timestamp: u64) -> u128;
 
     // Get the cumulative delegated amount * seconds for an address at a certain timestamp.
-    fn get_delegated_cumulative(self: @TStorage, delegate: ContractAddress, timestamp: u64) -> u256;
+    fn get_delegated_cumulative(
+        self: @TContractState, delegate: ContractAddress, timestamp: u64
+    ) -> u256;
 
     // Get the average amount delegated over the given period, where end > start and end <= current time
     fn get_average_delegated(
-        self: @TStorage, delegate: ContractAddress, start: u64, end: u64
+        self: @TContractState, delegate: ContractAddress, start: u64, end: u64
     ) -> u128;
 
     // Get the average amount delegated over the last period seconds
     fn get_average_delegated_over_last(
-        self: @TStorage, delegate: ContractAddress, period: u64
+        self: @TContractState, delegate: ContractAddress, period: u64
     ) -> u128;
 }
 
@@ -42,7 +47,7 @@ pub mod Staker {
     };
     use super::{IStaker, ContractAddress};
 
-    #[derive(Copy, Drop, PartialEq)]
+    #[derive(Copy, Drop, PartialEq, Debug)]
     pub struct DelegatedSnapshot {
         pub timestamp: u64,
         pub delegated_cumulative: u256,
@@ -213,21 +218,31 @@ pub mod Staker {
 
     #[abi(embed_v0)]
     impl StakerImpl of IStaker<ContractState> {
-        fn stake(ref self: ContractState, amount: u128) {
+        fn get_token(self: @ContractState) -> ContractAddress {
+            self.token.read().contract_address
+        }
+        fn stake(ref self: ContractState) {
             let from = get_caller_address();
+            let this_address = get_contract_address();
+            let token = self.token.read();
+            let amount = token.allowance(from, this_address);
+
+            let amount_small: u128 = amount.try_into().expect('ALLOWANCE_OVERFLOW');
             assert(
-                self.token.read().transferFrom(from, get_contract_address(), amount.into()),
-                'TRANSFER_FROM_FAILED'
+                token.transferFrom(from, get_contract_address(), amount), 'TRANSFER_FROM_FAILED'
             );
-            self.staked.write(from, amount + self.staked.read(from));
-            self.emit(Staked { from, amount });
+            self.staked.write(from, amount_small + self.staked.read(from));
+
+            self.move_delegates(Zero::zero(), self.delegated_to.read(from), amount_small);
+            self.emit(Staked { from, amount: amount_small });
         }
 
         fn withdraw(ref self: ContractState, to: ContractAddress, amount: u128) {
             let from = get_caller_address();
-            let staked_amount = self.staked.read(from);
-            assert(staked_amount >= amount, 'INSUFFICIENT_AMOUNT_STAKED');
-            self.staked.write(from, staked_amount - amount);
+            let staked = self.staked.read(from);
+            assert(staked >= amount, 'INSUFFICIENT_AMOUNT_STAKED');
+            self.staked.write(from, staked - amount);
+            self.move_delegates(self.delegated_to.read(from), Zero::zero(), amount);
             assert(self.token.read().transfer(to, amount.into()), 'TRANSFER_FAILED');
             self.emit(Withdrawn { from, to, amount });
         }

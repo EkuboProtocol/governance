@@ -8,14 +8,6 @@ Simple contracts for governance on Starknet.
 
 Each component of the governance contracts in this repository may be used independently.
 
-### ERC20
-
-`GovernanceToken` is an ERC20 that tracks delegations as well as time-weighted average delegations for any period
-
-- Users MAY delegate their tokens to other addresses
-- The average historical delegation weight is computable over *any* historical period
-- The contract has no owner and is not upgradeable.
-
 ### Airdrop
 
 `Airdrop` can be used to distribute any fungible token, including the `GovernanceToken`. To use it, you must compute a binary merkle tree using the pedersen hash function. The root of this tree and the token address are passed as constructor arguments.
@@ -24,6 +16,15 @@ Each component of the governance contracts in this repository may be used indepe
 - Deploy the airdrop with the root and the token address
 - Transfer the total amount of tokens to the `Airdrop` contract
 - The contract has no owner and is not upgradeable. Unclaimed tokens, by design, cannot be recovered.
+
+### Staker
+
+`Staker` is a contract used by the governor for staking tokens to be used in voting.
+
+- Users MAY delegate their tokens to other addresses
+- Users lock up their tokens, staking them which allows them to be delegated
+- The average historical delegation weight is computable over *any* historical period
+- The contract has no owner and is not upgradeable.
 
 ### Timelock
 
