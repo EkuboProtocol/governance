@@ -43,33 +43,33 @@ pub(crate) impl TimelockConfigStorePacking of StorePacking<TimelockConfig, u128>
 }
 
 #[starknet::interface]
-pub trait ITimelock<TStorage> {
+pub trait ITimelock<TContractState> {
     // Queue a list of calls to be executed after the delay. Only the owner may call this.
-    fn queue(ref self: TStorage, calls: Span<Call>) -> felt252;
+    fn queue(ref self: TContractState, calls: Span<Call>) -> felt252;
 
     // Cancel a queued proposal before it is executed. Only the owner may call this.
-    fn cancel(ref self: TStorage, id: felt252);
+    fn cancel(ref self: TContractState, id: felt252);
 
     // Execute a list of calls that have previously been queued. Anyone may call this.
-    fn execute(ref self: TStorage, calls: Span<Call>) -> Array<Span<felt252>>;
+    fn execute(ref self: TContractState, calls: Span<Call>) -> Array<Span<felt252>>;
 
     // Return the execution window, i.e. the start and end timestamp in which the call can be executed
-    fn get_execution_window(self: @TStorage, id: felt252) -> ExecutionWindow;
+    fn get_execution_window(self: @TContractState, id: felt252) -> ExecutionWindow;
 
     // Get the current owner
-    fn get_owner(self: @TStorage) -> ContractAddress;
+    fn get_owner(self: @TContractState) -> ContractAddress;
 
     // Returns the delay and the window for call execution
-    fn get_configuration(self: @TStorage) -> TimelockConfig;
+    fn get_configuration(self: @TContractState) -> TimelockConfig;
 
     // Transfer ownership, i.e. the address that can queue and cancel calls. This must be self-called via #queue.
-    fn transfer(ref self: TStorage, to: ContractAddress);
+    fn transfer(ref self: TContractState, to: ContractAddress);
 
     // Configure the delay and the window for call execution. This must be self-called via #queue.
-    fn configure(ref self: TStorage, config: TimelockConfig);
+    fn configure(ref self: TContractState, config: TimelockConfig);
 
     // Replace the code at this address. This must be self-called via #queue.
-    fn upgrade(ref self: TStorage, class_hash: ClassHash);
+    fn upgrade(ref self: TContractState, class_hash: ClassHash);
 }
 
 #[derive(Copy, Drop, Serde)]
@@ -122,7 +122,6 @@ pub mod Timelock {
     struct Storage {
         owner: ContractAddress,
         config: TimelockConfig,
-        // started_executed_canceled
         execution_state: LegacyMap<felt252, ExecutionState>,
     }
 
@@ -136,7 +135,7 @@ pub mod Timelock {
     // Two lists of calls will always have the same ID if they are equivalent
     // A list of calls can only be queued and executed once. To make 2 different calls, add an empty call.
     pub(crate) fn to_id(mut calls: Span<Call>) -> felt252 {
-        let mut state = selector!("ekubo::governance::Timelock");
+        let mut state = selector!("ekubo::governance::Timelock::to_id");
         while let Option::Some(call) = calls.pop_front() {
             state = LegacyHash::hash(state, call);
         };

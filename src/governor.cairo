@@ -2,14 +2,14 @@ use core::array::{Array};
 use core::integer::{u128_safe_divmod};
 use core::option::{Option, OptionTrait};
 use core::traits::{Into, TryInto};
-use governance::governance_token::{IGovernanceTokenDispatcher, IGovernanceTokenDispatcherTrait};
+use governance::staker::{IStakerDispatcher};
 use starknet::account::{Call};
 use starknet::{ContractAddress, storage_access::{StorePacking}};
 
-#[derive(Copy, Drop, Serde, PartialEq)]
+#[derive(Copy, Drop, Serde, PartialEq, Debug)]
 pub struct ProposalTimestamps {
     // the timestamp when the proposal was created
-    pub creation: u64,
+    pub created: u64,
     // the timestamp when the proposal was executed
     pub executed: u64,
 }
@@ -18,18 +18,18 @@ const TWO_POW_64: u128 = 0x10000000000000000_u128;
 
 impl ProposalTimestampsStorePacking of StorePacking<ProposalTimestamps, u128> {
     fn pack(value: ProposalTimestamps) -> u128 {
-        value.creation.into() + (value.executed.into() * TWO_POW_64)
+        value.created.into() + (value.executed.into() * TWO_POW_64)
     }
 
     fn unpack(value: u128) -> ProposalTimestamps {
-        let (executed, creation) = u128_safe_divmod(value, TWO_POW_64.try_into().unwrap());
+        let (executed, created) = u128_safe_divmod(value, TWO_POW_64.try_into().unwrap());
         ProposalTimestamps {
-            creation: creation.try_into().unwrap(), executed: executed.try_into().unwrap()
+            created: created.try_into().unwrap(), executed: executed.try_into().unwrap()
         }
     }
 }
 
-#[derive(Copy, Drop, Serde, starknet::Store, PartialEq)]
+#[derive(Copy, Drop, Serde, starknet::Store, PartialEq, Debug)]
 pub struct ProposalInfo {
     // the address of the proposer
     pub proposer: ContractAddress,
@@ -41,7 +41,7 @@ pub struct ProposalInfo {
     pub nay: u128,
 }
 
-#[derive(Copy, Drop, Serde, starknet::Store, PartialEq)]
+#[derive(Copy, Drop, Serde, starknet::Store, PartialEq, Debug)]
 pub struct Config {
     // how long after a proposal is created does voting start
     pub voting_start_delay: u64,
@@ -56,27 +56,27 @@ pub struct Config {
 }
 
 #[starknet::interface]
-pub trait IGovernor<TStorage> {
+pub trait IGovernor<TContractState> {
     // Propose executing the given call from this contract.
-    fn propose(ref self: TStorage, call: Call) -> felt252;
+    fn propose(ref self: TContractState, call: Call) -> felt252;
 
     // Vote on the given proposal.
-    fn vote(ref self: TStorage, id: felt252, yea: bool);
+    fn vote(ref self: TContractState, id: felt252, yea: bool);
 
     // Cancel the given proposal. Cancellation can happen by any address if the average voting weight is below the proposal_creation_threshold.
-    fn cancel(ref self: TStorage, id: felt252);
+    fn cancel(ref self: TContractState, id: felt252);
 
     // Execute the given proposal.
-    fn execute(ref self: TStorage, call: Call) -> Span<felt252>;
+    fn execute(ref self: TContractState, call: Call) -> Span<felt252>;
 
     // Get the configuration for this governor contract.
-    fn get_voting_token(self: @TStorage) -> IGovernanceTokenDispatcher;
+    fn get_staker(self: @TContractState) -> IStakerDispatcher;
 
     // Get the configuration for this governor contract.
-    fn get_config(self: @TStorage) -> Config;
+    fn get_config(self: @TContractState) -> Config;
 
     // Get the proposal info for the given proposal id.
-    fn get_proposal(self: @TStorage, id: felt252) -> ProposalInfo;
+    fn get_proposal(self: @TContractState, id: felt252) -> ProposalInfo;
 }
 
 #[starknet::contract]
@@ -84,10 +84,10 @@ pub mod Governor {
     use core::hash::{LegacyHash};
     use core::num::traits::zero::{Zero};
     use governance::call_trait::{HashCall, CallTrait};
-    use governance::governance_token::{IGovernanceTokenDispatcherTrait};
+    use governance::staker::{IStakerDispatcherTrait};
     use starknet::{get_block_timestamp, get_caller_address, contract_address_const};
     use super::{
-        ContractAddress, Array, IGovernor, IGovernanceTokenDispatcher, Config, ProposalInfo, Call,
+        IStakerDispatcher, ContractAddress, Array, IGovernor, Config, ProposalInfo, Call,
         ProposalTimestamps
     };
 
@@ -128,24 +128,26 @@ pub mod Governor {
 
     #[storage]
     struct Storage {
-        voting_token: IGovernanceTokenDispatcher,
+        staker: IStakerDispatcher,
         config: Config,
         proposals: LegacyMap<felt252, ProposalInfo>,
         voted: LegacyMap<(ContractAddress, felt252), bool>,
     }
 
     #[constructor]
-    fn constructor(
-        ref self: ContractState, voting_token: IGovernanceTokenDispatcher, config: Config
-    ) {
-        self.voting_token.write(voting_token);
+    fn constructor(ref self: ContractState, staker: IStakerDispatcher, config: Config) {
+        self.staker.write(staker);
         self.config.write(config);
+    }
+
+    pub fn to_call_id(call: @Call) -> felt252 {
+        LegacyHash::hash(selector!("ekubo::governance::governor::Governor::to_call_id"), call)
     }
 
     #[abi(embed_v0)]
     impl GovernorImpl of IGovernor<ContractState> {
         fn propose(ref self: ContractState, call: Call) -> felt252 {
-            let id = LegacyHash::hash(0, @call);
+            let id = to_call_id(@call);
 
             assert(self.proposals.read(id).proposer.is_zero(), 'ALREADY_PROPOSED');
 
@@ -157,7 +159,7 @@ pub mod Governor {
 
             assert(
                 self
-                    .voting_token
+                    .staker
                     .read()
                     .get_average_delegated_over_last(
                         delegate: proposer, period: config.voting_weight_smoothing_duration
@@ -172,7 +174,7 @@ pub mod Governor {
                     id,
                     ProposalInfo {
                         proposer,
-                        timestamps: ProposalTimestamps { creation: timestamp_current, executed: 0 },
+                        timestamps: ProposalTimestamps { created: timestamp_current, executed: 0 },
                         yea: 0,
                         nay: 0
                     }
@@ -189,7 +191,7 @@ pub mod Governor {
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
             let timestamp_current = get_block_timestamp();
-            let voting_start_time = (proposal.timestamps.creation + config.voting_start_delay);
+            let voting_start_time = (proposal.timestamps.created + config.voting_start_delay);
             let voter = get_caller_address();
             let voted = self.voted.read((voter, id));
 
@@ -198,7 +200,7 @@ pub mod Governor {
             assert(!voted, 'ALREADY_VOTED');
 
             let weight = self
-                .voting_token
+                .staker
                 .read()
                 .get_average_delegated(
                     delegate: voter,
@@ -220,7 +222,7 @@ pub mod Governor {
 
         fn cancel(ref self: ContractState, id: felt252) {
             let config = self.config.read();
-            let voting_token = self.voting_token.read();
+            let voting_token = self.staker.read();
             let mut proposal = self.proposals.read(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
@@ -241,7 +243,7 @@ pub mod Governor {
             }
 
             assert(
-                timestamp_current < (proposal.timestamps.creation
+                timestamp_current < (proposal.timestamps.created
                     + config.voting_start_delay
                     + config.voting_period),
                 'VOTING_ENDED'
@@ -250,7 +252,7 @@ pub mod Governor {
             proposal =
                 ProposalInfo {
                     proposer: contract_address_const::<0>(),
-                    timestamps: ProposalTimestamps { creation: 0, executed: 0 },
+                    timestamps: ProposalTimestamps { created: 0, executed: 0 },
                     yea: 0,
                     nay: 0
                 };
@@ -261,7 +263,7 @@ pub mod Governor {
         }
 
         fn execute(ref self: ContractState, call: Call) -> Span<felt252> {
-            let id = LegacyHash::hash(0, @call);
+            let id = to_call_id(@call);
 
             let config = self.config.read();
             let mut proposal = self.proposals.read(id);
@@ -275,7 +277,7 @@ pub mod Governor {
             assert(timestamp_current.is_non_zero(), 'TIMESTAMP_ZERO');
 
             assert(
-                timestamp_current >= (proposal.timestamps.creation
+                timestamp_current >= (proposal.timestamps.created
                     + config.voting_start_delay
                     + config.voting_period),
                 'VOTING_NOT_ENDED'
@@ -287,7 +289,7 @@ pub mod Governor {
             proposal
                 .timestamps =
                     ProposalTimestamps {
-                        creation: proposal.timestamps.creation, executed: timestamp_current
+                        created: proposal.timestamps.created, executed: timestamp_current
                     };
 
             self.proposals.write(id, proposal);
@@ -303,8 +305,8 @@ pub mod Governor {
             self.config.read()
         }
 
-        fn get_voting_token(self: @ContractState) -> IGovernanceTokenDispatcher {
-            self.voting_token.read()
+        fn get_staker(self: @ContractState) -> IStakerDispatcher {
+            self.staker.read()
         }
 
         fn get_proposal(self: @ContractState, id: felt252) -> ProposalInfo {

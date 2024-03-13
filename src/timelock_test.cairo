@@ -1,6 +1,5 @@
 use core::array::{Array, ArrayTrait, SpanTrait};
-use governance::governance_token::{IGovernanceTokenDispatcher};
-use governance::governance_token_test::{deploy as deploy_token};
+use governance::airdrop_test::{deploy_token};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::timelock::{
     ITimelockDispatcher, ITimelockDispatcherTrait, Timelock, TimelockConfig,
@@ -35,7 +34,7 @@ fn test_deploy() {
 }
 
 pub(crate) fn transfer_call(
-    token: IGovernanceTokenDispatcher, recipient: ContractAddress, amount: u256
+    token: IERC20Dispatcher, recipient: ContractAddress, amount: u256
 ) -> Call {
     let mut calldata: Array<felt252> = ArrayTrait::new();
     Serde::serialize(@(recipient, amount), ref calldata);
@@ -57,8 +56,8 @@ fn test_queue_execute() {
     set_block_timestamp(1);
     let timelock = deploy(get_contract_address(), 86400, 3600);
 
-    let (token, erc20) = deploy_token('TIMELOCK', 'TL', 12345);
-    erc20.transfer(timelock.contract_address, 12345);
+    let token = deploy_token(get_contract_address(), 12345);
+    token.transfer(timelock.contract_address, 12345);
 
     let recipient = contract_address_const::<12345>();
 
@@ -71,7 +70,7 @@ fn test_queue_execute() {
     set_block_timestamp(86401);
 
     timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
-    assert(erc20.balance_of(recipient) == 500_u256, 'balance');
+    assert(token.balanceOf(recipient) == 500_u256, 'balance');
 }
 
 #[test]
@@ -80,8 +79,8 @@ fn test_queue_cancel() {
     set_block_timestamp(1);
     let timelock = deploy(get_contract_address(), 86400, 3600);
 
-    let (token, erc20) = deploy_token('TIMELOCK', 'TL', 12345);
-    erc20.transfer(timelock.contract_address, 12345);
+    let token = deploy_token(get_contract_address(), 12345);
+    token.transfer(timelock.contract_address, 12345);
 
     let recipient = contract_address_const::<12345>();
 
@@ -99,8 +98,8 @@ fn test_queue_execute_twice() {
     set_block_timestamp(1);
     let timelock = deploy(get_contract_address(), 86400, 3600);
 
-    let (token, erc20) = deploy_token('TIMELOCK', 'TL', 12345);
-    erc20.transfer(timelock.contract_address, 12345);
+    let token = deploy_token(get_contract_address(), 12345);
+    token.transfer(timelock.contract_address, 12345);
 
     let recipient = contract_address_const::<12345>();
 
@@ -118,8 +117,8 @@ fn test_queue_executed_too_early() {
     set_block_timestamp(1);
     let timelock = deploy(get_contract_address(), 86400, 3600);
 
-    let (token, erc20) = deploy_token('TIMELOCK', 'TL', 12345);
-    erc20.transfer(timelock.contract_address, 12345);
+    let token = deploy_token(get_contract_address(), 12345);
+    token.transfer(timelock.contract_address, 12345);
 
     let recipient = contract_address_const::<12345>();
 
@@ -136,8 +135,8 @@ fn test_queue_executed_too_late() {
     set_block_timestamp(1);
     let timelock = deploy(get_contract_address(), 86400, 3600);
 
-    let (token, erc20) = deploy_token('TIMELOCK', 'TL', 12345);
-    erc20.transfer(timelock.contract_address, 12345);
+    let token = deploy_token(get_contract_address(), 12345);
+    token.transfer(timelock.contract_address, 12345);
 
     let recipient = contract_address_const::<12345>();
 
