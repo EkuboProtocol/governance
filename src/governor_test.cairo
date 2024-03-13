@@ -77,8 +77,7 @@ fn create_proposal(
 
     // Delegate token to the proposer so that he reaches threshold.
     token.approve(staker.contract_address, 100);
-    staker.stake();
-    staker.delegate(proposer);
+    staker.stake(proposer);
 
     set_block_timestamp(start_time);
     let address_before = get_contract_address();
@@ -215,8 +214,7 @@ fn test_vote_yes() {
 
     // Delegate token to the voter to give him voting power.
     token.approve(staker.contract_address, 900);
-    staker.stake();
-    staker.delegate(voter);
+    staker.stake(voter);
 
     set_contract_address(voter);
     governance.vote(id, true); // vote yes
@@ -250,8 +248,7 @@ fn test_vote_no_staking_after_period_starts() {
 
     // Delegate token to the voter to give him voting power.
     token.approve(staker.contract_address, 900);
-    staker.stake();
-    staker.delegate(voter);
+    staker.stake(voter);
 
     set_contract_address(voter);
     governance.vote(id, false); // vote no
@@ -281,8 +278,7 @@ fn test_vote_before_voting_start_should_fail() {
 
     // Delegate token to the voter to give him voting power.
     token.approve(staker.contract_address, 900);
-    staker.stake();
-    staker.delegate(voter);
+    staker.stake(voter);
 
     // Do not fast forward to voting period this time
     set_contract_address(voter);
@@ -313,8 +309,7 @@ fn test_vote_already_voted_should_fail() {
 
     // Delegate token to the voter to give him voting power.
     token.approve(staker.contract_address, 900);
-    staker.stake();
-    staker.delegate(voter);
+    staker.stake(voter);
 
     set_contract_address(voter);
     governance.vote(id, true); // vote yes
@@ -404,7 +399,7 @@ fn test_cancel_by_non_proposer() {
 
     let id = create_proposal(governance, token, staker);
 
-    staker.delegate(Zero::zero());
+    staker.withdraw(utils::proposer(), recipient: Zero::zero(), amount: 100);
     // Fast forward one smoothing duration
     current_timestamp += 30;
     set_block_timestamp(current_timestamp);
@@ -597,12 +592,10 @@ fn test_execute_no_majority_should_fail() {
     token.transfer(voter2, 51);
     set_contract_address(voter1);
     token.approve(staker.contract_address, 49);
-    staker.stake();
-    staker.delegate(voter1);
+    staker.stake(voter1);
     set_contract_address(voter2);
     token.approve(staker.contract_address, 51);
-    staker.stake();
-    staker.delegate(voter2);
+    staker.stake(voter2);
 
     // now voter2 has enough weighted voting power to propose
     current_timestamp += 30;
@@ -660,12 +653,10 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
     token.transfer(voter2, 51);
     set_contract_address(voter1);
     token.approve(staker.contract_address, 49);
-    staker.stake();
-    staker.delegate(voter1);
+    staker.stake(voter1);
     set_contract_address(voter2);
     token.approve(staker.contract_address, 51);
-    staker.stake();
-    staker.delegate(voter2);
+    staker.stake(voter2);
 
     // the full amount of delegation should be vested over 30 seconds
     current_timestamp += 30;
@@ -678,7 +669,7 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
     set_block_timestamp(current_timestamp); // 20 seconds before voting starts
     // undelegate 20 seconds before voting starts, so only 1/3rd of voting power is counted for voter1
     set_contract_address(voter1);
-    staker.delegate(Zero::zero());
+    staker.withdraw(voter1, recipient: Zero::zero(), amount: 49);
 
     current_timestamp += 20;
     set_block_timestamp(current_timestamp); // voting starts
@@ -777,8 +768,7 @@ fn test_proposal_e2e() {
 
     let delegate = utils::delegate();
     token.approve(staker.contract_address, 1000);
-    staker.stake();
-    staker.delegate(delegate);
+    staker.stake(delegate);
 
     // so the average delegation is sufficient
     set_block_timestamp(start_time + 5);

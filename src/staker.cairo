@@ -5,13 +5,16 @@ pub trait IStaker<TContractState> {
     // Returns the token this staker references
     fn get_token(self: @TContractState) -> ContractAddress;
 
-    // Transfer the given amount from the caller into this contract and stakes it, allowing it to be delegated
-    fn stake(ref self: TContractState);
-    // Withdraws the staked amount from the contract to the given address
-    fn withdraw(ref self: TContractState, to: ContractAddress, amount: u128);
+    // Transfer the approved amount of token from the caller into this contract and delegates it to the given address
+    fn stake(ref self: TContractState, delegate: ContractAddress);
 
-    // Delegate tokens from the caller to the given delegate address
-    fn delegate(ref self: TContractState, to: ContractAddress);
+    // Withdraws the delegated tokens from the contract to the given recipient address
+    fn withdraw(
+        ref self: TContractState,
+        delegate: ContractAddress,
+        recipient: ContractAddress,
+        amount: u128
+    );
 
     // Get the currently delegated amount of token. Note this is not flash-loan resistant.
     fn get_delegated(self: @TContractState, delegate: ContractAddress) -> u128;
@@ -73,8 +76,8 @@ pub mod Staker {
     #[storage]
     struct Storage {
         token: IERC20Dispatcher,
-        staked: LegacyMap<ContractAddress, u128>,
-        delegated_to: LegacyMap<ContractAddress, ContractAddress>,
+        // owner, delegate => amount
+        staked: LegacyMap<(ContractAddress, ContractAddress), u128>,
         amount_delegated: LegacyMap<ContractAddress, u128>,
         delegated_cumulative_num_snapshots: LegacyMap<ContractAddress, u64>,
         delegated_cumulative_snapshot: LegacyMap<(ContractAddress, u64), DelegatedSnapshot>,
@@ -86,20 +89,16 @@ pub mod Staker {
     }
 
     #[derive(starknet::Event, Drop)]
-    pub struct Delegate {
-        pub from: ContractAddress,
-        pub to: ContractAddress,
-    }
-
-    #[derive(starknet::Event, Drop)]
     pub struct Staked {
         pub from: ContractAddress,
         pub amount: u128,
+        pub delegate: ContractAddress,
     }
 
     #[derive(starknet::Event, Drop)]
     pub struct Withdrawn {
         pub from: ContractAddress,
+        pub delegate: ContractAddress,
         pub to: ContractAddress,
         pub amount: u128,
     }
@@ -107,7 +106,6 @@ pub mod Staker {
     #[derive(starknet::Event, Drop)]
     #[event]
     enum Event {
-        Delegate: Delegate,
         Staked: Staked,
         Withdrawn: Withdrawn,
     }
@@ -196,24 +194,6 @@ pub mod Staker {
                 self.find_delegated_cumulative(delegate, mid, max_index_exclusive, timestamp)
             }
         }
-
-        fn move_delegates(
-            ref self: ContractState, from: ContractAddress, to: ContractAddress, amount: u128
-        ) {
-            if (amount == 0) {
-                return ();
-            }
-
-            let timestamp = get_block_timestamp();
-
-            if (from.is_non_zero()) {
-                self.amount_delegated.write(from, self.insert_snapshot(from, timestamp) - amount);
-            }
-
-            if (to.is_non_zero()) {
-                self.amount_delegated.write(to, self.insert_snapshot(to, timestamp) + amount);
-            }
-        }
     }
 
     #[abi(embed_v0)]
@@ -221,7 +201,8 @@ pub mod Staker {
         fn get_token(self: @ContractState) -> ContractAddress {
             self.token.read().contract_address
         }
-        fn stake(ref self: ContractState) {
+
+        fn stake(ref self: ContractState, delegate: ContractAddress) {
             let from = get_caller_address();
             let this_address = get_contract_address();
             let token = self.token.read();
@@ -231,29 +212,31 @@ pub mod Staker {
             assert(
                 token.transferFrom(from, get_contract_address(), amount), 'TRANSFER_FROM_FAILED'
             );
-            self.staked.write(from, amount_small + self.staked.read(from));
 
-            self.move_delegates(Zero::zero(), self.delegated_to.read(from), amount_small);
-            self.emit(Staked { from, amount: amount_small });
+            let key = (from, delegate);
+            self.staked.write((from, delegate), amount_small + self.staked.read(key));
+            self
+                .amount_delegated
+                .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) + amount_small);
+            self.emit(Staked { from, delegate, amount: amount_small });
         }
 
-        fn withdraw(ref self: ContractState, to: ContractAddress, amount: u128) {
+        fn withdraw(
+            ref self: ContractState,
+            delegate: ContractAddress,
+            recipient: ContractAddress,
+            amount: u128
+        ) {
             let from = get_caller_address();
-            let staked = self.staked.read(from);
+            let key = (from, delegate);
+            let staked = self.staked.read(key);
             assert(staked >= amount, 'INSUFFICIENT_AMOUNT_STAKED');
-            self.staked.write(from, staked - amount);
-            self.move_delegates(self.delegated_to.read(from), Zero::zero(), amount);
-            assert(self.token.read().transfer(to, amount.into()), 'TRANSFER_FAILED');
-            self.emit(Withdrawn { from, to, amount });
-        }
-
-        fn delegate(ref self: ContractState, to: ContractAddress) {
-            let caller = get_caller_address();
-            let old = self.delegated_to.read(caller);
-
-            self.delegated_to.write(caller, to);
-            self.move_delegates(old, to, self.staked.read(caller));
-            self.emit(Delegate { from: caller, to: to });
+            self.staked.write(key, staked - amount);
+            self
+                .amount_delegated
+                .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) - amount);
+            assert(self.token.read().transfer(recipient, amount.into()), 'TRANSFER_FAILED');
+            self.emit(Withdrawn { from, delegate, to: recipient, amount });
         }
 
         fn get_delegated(self: @ContractState, delegate: ContractAddress) -> u128 {

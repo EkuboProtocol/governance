@@ -73,8 +73,7 @@ impl SetupTraitImpl of SetupTrait {
         (*self.token).transfer(delegate, amount.into());
         set_contract_address(delegate);
         (*self.token).approve((*self.deployment).staker.contract_address, amount.into());
-        (*self.deployment).staker.stake();
-        (*self.deployment).staker.delegate(delegate);
+        (*self.deployment).staker.stake(delegate);
 
         set_contract_address(address_before);
     }
