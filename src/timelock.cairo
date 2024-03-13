@@ -122,7 +122,6 @@ pub mod Timelock {
     struct Storage {
         owner: ContractAddress,
         config: TimelockConfig,
-        // started_executed_canceled
         execution_state: LegacyMap<felt252, ExecutionState>,
     }
 
@@ -136,7 +135,7 @@ pub mod Timelock {
     // Two lists of calls will always have the same ID if they are equivalent
     // A list of calls can only be queued and executed once. To make 2 different calls, add an empty call.
     pub(crate) fn to_id(mut calls: Span<Call>) -> felt252 {
-        let mut state = selector!("ekubo::governance::Timelock");
+        let mut state = selector!("ekubo::governance::Timelock::to_id");
         while let Option::Some(call) = calls.pop_front() {
             state = LegacyHash::hash(state, call);
         };

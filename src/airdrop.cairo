@@ -49,7 +49,7 @@ pub mod Airdrop {
     use super::{IAirdrop, ContractAddress, Claim, IERC20Dispatcher};
 
 
-    pub(crate) fn hash_function(a: felt252, b: felt252) -> felt252 {
+    pub fn hash_function(a: felt252, b: felt252) -> felt252 {
         let a_u256: u256 = a.into();
         if a_u256 < b.into() {
             core::pedersen::pedersen(a, b)
@@ -59,7 +59,7 @@ pub mod Airdrop {
     }
 
     // Compute the pedersen root of a merkle tree by combining the current node with each sibling up the tree
-    pub(crate) fn compute_pedersen_root(current: felt252, mut proof: Span<felt252>) -> felt252 {
+    pub fn compute_pedersen_root(current: felt252, mut proof: Span<felt252>) -> felt252 {
         match proof.pop_front() {
             Option::Some(proof_element) => {
                 compute_pedersen_root(hash_function(current, *proof_element), proof)

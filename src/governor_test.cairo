@@ -10,7 +10,7 @@ use core::traits::{TryInto};
 use governance::call_trait::{CallTrait};
 use governance::governor::{
     IGovernorDispatcher, IGovernorDispatcherTrait, Governor, Config, ProposalInfo,
-    ProposalTimestamps
+    ProposalTimestamps, Governor::{to_call_id}
 };
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::staker::{IStakerDispatcher, IStakerDispatcherTrait};
@@ -85,6 +85,20 @@ fn create_proposal(
     let id = governance.propose(transfer_call);
     set_contract_address(address_before);
     id
+}
+
+#[test]
+fn test_to_call_id() {
+    assert_eq!(
+        to_call_id(
+            @Call {
+                to: contract_address_const::<'to'>(),
+                selector: 'selector',
+                calldata: array![1, 2, 3].span()
+            }
+        ),
+        3468069799942858391288170742121635082941840484768382693792476025465085752161
+    );
 }
 
 /////////////////////////////

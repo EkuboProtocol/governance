@@ -141,7 +141,7 @@ pub mod Governor {
     }
 
     pub fn to_call_id(call: @Call) -> felt252 {
-        LegacyHash::hash(selector!("governance::governor::Governor"), call)
+        LegacyHash::hash(selector!("ekubo::governance::governor::Governor::to_call_id"), call)
     }
 
     #[abi(embed_v0)]
