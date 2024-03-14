@@ -1,3 +1,4 @@
+use core::num::traits::zero::{Zero};
 use core::array::{ArrayTrait, SpanTrait};
 use core::hash::{LegacyHash};
 use core::option::{OptionTrait};
@@ -5,7 +6,7 @@ use core::option::{OptionTrait};
 use core::result::{Result, ResultTrait};
 use core::traits::{TryInto, Into};
 use governance::airdrop::{
-    IAirdropDispatcher, IAirdropDispatcherTrait, Airdrop,
+    IAirdropDispatcher, IAirdropDispatcherTrait, Airdrop, Config,
     Airdrop::{compute_pedersen_root, hash_function, hash_claim, compute_root_of_group}, Claim
 };
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
@@ -29,15 +30,23 @@ pub(crate) fn deploy_token(owner: ContractAddress, amount: u128) -> IERC20Dispat
 }
 
 
-fn deploy(token: ContractAddress, root: felt252) -> IAirdropDispatcher {
+fn deploy_with_refundee(
+    token: ContractAddress, root: felt252, refundable_timestamp: u64, refund_to: ContractAddress
+) -> IAirdropDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
-    Serde::serialize(@(token, root), ref constructor_args);
+    Serde::serialize(
+        @(token, Config { root, refundable_timestamp, refund_to }), ref constructor_args
+    );
 
     let (address, _) = deploy_syscall(
         Airdrop::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true
     )
         .expect('DEPLOY_AD_FAILED');
     IAirdropDispatcher { contract_address: address }
+}
+
+fn deploy(token: ContractAddress, root: felt252) -> IAirdropDispatcher {
+    deploy_with_refundee(token, root, Zero::zero(), Zero::zero())
 }
 
 #[test]

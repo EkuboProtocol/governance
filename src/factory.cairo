@@ -1,5 +1,6 @@
 use governance::airdrop::{IAirdropDispatcher};
 use governance::governor::{Config as GovernorConfig};
+use governance::airdrop::{Config as AirdropConfig};
 use governance::governor::{IGovernorDispatcher};
 use governance::staker::{IStakerDispatcher};
 use governance::timelock::{ITimelockDispatcher, TimelockConfig};
@@ -9,7 +10,7 @@ use starknet::{ContractAddress};
 pub struct DeploymentParameters {
     pub governor_config: GovernorConfig,
     pub timelock_config: TimelockConfig,
-    pub airdrop_root: Option<felt252>,
+    pub airdrop_config: Option<AirdropConfig>,
 }
 
 #[derive(Copy, Drop, Serde)]
@@ -88,10 +89,10 @@ pub mod Factory {
             )
                 .unwrap();
 
-            let airdrop = match params.airdrop_root {
-                Option::Some(root) => {
+            let airdrop = match params.airdrop_config {
+                Option::Some(config) => {
                     let mut airdrop_constructor_args: Array<felt252> = ArrayTrait::new();
-                    Serde::serialize(@(token, root), ref airdrop_constructor_args);
+                    Serde::serialize(@(token, config), ref airdrop_constructor_args);
 
                     let (airdrop_address, _) = deploy_syscall(
                         class_hash: self.airdrop_class_hash.read(),
