@@ -4,6 +4,10 @@
 
 Simple contracts for governance on Starknet.
 
+## Bug bounty
+
+These contracts are currently subject to up to a $10,000 USD bug bounty, subject to the terms defined [here](./BUG-BOUNTY.md).
+
 ## Components
 
 Each component of the governance contracts in this repository may be used independently.
