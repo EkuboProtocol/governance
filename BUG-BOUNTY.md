@@ -26,6 +26,8 @@ These are examples and bounties may be awarded for issues found that do not exac
   - delegated token amounts
   - staked amounts
   - average amounts delegated over a historical period
+  - vote counts on a proposal
+  - proposal status
 - Freeze the operation of Timelock or Governor
 - Prevent execution of an approved call or set of calls in perpetuity (i.e. denial of service)
 - Drain contract funds without authorization
