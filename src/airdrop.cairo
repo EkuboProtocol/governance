@@ -251,6 +251,7 @@ pub mod Airdrop {
 
         fn refund(ref self: ContractState) {
             let config = self.config.read();
+            assert(config.refundable_timestamp.is_non_zero(), 'NOT_REFUNDABLE');
             assert(get_block_timestamp() >= config.refundable_timestamp, 'TOO_EARLY');
             let token = self.token.read();
             let balance = token.balanceOf(get_contract_address());

@@ -11,7 +11,7 @@ use governance::airdrop::{
 };
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::test::test_token::{TestToken};
-use starknet::testing::{pop_log};
+use starknet::testing::{pop_log, set_block_timestamp};
 use starknet::{
     get_contract_address, syscalls::{deploy_syscall}, ClassHash, contract_address_const,
     ContractAddress
@@ -837,4 +837,88 @@ fn test_claim_128_double_claim() {
 
     assert_eq!(airdrop.claim_128(claims.span().slice(0, 128), array![s2, rr].span()), 0);
     assert_eq!(pop_log::<Airdrop::Claimed>(airdrop.contract_address).is_none(), true);
+}
+
+
+mod refundable {
+    use super::{
+        deploy_token, deploy_with_refundee, get_contract_address, contract_address_const,
+        set_block_timestamp, IAirdropDispatcherTrait, IERC20DispatcherTrait, TestToken,
+        ContractAddress
+    };
+
+    fn refund_to() -> ContractAddress {
+        contract_address_const::<'refund_to'>()
+    }
+
+    #[test]
+    fn test_refundable_transfers_token_at_refund_timestamp() {
+        let token = deploy_token(get_contract_address(), 1234);
+        let airdrop = deploy_with_refundee(
+            token: token.contract_address,
+            root: 'root',
+            refundable_timestamp: 1,
+            refund_to: refund_to()
+        );
+
+        set_block_timestamp(1);
+        token.transfer(airdrop.contract_address, 567);
+        assert_eq!(token.balanceOf(refund_to()), 0);
+        airdrop.refund();
+        assert_eq!(token.balanceOf(refund_to()), 567);
+        airdrop.refund();
+        assert_eq!(token.balanceOf(refund_to()), 567);
+
+        set_block_timestamp(2);
+        airdrop.refund();
+        assert_eq!(token.balanceOf(refund_to()), 567);
+        token.transfer(airdrop.contract_address, 123);
+        airdrop.refund();
+        assert_eq!(token.balanceOf(refund_to()), 690);
+    }
+
+    #[test]
+    #[should_panic(expected: ('TOO_EARLY', 'ENTRYPOINT_FAILED'))]
+    fn test_refundable_reverts_before_timestamp() {
+        let token = deploy_token(get_contract_address(), 1234);
+        let airdrop = deploy_with_refundee(
+            token: token.contract_address,
+            root: 'root',
+            refundable_timestamp: 1,
+            refund_to: refund_to()
+        );
+
+        token.transfer(airdrop.contract_address, 567);
+        airdrop.refund();
+    }
+
+    #[test]
+    #[should_panic(expected: ('NOT_REFUNDABLE', 'ENTRYPOINT_FAILED'))]
+    fn test_not_refundable_reverts() {
+        let token = deploy_token(get_contract_address(), 1234);
+        let airdrop = deploy_with_refundee(
+            token: token.contract_address,
+            root: 'root',
+            refundable_timestamp: 0,
+            refund_to: refund_to()
+        );
+
+        airdrop.refund();
+    }
+
+    #[test]
+    #[should_panic(expected: ('NOT_REFUNDABLE', 'ENTRYPOINT_FAILED'))]
+    fn test_not_refundable_reverts_after_time() {
+        let token = deploy_token(get_contract_address(), 1234);
+        let airdrop = deploy_with_refundee(
+            token: token.contract_address,
+            root: 'root',
+            refundable_timestamp: 0,
+            refund_to: refund_to()
+        );
+
+        set_block_timestamp(1);
+
+        airdrop.refund();
+    }
 }
