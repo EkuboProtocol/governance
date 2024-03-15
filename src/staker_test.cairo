@@ -3,20 +3,20 @@ use core::num::traits::zero::{Zero};
 use core::option::{OptionTrait};
 use core::result::{Result, ResultTrait};
 use core::traits::{TryInto};
-use governance::test::test_token::{TestToken, deploy as deploy_token};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 
 use governance::staker::{
     IStakerDispatcher, IStakerDispatcherTrait, Staker,
     Staker::{DelegatedSnapshotStorePacking, DelegatedSnapshot},
 };
+use governance::test::test_token::{TestToken, deploy as deploy_token};
 use starknet::testing::{set_contract_address, set_block_timestamp, pop_log};
 use starknet::{
     get_contract_address, syscalls::deploy_syscall, ClassHash, contract_address_const,
     ContractAddress,
 };
 
-pub(crate) fn setup(amount: u128) -> (IStakerDispatcher, IERC20Dispatcher) {
+pub(crate) fn setup(amount: u256) -> (IStakerDispatcher, IERC20Dispatcher) {
     let token = deploy_token(get_contract_address(), amount);
     let (staker_address, _) = deploy_syscall(
         Staker::TEST_CLASS_HASH.try_into().unwrap(),
@@ -33,13 +33,21 @@ mod stake_withdraw {
         setup, Staker, IStakerDispatcherTrait, IERC20Dispatcher, IERC20DispatcherTrait, pop_log,
         get_contract_address, Zero, TestToken, contract_address_const
     };
-    
+
     #[test]
     fn test_takes_approved_token() {
         let (staker, token) = setup(1000);
 
         token.approve(staker.contract_address, 500);
         staker.stake(contract_address_const::<'delegate'>());
+
+        assert_eq!(
+            staker.get_staked(get_contract_address(), contract_address_const::<'delegate'>()), 500
+        );
+        assert_eq!(staker.get_staked(get_contract_address(), Zero::zero()), 0);
+        assert_eq!(
+            staker.get_staked(contract_address_const::<'delegate'>(), get_contract_address()), 0
+        );
         // pop the transfer from 0 to deployer
         pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
         assert_eq!(
@@ -60,6 +68,24 @@ mod stake_withdraw {
                 }
             )
         );
+    }
+
+    #[test]
+    #[should_panic(expected: ('ALLOWANCE_OVERFLOW', 'ENTRYPOINT_FAILED'))]
+    fn test_fails_allowance_large() {
+        let (staker, token) = setup(1000);
+
+        token.approve(staker.contract_address, u256 { high: 1, low: 0 });
+        staker.stake(contract_address_const::<'delegate'>());
+    }
+
+    #[test]
+    #[should_panic(expected: ('INSUFFICIENT_TF_BALANCE', 'ENTRYPOINT_FAILED', 'ENTRYPOINT_FAILED'))]
+    fn test_fails_insufficient_balance() {
+        let (staker, token) = setup(1000);
+
+        token.approve(staker.contract_address, 1001);
+        staker.stake(contract_address_const::<'delegate'>());
     }
 }
 

@@ -5,6 +5,11 @@ pub trait IStaker<TContractState> {
     // Returns the token this staker references
     fn get_token(self: @TContractState) -> ContractAddress;
 
+    // Returns the amount staked from the staker to the delegate
+    fn get_staked(
+        self: @TContractState, staker: ContractAddress, delegate: ContractAddress
+    ) -> u128;
+
     // Transfer the approved amount of token from the caller into this contract and delegates it to the given address
     fn stake(ref self: TContractState, delegate: ContractAddress);
 
@@ -200,6 +205,12 @@ pub mod Staker {
     impl StakerImpl of IStaker<ContractState> {
         fn get_token(self: @ContractState) -> ContractAddress {
             self.token.read().contract_address
+        }
+
+        fn get_staked(
+            self: @ContractState, staker: ContractAddress, delegate: ContractAddress
+        ) -> u128 {
+            self.staked.read((staker, delegate))
         }
 
         fn stake(ref self: ContractState, delegate: ContractAddress) {

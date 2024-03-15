@@ -1,3 +1,6 @@
+use governance::interfaces::erc20::{IERC20Dispatcher};
+
+use starknet::{ContractAddress, syscalls::{deploy_syscall}};
 #[starknet::contract]
 pub(crate) mod TestToken {
     use core::num::traits::zero::{Zero};
@@ -6,8 +9,8 @@ pub(crate) mod TestToken {
 
     #[storage]
     struct Storage {
-        balances: LegacyMap<ContractAddress, u128>,
-        allowances: LegacyMap<(ContractAddress, ContractAddress), u128>,
+        balances: LegacyMap<ContractAddress, u256>,
+        allowances: LegacyMap<(ContractAddress, ContractAddress), u256>,
     }
 
     #[derive(starknet::Event, PartialEq, Debug, Drop)]
@@ -24,9 +27,9 @@ pub(crate) mod TestToken {
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, recipient: ContractAddress, amount: u128) {
+    fn constructor(ref self: ContractState, recipient: ContractAddress, amount: u256) {
         self.balances.write(recipient, amount);
-        self.emit(Transfer { from: Zero::zero(), to: recipient, value: amount.into() })
+        self.emit(Transfer { from: Zero::zero(), to: recipient, value: amount })
     }
 
     #[abi(embed_v0)]
@@ -40,11 +43,10 @@ pub(crate) mod TestToken {
             self.allowances.read((owner, spender)).into()
         }
         fn transfer(ref self: ContractState, recipient: ContractAddress, amount: u256) -> bool {
-            let amount_small: u128 = amount.try_into().unwrap();
             let balance = self.balances.read(get_caller_address());
-            assert(balance >= amount_small, 'INSUFFICIENT_TRANSFER_BALANCE');
-            self.balances.write(recipient, self.balances.read(recipient) + amount_small);
-            self.balances.write(get_caller_address(), balance - amount_small);
+            assert(balance >= amount, 'INSUFFICIENT_TRANSFER_BALANCE');
+            self.balances.write(recipient, self.balances.read(recipient) + amount);
+            self.balances.write(get_caller_address(), balance - amount);
             self.emit(Transfer { from: get_caller_address(), to: recipient, value: amount });
             true
         }
@@ -54,14 +56,13 @@ pub(crate) mod TestToken {
             recipient: ContractAddress,
             amount: u256
         ) -> bool {
-            let amount_small: u128 = amount.try_into().unwrap();
             let allowance = self.allowances.read((sender, get_caller_address()));
-            assert(allowance >= amount_small, 'INSUFFICIENT_ALLOWANCE');
+            assert(allowance >= amount, 'INSUFFICIENT_ALLOWANCE');
             let balance = self.balances.read(sender);
-            assert(balance >= amount_small, 'INSUFFICIENT_TF_BALANCE');
-            self.balances.write(recipient, self.balances.read(recipient) + amount_small);
-            self.balances.write(sender, balance - amount_small);
-            self.allowances.write((sender, get_caller_address()), allowance - amount_small);
+            assert(balance >= amount, 'INSUFFICIENT_TF_BALANCE');
+            self.balances.write(recipient, self.balances.read(recipient) + amount);
+            self.balances.write(sender, balance - amount);
+            self.allowances.write((sender, get_caller_address()), allowance - amount);
             self.emit(Transfer { from: sender, to: recipient, value: amount });
             true
         }
@@ -72,11 +73,8 @@ pub(crate) mod TestToken {
     }
 }
 
-use starknet::{ContractAddress, syscalls::{deploy_syscall}};
-use governance::interfaces::erc20::{IERC20Dispatcher};
-
 #[cfg(test)]
-pub(crate) fn deploy(owner: ContractAddress, amount: u128) -> IERC20Dispatcher {
+pub(crate) fn deploy(owner: ContractAddress, amount: u256) -> IERC20Dispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
     Serde::serialize(@(owner, amount), ref constructor_args);
 

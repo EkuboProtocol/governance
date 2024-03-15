@@ -1,6 +1,6 @@
-use core::num::traits::zero::{Zero};
 use core::array::{ArrayTrait, SpanTrait};
 use core::hash::{LegacyHash};
+use core::num::traits::zero::{Zero};
 use core::option::{OptionTrait};
 
 use core::result::{Result, ResultTrait};
@@ -367,7 +367,7 @@ fn test_claim_three_claims_one_invalid_via_claim_128() {
 
 fn test_claim_is_valid(root: felt252, claim: Claim, proof: Array<felt252>) {
     let pspan = proof.span();
-    let token = deploy_token(get_contract_address(), claim.amount);
+    let token = deploy_token(get_contract_address(), claim.amount.into());
     let airdrop = deploy(token.contract_address, root);
     token.transfer(airdrop.contract_address, claim.amount.into());
 

@@ -21,11 +21,7 @@ use starknet::{
 pub(crate) fn deploy() -> IFactoryDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
     Serde::serialize(
-        @(
-            Staker::TEST_CLASS_HASH,
-            Governor::TEST_CLASS_HASH,
-            Timelock::TEST_CLASS_HASH
-        ),
+        @(Staker::TEST_CLASS_HASH, Governor::TEST_CLASS_HASH, Timelock::TEST_CLASS_HASH),
         ref constructor_args
     );
 
