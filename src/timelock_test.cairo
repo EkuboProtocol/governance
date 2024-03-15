@@ -1,5 +1,5 @@
 use core::array::{Array, ArrayTrait, SpanTrait};
-use governance::airdrop_test::{deploy_token};
+use governance::test::test_token::{deploy as deploy_token};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::timelock::{
     ITimelockDispatcher, ITimelockDispatcherTrait, Timelock, TimelockConfig,

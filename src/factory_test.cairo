@@ -3,9 +3,6 @@ use core::option::{OptionTrait};
 
 use core::result::{Result};
 use core::traits::{TryInto};
-use governance::airdrop::{Airdrop, Config as AirdropConfig};
-use governance::airdrop::{IAirdropDispatcherTrait};
-use governance::airdrop_test::{deploy_token};
 use governance::factory::{
     IFactoryDispatcher, IFactoryDispatcherTrait, Factory, DeploymentParameters,
 };
@@ -25,7 +22,6 @@ pub(crate) fn deploy() -> IFactoryDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
     Serde::serialize(
         @(
-            Airdrop::TEST_CLASS_HASH,
             Staker::TEST_CLASS_HASH,
             Governor::TEST_CLASS_HASH,
             Timelock::TEST_CLASS_HASH
@@ -54,13 +50,6 @@ fn test_deploy() {
         .deploy(
             token,
             DeploymentParameters {
-                airdrop_config: Option::Some(
-                    AirdropConfig {
-                        root: 'root',
-                        refundable_timestamp: 312,
-                        refund_to: contract_address_const::<'refund'>(),
-                    }
-                ),
                 governor_config: GovernorConfig {
                     voting_start_delay: 0,
                     voting_period: 180,
@@ -71,17 +60,6 @@ fn test_deploy() {
                 timelock_config: TimelockConfig { delay: 320, window: 60, }
             }
         );
-
-    let drop = result.airdrop.unwrap();
-    assert_eq!(
-        drop.get_config(),
-        AirdropConfig {
-            root: 'root',
-            refundable_timestamp: 312,
-            refund_to: contract_address_const::<'refund'>(),
-        }
-    );
-    assert_eq!(drop.get_token(), token);
 
     assert_eq!(result.staker.get_token(), token);
 

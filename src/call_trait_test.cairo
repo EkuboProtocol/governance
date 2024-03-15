@@ -1,7 +1,7 @@
 use core::array::{Array, ArrayTrait};
 use core::hash::{LegacyHash};
 use core::serde::{Serde};
-use governance::airdrop_test::{deploy_token};
+use governance::test::test_token::{deploy as deploy_token};
 use governance::call_trait::{CallTrait, HashCall};
 use starknet::{contract_address_const, get_contract_address, account::{Call}};
 

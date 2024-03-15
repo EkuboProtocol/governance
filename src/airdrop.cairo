@@ -12,7 +12,7 @@ pub struct Claim {
     pub amount: u128,
 }
 
-#[derive(Copy, Drop, Serde, Hash, PartialEq, Debug, starknet::Store)]
+#[derive(Copy, Drop, Serde, PartialEq, Debug, starknet::Store)]
 pub struct Config {
     // the root of the airdrop
     pub root: felt252,
