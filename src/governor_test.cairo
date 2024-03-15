@@ -107,7 +107,7 @@ fn test_to_call_id() {
 
 #[test]
 fn test_governance_deploy() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let config = Config {
         voting_start_delay: 3600,
         voting_period: 60,
@@ -127,7 +127,7 @@ fn test_governance_deploy() {
 /////////////////////////////
 #[test]
 fn test_propose() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -158,7 +158,7 @@ fn test_propose() {
 #[test]
 #[should_panic(expected: ('ALREADY_PROPOSED', 'ENTRYPOINT_FAILED'))]
 fn test_propose_already_exists_should_fail() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -177,7 +177,7 @@ fn test_propose_already_exists_should_fail() {
 #[test]
 #[should_panic(expected: ('THRESHOLD', 'ENTRYPOINT_FAILED'))]
 fn test_propose_below_threshold_should_fail() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -207,7 +207,7 @@ fn test_propose_below_threshold_should_fail() {
 
 #[test]
 fn test_vote_yes() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -241,7 +241,7 @@ fn test_vote_yes() {
 
 #[test]
 fn test_vote_no_staking_after_period_starts() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -276,7 +276,7 @@ fn test_vote_no_staking_after_period_starts() {
 #[should_panic(expected: ('VOTING_NOT_STARTED', 'ENTRYPOINT_FAILED'))]
 fn test_vote_before_voting_start_should_fail() {
     // Initial setup similar to propose test
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -302,7 +302,7 @@ fn test_vote_before_voting_start_should_fail() {
 #[test]
 #[should_panic(expected: ('ALREADY_VOTED', 'ENTRYPOINT_FAILED'))]
 fn test_vote_already_voted_should_fail() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -335,7 +335,7 @@ fn test_vote_already_voted_should_fail() {
 #[test]
 #[should_panic(expected: ('VOTING_ENDED', 'ENTRYPOINT_FAILED'))]
 fn test_vote_after_voting_period_should_fail() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -364,7 +364,7 @@ fn test_vote_after_voting_period_should_fail() {
 
 #[test]
 fn test_cancel_by_proposer() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -397,7 +397,7 @@ fn test_cancel_by_proposer() {
 
 #[test]
 fn test_cancel_by_non_proposer() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -438,7 +438,7 @@ fn test_cancel_by_non_proposer() {
 #[test]
 #[should_panic(expected: ('THRESHOLD_NOT_BREACHED', 'ENTRYPOINT_FAILED'))]
 fn test_cancel_by_non_proposer_threshold_not_breached_should_fail() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -462,7 +462,7 @@ fn test_cancel_by_non_proposer_threshold_not_breached_should_fail() {
 #[test]
 #[should_panic(expected: ('VOTING_ENDED', 'ENTRYPOINT_FAILED'))]
 fn test_cancel_after_voting_end_should_fail() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -491,7 +491,7 @@ fn test_cancel_after_voting_end_should_fail() {
 
 #[test]
 fn test_execute_valid_proposal() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -531,7 +531,7 @@ fn test_execute_valid_proposal() {
 #[test]
 #[should_panic(expected: ('VOTING_NOT_ENDED', 'ENTRYPOINT_FAILED'))]
 fn test_execute_before_voting_ends_should_fail() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -557,7 +557,7 @@ fn test_execute_before_voting_ends_should_fail() {
 #[test]
 #[should_panic(expected: ('QUORUM_NOT_MET', 'ENTRYPOINT_FAILED'))]
 fn test_execute_quorum_not_met_should_fail() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -583,7 +583,7 @@ fn test_execute_quorum_not_met_should_fail() {
 #[test]
 #[should_panic(expected: ('NO_MAJORITY', 'ENTRYPOINT_FAILED'))]
 fn test_execute_no_majority_should_fail() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -644,7 +644,7 @@ fn test_execute_no_majority_should_fail() {
 #[test]
 #[should_panic(expected: ('QUORUM_NOT_MET', 'ENTRYPOINT_FAILED'))]
 fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_start() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -711,7 +711,7 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
 #[test]
 #[should_panic(expected: ('ALREADY_EXECUTED', 'ENTRYPOINT_FAILED'))]
 fn test_execute_already_executed_should_fail() {
-    let (staker, token) = setup_staker(get_contract_address(), 1000);
+    let (staker, token) = setup_staker(1000);
     let governance = deploy(
         staker: staker,
         config: Config {
@@ -763,7 +763,7 @@ fn queue_with_timelock_call(timelock: ITimelockDispatcher, calls: Span<Call>) ->
 
 #[test]
 fn test_proposal_e2e() {
-    let (staker, token) = setup_staker(get_contract_address(), 1200);
+    let (staker, token) = setup_staker(1200);
     let governance = deploy(
         staker: staker,
         config: Config {

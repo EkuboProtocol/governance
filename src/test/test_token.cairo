@@ -10,7 +10,7 @@ pub(crate) mod TestToken {
         allowances: LegacyMap<(ContractAddress, ContractAddress), u128>,
     }
 
-    #[derive(starknet::Event, Drop)]
+    #[derive(starknet::Event, PartialEq, Debug, Drop)]
     pub(crate) struct Transfer {
         pub(crate) from: ContractAddress,
         pub(crate) to: ContractAddress,
@@ -62,7 +62,7 @@ pub(crate) mod TestToken {
             self.balances.write(recipient, self.balances.read(recipient) + amount_small);
             self.balances.write(sender, balance - amount_small);
             self.allowances.write((sender, get_caller_address()), allowance - amount_small);
-            self.emit(Transfer { from: get_caller_address(), to: recipient, value: amount });
+            self.emit(Transfer { from: sender, to: recipient, value: amount });
             true
         }
         fn approve(ref self: ContractState, spender: ContractAddress, amount: u256) -> bool {

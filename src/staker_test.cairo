@@ -3,7 +3,7 @@ use core::num::traits::zero::{Zero};
 use core::option::{OptionTrait};
 use core::result::{Result, ResultTrait};
 use core::traits::{TryInto};
-use governance::test::test_token::{deploy as deploy_token};
+use governance::test::test_token::{TestToken, deploy as deploy_token};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 
 use governance::staker::{
@@ -16,8 +16,8 @@ use starknet::{
     ContractAddress,
 };
 
-pub fn setup(owner: ContractAddress, amount: u128) -> (IStakerDispatcher, IERC20Dispatcher) {
-    let token = deploy_token(owner, amount);
+pub(crate) fn setup(amount: u128) -> (IStakerDispatcher, IERC20Dispatcher) {
+    let token = deploy_token(get_contract_address(), amount);
     let (staker_address, _) = deploy_syscall(
         Staker::TEST_CLASS_HASH.try_into().unwrap(),
         0,
@@ -26,6 +26,41 @@ pub fn setup(owner: ContractAddress, amount: u128) -> (IStakerDispatcher, IERC20
     )
         .expect('DEPLOY_TK_FAILED');
     return (IStakerDispatcher { contract_address: staker_address }, token);
+}
+
+mod stake_withdraw {
+    use super::{
+        setup, Staker, IStakerDispatcherTrait, IERC20Dispatcher, IERC20DispatcherTrait, pop_log,
+        get_contract_address, Zero, TestToken, contract_address_const
+    };
+    
+    #[test]
+    fn test_takes_approved_token() {
+        let (staker, token) = setup(1000);
+
+        token.approve(staker.contract_address, 500);
+        staker.stake(contract_address_const::<'delegate'>());
+        // pop the transfer from 0 to deployer
+        pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+        assert_eq!(
+            pop_log::<TestToken::Transfer>(token.contract_address),
+            Option::Some(
+                TestToken::Transfer {
+                    from: get_contract_address(), to: staker.contract_address, value: 500
+                }
+            )
+        );
+        assert_eq!(
+            pop_log::<Staker::Staked>(staker.contract_address),
+            Option::Some(
+                Staker::Staked {
+                    from: get_contract_address(),
+                    amount: 500,
+                    delegate: contract_address_const::<'delegate'>()
+                }
+            )
+        );
+    }
 }
 
 #[test]
@@ -99,7 +134,7 @@ fn test_governance_token_delegated_snapshot_store_unpack() {
 #[test]
 #[should_panic(expected: ('ORDER', 'ENTRYPOINT_FAILED'))]
 fn test_get_average_delegated_order_same() {
-    let (staker, _) = setup(get_contract_address(), 12345);
+    let (staker, _) = setup(12345);
 
     staker.get_average_delegated(contract_address_const::<12345>(), 0, 0);
 }
@@ -107,7 +142,7 @@ fn test_get_average_delegated_order_same() {
 #[test]
 #[should_panic(expected: ('ORDER', 'ENTRYPOINT_FAILED'))]
 fn test_get_average_delegated_order_backwards() {
-    let (staker, _) = setup(get_contract_address(), 12345);
+    let (staker, _) = setup(12345);
 
     staker.get_average_delegated(contract_address_const::<12345>(), 1, 0);
 }
@@ -115,7 +150,7 @@ fn test_get_average_delegated_order_backwards() {
 #[test]
 #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
 fn test_get_average_delegated_future() {
-    let (staker, _) = setup(get_contract_address(), 12345);
+    let (staker, _) = setup(12345);
 
     staker.get_average_delegated(contract_address_const::<12345>(), 0, 1);
 }
@@ -123,7 +158,7 @@ fn test_get_average_delegated_future() {
 #[test]
 #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
 fn test_get_average_delegated_future_non_zero() {
-    let (staker, _) = setup(get_contract_address(), 12345);
+    let (staker, _) = setup(12345);
 
     set_block_timestamp(5);
 
@@ -132,7 +167,7 @@ fn test_get_average_delegated_future_non_zero() {
 
 #[test]
 fn test_approve_sets_allowance() {
-    let (_, erc20) = setup(get_contract_address(), 12345);
+    let (_, erc20) = setup(12345);
 
     let spender = contract_address_const::<12345>();
     erc20.approve(spender, 5151);
@@ -142,7 +177,7 @@ fn test_approve_sets_allowance() {
 
 #[test]
 fn test_delegate_count_lags() {
-    let (staker, token) = setup(get_contract_address(), 12345);
+    let (staker, token) = setup(12345);
     let delegatee = contract_address_const::<12345>();
 
     token.approve(staker.contract_address, 12345);
@@ -164,7 +199,7 @@ fn test_delegate_count_lags() {
 
 #[test]
 fn test_get_delegated_cumulative() {
-    let (staker, token) = setup(get_contract_address(), 12345);
+    let (staker, token) = setup(12345);
     let delegatee = contract_address_const::<12345>();
 
     token.approve(staker.contract_address, 12345);
@@ -183,7 +218,7 @@ fn test_get_delegated_cumulative() {
 #[test]
 #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
 fn test_get_delegated_cumulative_fails_future() {
-    let (staker, _) = setup(get_contract_address(), 12345);
+    let (staker, _) = setup(12345);
 
     staker.get_delegated_cumulative(delegate: contract_address_const::<12345>(), timestamp: 1);
 }
@@ -191,7 +226,7 @@ fn test_get_delegated_cumulative_fails_future() {
 #[test]
 #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
 fn test_get_delegated_cumulative_fails_future_non_zero_ts() {
-    let (staker, _) = setup(get_contract_address(), 12345);
+    let (staker, _) = setup(12345);
 
     set_block_timestamp(5);
 
@@ -201,7 +236,7 @@ fn test_get_delegated_cumulative_fails_future_non_zero_ts() {
 #[test]
 #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
 fn test_get_delegated_at_fails_future() {
-    let (staker, _) = setup(get_contract_address(), 12345);
+    let (staker, _) = setup(12345);
 
     staker.get_delegated_at(delegate: contract_address_const::<12345>(), timestamp: 1);
 }
@@ -209,7 +244,7 @@ fn test_get_delegated_at_fails_future() {
 #[test]
 #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
 fn test_get_delegated_at_fails_future_non_zero_ts() {
-    let (staker, _) = setup(get_contract_address(), 12345);
+    let (staker, _) = setup(12345);
 
     set_block_timestamp(5);
 
@@ -218,7 +253,7 @@ fn test_get_delegated_at_fails_future_non_zero_ts() {
 
 #[test]
 fn test_get_average_delegated() {
-    let (staker, token) = setup(get_contract_address(), 12345);
+    let (staker, token) = setup(12345);
     let delegatee = contract_address_const::<12345>();
 
     set_block_timestamp(10);
@@ -253,7 +288,7 @@ fn test_get_average_delegated() {
 
 #[test]
 fn test_transfer_delegates_moved() {
-    let (staker, token) = setup(get_contract_address(), 12345);
+    let (staker, token) = setup(12345);
     let delegatee = contract_address_const::<12345>();
 
     set_block_timestamp(2);
@@ -269,7 +304,7 @@ fn test_transfer_delegates_moved() {
 
 #[test]
 fn test_delegate_undelegate() {
-    let (staker, token) = setup(get_contract_address(), 12345);
+    let (staker, token) = setup(12345);
     let delegatee = contract_address_const::<12345>();
 
     set_block_timestamp(2);

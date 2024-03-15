@@ -88,14 +88,14 @@ pub mod Staker {
         self.token.write(token);
     }
 
-    #[derive(starknet::Event, Drop)]
+    #[derive(starknet::Event, PartialEq, Debug, Drop)]
     pub struct Staked {
         pub from: ContractAddress,
         pub amount: u128,
         pub delegate: ContractAddress,
     }
 
-    #[derive(starknet::Event, Drop)]
+    #[derive(starknet::Event, PartialEq, Debug, Drop)]
     pub struct Withdrawn {
         pub from: ContractAddress,
         pub delegate: ContractAddress,
@@ -217,7 +217,9 @@ pub mod Staker {
             self.staked.write((from, delegate), amount_small + self.staked.read(key));
             self
                 .amount_delegated
-                .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) + amount_small);
+                .write(
+                    delegate, self.insert_snapshot(delegate, get_block_timestamp()) + amount_small
+                );
             self.emit(Staked { from, delegate, amount: amount_small });
         }
 
