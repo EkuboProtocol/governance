@@ -71,3 +71,18 @@ pub(crate) mod TestToken {
         }
     }
 }
+
+use starknet::{ContractAddress, syscalls::{deploy_syscall}};
+use governance::interfaces::erc20::{IERC20Dispatcher};
+
+#[cfg(test)]
+pub(crate) fn deploy(owner: ContractAddress, amount: u128) -> IERC20Dispatcher {
+    let mut constructor_args: Array<felt252> = ArrayTrait::new();
+    Serde::serialize(@(owner, amount), ref constructor_args);
+
+    let (address, _) = deploy_syscall(
+        TestToken::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true
+    )
+        .expect('DEPLOY_TOKEN_FAILED');
+    IERC20Dispatcher { contract_address: address }
+}

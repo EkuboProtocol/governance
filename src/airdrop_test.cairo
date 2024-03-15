@@ -10,25 +10,12 @@ use governance::airdrop::{
     Airdrop::{compute_pedersen_root, hash_function, hash_claim, compute_root_of_group}, Claim
 };
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
-use governance::test::test_token::{TestToken};
+use governance::test::test_token::{TestToken, deploy as deploy_token};
 use starknet::testing::{pop_log, set_block_timestamp};
 use starknet::{
     get_contract_address, syscalls::{deploy_syscall}, ClassHash, contract_address_const,
     ContractAddress
 };
-
-
-pub(crate) fn deploy_token(owner: ContractAddress, amount: u128) -> IERC20Dispatcher {
-    let mut constructor_args: Array<felt252> = ArrayTrait::new();
-    Serde::serialize(@(owner, amount), ref constructor_args);
-
-    let (address, _) = deploy_syscall(
-        TestToken::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true
-    )
-        .expect('DEPLOY_TOKEN_FAILED');
-    IERC20Dispatcher { contract_address: address }
-}
-
 
 fn deploy_with_refundee(
     token: ContractAddress, root: felt252, refundable_timestamp: u64, refund_to: ContractAddress

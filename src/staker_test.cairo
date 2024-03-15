@@ -3,7 +3,7 @@ use core::num::traits::zero::{Zero};
 use core::option::{OptionTrait};
 use core::result::{Result, ResultTrait};
 use core::traits::{TryInto};
-use governance::airdrop_test::{deploy_token};
+use governance::test::test_token::{deploy as deploy_token};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 
 use governance::staker::{

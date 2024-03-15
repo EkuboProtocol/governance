@@ -3,9 +3,7 @@ use core::option::{OptionTrait};
 
 use core::result::{Result};
 use core::traits::{TryInto};
-use governance::airdrop::{Airdrop};
-use governance::airdrop::{IAirdropDispatcherTrait};
-use governance::airdrop_test::{deploy_token};
+use governance::test::test_token::{deploy as deploy_token};
 use governance::factory::{
     IFactoryDispatcher, IFactoryDispatcherTrait, Factory, DeploymentParameters, DeploymentResult,
 };
@@ -45,7 +43,6 @@ impl DefaultDeploymentParameters of Default<DeploymentParameters> {
                 proposal_creation_threshold: 20
             },
             timelock_config: TimelockConfig { delay: 30, window: 90, },
-            airdrop_config: Option::None
         }
     }
 }
