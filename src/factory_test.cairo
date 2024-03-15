@@ -3,7 +3,7 @@ use core::option::{OptionTrait};
 
 use core::result::{Result};
 use core::traits::{TryInto};
-use governance::airdrop::{Airdrop};
+use governance::airdrop::{Airdrop, Config as AirdropConfig};
 use governance::airdrop::{IAirdropDispatcherTrait};
 use governance::airdrop_test::{deploy_token};
 use governance::factory::{
@@ -54,7 +54,13 @@ fn test_deploy() {
         .deploy(
             token,
             DeploymentParameters {
-                airdrop_root: Option::Some('root'),
+                airdrop_config: Option::Some(
+                    AirdropConfig {
+                        root: 'root',
+                        refundable_timestamp: 312,
+                        refund_to: contract_address_const::<'refund'>(),
+                    }
+                ),
                 governor_config: GovernorConfig {
                     voting_start_delay: 0,
                     voting_period: 180,
@@ -67,7 +73,14 @@ fn test_deploy() {
         );
 
     let drop = result.airdrop.unwrap();
-    assert_eq!(drop.get_root(), 'root');
+    assert_eq!(
+        drop.get_config(),
+        AirdropConfig {
+            root: 'root',
+            refundable_timestamp: 312,
+            refund_to: contract_address_const::<'refund'>(),
+        }
+    );
     assert_eq!(drop.get_token(), token);
 
     assert_eq!(result.staker.get_token(), token);

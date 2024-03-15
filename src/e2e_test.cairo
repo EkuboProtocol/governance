@@ -45,7 +45,7 @@ impl DefaultDeploymentParameters of Default<DeploymentParameters> {
                 proposal_creation_threshold: 20
             },
             timelock_config: TimelockConfig { delay: 30, window: 90, },
-            airdrop_root: Option::None
+            airdrop_config: Option::None
         }
     }
 }

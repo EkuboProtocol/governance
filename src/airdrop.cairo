@@ -12,13 +12,23 @@ pub struct Claim {
     pub amount: u128,
 }
 
+#[derive(Copy, Drop, Serde, Hash, PartialEq, Debug, starknet::Store)]
+pub struct Config {
+    // the root of the airdrop
+    pub root: felt252,
+    // the timestamp after which anyone can refund any remaining tokens
+    pub refundable_timestamp: u64,
+    // the address that receives the refund
+    pub refund_to: ContractAddress,
+}
+
 #[starknet::interface]
 pub trait IAirdrop<TContractState> {
-    // Return the root of the airdrop
-    fn get_root(self: @TContractState) -> felt252;
-
-    // Return the token being dropped
+    // Returns the address of the token distributed by this airdrop
     fn get_token(self: @TContractState) -> ContractAddress;
+
+    // Returns the config of this deployed airdrop
+    fn get_config(self: @TContractState) -> Config;
 
     // Claims the given allotment of tokens.
     // Because this method is idempotent, it does not revert in case of a second submission of the same claim. 
@@ -36,6 +46,9 @@ pub trait IAirdrop<TContractState> {
 
     // Return whether the claim with the given ID has been claimed
     fn is_claimed(self: @TContractState, claim_id: u64) -> bool;
+
+    // Refunds the current token balance. Can be called by anyone after the refund timestamp.
+    fn refund(ref self: TContractState);
 }
 
 #[starknet::contract]
@@ -46,7 +59,8 @@ pub mod Airdrop {
     use core::num::traits::zero::{Zero};
     use governance::interfaces::erc20::{IERC20DispatcherTrait};
     use governance::utils::exp2::{exp2};
-    use super::{IAirdrop, ContractAddress, Claim, IERC20Dispatcher};
+    use starknet::{get_block_timestamp, get_contract_address};
+    use super::{Config, IAirdrop, ContractAddress, Claim, IERC20Dispatcher};
 
 
     pub fn hash_function(a: felt252, b: felt252) -> felt252 {
@@ -70,8 +84,8 @@ pub mod Airdrop {
 
     #[storage]
     struct Storage {
-        root: felt252,
         token: IERC20Dispatcher,
+        config: Config,
         claimed_bitmap: LegacyMap<u64, u128>,
     }
 
@@ -87,9 +101,9 @@ pub mod Airdrop {
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, token: IERC20Dispatcher, root: felt252) {
-        self.root.write(root);
-        self.token.write(token);
+    fn constructor(ref self: ContractState, token: ContractAddress, config: Config) {
+        self.token.write(IERC20Dispatcher { contract_address: token });
+        self.config.write(config);
     }
 
     const BITMAP_SIZE: NonZero<u64> = 128;
@@ -144,17 +158,18 @@ pub mod Airdrop {
 
     #[abi(embed_v0)]
     impl AirdropImpl of IAirdrop<ContractState> {
-        fn get_root(self: @ContractState) -> felt252 {
-            self.root.read()
-        }
-
         fn get_token(self: @ContractState) -> ContractAddress {
             self.token.read().contract_address
         }
 
+        fn get_config(self: @ContractState) -> Config {
+            self.config.read()
+        }
+
         fn claim(ref self: ContractState, claim: Claim, proof: Span<felt252>) -> bool {
             let leaf = hash_claim(claim);
-            assert(self.root.read() == compute_pedersen_root(leaf, proof), 'INVALID_PROOF');
+            let config = self.config.read();
+            assert(config.root == compute_pedersen_root(leaf, proof), 'INVALID_PROOF');
 
             // this is copied in from is_claimed because we only want to read the bitmap once
             let (word, index) = claim_id_to_bitmap_index(claim.id);
@@ -187,8 +202,10 @@ pub mod Airdrop {
 
             let root_of_group = compute_root_of_group(claims);
 
+            let config = self.config.read();
+
             assert(
-                self.root.read() == compute_pedersen_root(root_of_group, remaining_proof),
+                config.root == compute_pedersen_root(root_of_group, remaining_proof),
                 'INVALID_PROOF'
             );
 
@@ -230,6 +247,15 @@ pub mod Airdrop {
             let (word, index) = claim_id_to_bitmap_index(claim_id);
             let bitmap = self.claimed_bitmap.read(word);
             (bitmap & exp2(index)).is_non_zero()
+        }
+
+        fn refund(ref self: ContractState) {
+            let config = self.config.read();
+            assert(config.refundable_timestamp.is_non_zero(), 'NOT_REFUNDABLE');
+            assert(get_block_timestamp() >= config.refundable_timestamp, 'TOO_EARLY');
+            let token = self.token.read();
+            let balance = token.balanceOf(get_contract_address());
+            token.transfer(config.refund_to, balance);
         }
     }
 }
