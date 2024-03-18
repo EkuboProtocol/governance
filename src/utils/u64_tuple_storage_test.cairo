@@ -2,17 +2,7 @@ use starknet::storage_access::{StorePacking};
 use governance::utils::u64_tuple_storage::{ThreeU64TupleStorePacking, TwoU64TupleStorePacking};
 
 pub(crate) fn assert_pack_unpack<
-    T,
-    U,
-    +StorePacking<T, U>,
-    +PartialEq<T>,
-    +PartialEq<U>,
-    +core::fmt::Debug<T>,
-    +core::fmt::Debug<U>,
-    +Drop<T>,
-    +Copy<T>,
-    +Drop<U>,
-    +Copy<U>
+    T, U, +StorePacking<T, U>, +PartialEq<T>, +core::fmt::Debug<T>, +Drop<T>, +Copy<T>
 >(
     x: T
 ) {
@@ -32,7 +22,7 @@ fn test_two_tuple_storage_forward_back() {
 fn test_three_tuple_storage_forward_back() {
     assert_pack_unpack((123_u64, 234_u64, 345_u64));
     assert_pack_unpack((0_u64, 0_u64, 0_u64));
-    
+
     assert_pack_unpack((0xffffffffffffffff_u64, 0xffffffffffffffff_u64, 0xffffffffffffffff_u64));
 
     assert_pack_unpack((0xffffffffffffffff_u64, 0xffffffffffffffff_u64, 0_u64));
