@@ -156,13 +156,16 @@ pub mod Governor {
             let timestamp_current = get_block_timestamp();
 
             let latest_proposal_id = self.latest_proposal_by_proposer.read(proposer);
-            assert(
-                latest_proposal_id.is_zero()
-                    || (self.get_proposal(latest_proposal_id).timestamps.created
+            if latest_proposal_id.is_non_zero() {
+                let latest_proposal_timestamps = self.get_proposal(latest_proposal_id).timestamps;
+
+                assert(
+                    latest_proposal_timestamps.created
                         + config.voting_start_delay
-                        + config.voting_period < timestamp_current),
-                'PROPOSER_HAS_ACTIVE_PROPOSAL'
-            );
+                        + config.voting_period < timestamp_current,
+                    'PROPOSER_HAS_ACTIVE_PROPOSAL'
+                );
+            }
 
             assert(
                 self
@@ -232,7 +235,7 @@ pub mod Governor {
         fn cancel(ref self: ContractState, id: felt252) {
             let config = self.config.read();
             let voting_token = self.staker.read();
-            let mut proposal = self.proposals.read(id);
+            let proposal = self.proposals.read(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
 
@@ -258,17 +261,22 @@ pub mod Governor {
                 'VOTING_ENDED'
             );
 
-            proposal =
-                ProposalInfo {
-                    proposer: contract_address_const::<0>(),
-                    timestamps: ProposalTimestamps { created: 0, executed: 0 },
-                    yea: 0,
-                    nay: 0
-                };
+            self
+                .proposals
+                .write(
+                    id,
+                    ProposalInfo {
+                        proposer: contract_address_const::<0>(),
+                        timestamps: ProposalTimestamps { created: 0, executed: 0 },
+                        yea: 0,
+                        nay: 0
+                    }
+                );
 
-            self.proposals.write(id, proposal);
+            // allows the proposer to create a new proposal
+            self.latest_proposal_by_proposer.write(proposal.proposer, Zero::zero());
 
-            self.emit(Canceled { id, });
+            self.emit(Canceled { id });
         }
 
         fn execute(ref self: ContractState, call: Call) -> Span<felt252> {

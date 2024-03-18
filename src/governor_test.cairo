@@ -149,6 +149,46 @@ fn test_propose() {
     );
 }
 
+#[test]
+#[should_panic(expected: ('PROPOSER_HAS_ACTIVE_PROPOSAL', 'ENTRYPOINT_FAILED'))]
+fn test_propose_has_active_proposal() {
+    let (staker, token, governor, config) = setup();
+
+    token.approve(staker.contract_address, config.proposal_creation_threshold.into());
+    staker.stake(proposer());
+    advance_time(config.voting_weight_smoothing_duration);
+
+    set_contract_address(proposer());
+    governor.propose(transfer_call(token, recipient(), amount: 100));
+    governor.propose(transfer_call(token, recipient(), amount: 101));
+}
+
+#[test]
+fn test_proposer_can_cancel_and_re_propose() {
+    let (staker, token, governor, config) = setup();
+
+    token.approve(staker.contract_address, config.proposal_creation_threshold.into());
+    staker.stake(proposer());
+    advance_time(config.voting_weight_smoothing_duration);
+
+    set_contract_address(proposer());
+    let id_1 = governor.propose(transfer_call(token, recipient(), amount: 100));
+    governor.cancel(id_1);
+    let id_2 = governor.propose(transfer_call(token, recipient(), amount: 100));
+    assert_eq!(id_1, id_2);
+
+    assert_eq!(
+        governor.get_proposal(id_2),
+        ProposalInfo {
+            proposer: proposer(),
+            timestamps: ProposalTimestamps {
+                created: config.voting_weight_smoothing_duration, executed: 0
+            },
+            yea: 0,
+            nay: 0
+        }
+    );
+}
 
 #[test]
 #[should_panic(expected: ('ALREADY_PROPOSED', 'ENTRYPOINT_FAILED'))]
