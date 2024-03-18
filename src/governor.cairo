@@ -132,6 +132,7 @@ pub mod Governor {
         config: Config,
         proposals: LegacyMap<felt252, ProposalInfo>,
         voted: LegacyMap<(ContractAddress, felt252), bool>,
+        latest_proposal_by_proposer: LegacyMap<ContractAddress, felt252>,
     }
 
     #[constructor]
@@ -148,14 +149,20 @@ pub mod Governor {
     impl GovernorImpl of IGovernor<ContractState> {
         fn propose(ref self: ContractState, call: Call) -> felt252 {
             let id = to_call_id(@call);
-
             assert(self.proposals.read(id).proposer.is_zero(), 'ALREADY_PROPOSED');
 
+            let proposer = get_caller_address();
             let config = self.config.read();
-
             let timestamp_current = get_block_timestamp();
 
-            let proposer = get_caller_address();
+            let latest_proposal_id = self.latest_proposal_by_proposer.read(proposer);
+            assert(
+                latest_proposal_id.is_zero()
+                    || (self.get_proposal(latest_proposal_id).timestamps.created
+                        + config.voting_start_delay
+                        + config.voting_period < timestamp_current),
+                'PROPOSER_HAS_ACTIVE_PROPOSAL'
+            );
 
             assert(
                 self
@@ -180,7 +187,9 @@ pub mod Governor {
                     }
                 );
 
-            self.emit(Proposed { id, proposer, call, });
+            self.latest_proposal_by_proposer.write(proposer, id);
+
+            self.emit(Proposed { id, proposer, call });
 
             id
         }

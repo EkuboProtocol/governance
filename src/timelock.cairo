@@ -26,19 +26,19 @@ pub(crate) impl ExecutionStateStorePacking of StorePacking<ExecutionState, felt2
 }
 
 #[derive(Copy, Drop, Serde)]
-pub struct TimelockConfig {
+pub struct Config {
     pub delay: u64,
     pub window: u64,
 }
 
-pub(crate) impl TimelockConfigStorePacking of StorePacking<TimelockConfig, u128> {
-    fn pack(value: TimelockConfig) -> u128 {
+pub(crate) impl ConfigStorePacking of StorePacking<Config, u128> {
+    fn pack(value: Config) -> u128 {
         TwoU64TupleStorePacking::pack((value.delay, value.window))
     }
 
-    fn unpack(value: u128) -> TimelockConfig {
+    fn unpack(value: u128) -> Config {
         let (delay, window) = TwoU64TupleStorePacking::unpack(value);
-        TimelockConfig { delay, window }
+        Config { delay, window }
     }
 }
 
@@ -60,13 +60,13 @@ pub trait ITimelock<TContractState> {
     fn get_owner(self: @TContractState) -> ContractAddress;
 
     // Returns the delay and the window for call execution
-    fn get_configuration(self: @TContractState) -> TimelockConfig;
+    fn get_configuration(self: @TContractState) -> Config;
 
     // Transfer ownership, i.e. the address that can queue and cancel calls. This must be self-called via #queue.
     fn transfer(ref self: TContractState, to: ContractAddress);
 
     // Configure the delay and the window for call execution. This must be self-called via #queue.
-    fn configure(ref self: TContractState, config: TimelockConfig);
+    fn configure(ref self: TContractState, config: Config);
 
     // Replace the code at this address. This must be self-called via #queue.
     fn upgrade(ref self: TContractState, class_hash: ClassHash);
@@ -89,8 +89,8 @@ pub mod Timelock {
         syscalls::{call_contract_syscall, replace_class_syscall}, get_block_timestamp
     };
     use super::{
-        ClassHash, ITimelock, ContractAddress, Call, TimelockConfig, ExecutionState,
-        TimelockConfigStorePacking, ExecutionStateStorePacking, ExecutionWindow
+        ClassHash, ITimelock, ContractAddress, Call, Config, ExecutionState, ConfigStorePacking,
+        ExecutionStateStorePacking, ExecutionWindow
     };
 
 
@@ -121,12 +121,12 @@ pub mod Timelock {
     #[storage]
     struct Storage {
         owner: ContractAddress,
-        config: TimelockConfig,
+        config: Config,
         execution_state: LegacyMap<felt252, ExecutionState>,
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, owner: ContractAddress, config: TimelockConfig) {
+    fn constructor(ref self: ContractState, owner: ContractAddress, config: Config) {
         self.owner.write(owner);
         self.config.write(config);
     }
@@ -248,7 +248,7 @@ pub mod Timelock {
             self.owner.read()
         }
 
-        fn get_configuration(self: @ContractState) -> TimelockConfig {
+        fn get_configuration(self: @ContractState) -> Config {
             self.config.read()
         }
 
@@ -258,7 +258,7 @@ pub mod Timelock {
             self.owner.write(to);
         }
 
-        fn configure(ref self: ContractState, config: TimelockConfig) {
+        fn configure(ref self: ContractState, config: Config) {
             self.check_self_call();
 
             self.config.write(config);
