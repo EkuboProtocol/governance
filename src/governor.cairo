@@ -4,6 +4,7 @@ use core::option::{Option, OptionTrait};
 use core::traits::{Into, TryInto};
 use governance::staker::{IStakerDispatcher};
 use starknet::account::{Call};
+use governance::utils::timestamps::{ThreeU64TupleStorePacking};
 use starknet::{ContractAddress, storage_access::{StorePacking}};
 
 #[derive(Copy, Drop, Serde, PartialEq, Debug)]
@@ -12,20 +13,20 @@ pub struct ProposalTimestamps {
     pub created: u64,
     // the timestamp when the proposal was executed
     pub executed: u64,
+    // the timestamp when the proposal was canceled
+    pub canceled: u64,
 }
 
 const TWO_POW_64: u128 = 0x10000000000000000_u128;
 
-impl ProposalTimestampsStorePacking of StorePacking<ProposalTimestamps, u128> {
-    fn pack(value: ProposalTimestamps) -> u128 {
-        value.created.into() + (value.executed.into() * TWO_POW_64)
+impl ProposalTimestampsStorePacking of StorePacking<ProposalTimestamps, felt252> {
+    fn pack(value: ProposalTimestamps) -> felt252 {
+        ThreeU64TupleStorePacking::pack((value.created, value.executed, value.canceled))
     }
 
-    fn unpack(value: u128) -> ProposalTimestamps {
-        let (executed, created) = u128_safe_divmod(value, TWO_POW_64.try_into().unwrap());
-        ProposalTimestamps {
-            created: created.try_into().unwrap(), executed: executed.try_into().unwrap()
-        }
+    fn unpack(value: felt252) -> ProposalTimestamps {
+        let (created, executed, canceled) = ThreeU64TupleStorePacking::unpack(value);
+        ProposalTimestamps { created, executed, canceled }
     }
 }
 
@@ -63,7 +64,8 @@ pub trait IGovernor<TContractState> {
     // Vote on the given proposal.
     fn vote(ref self: TContractState, id: felt252, yea: bool);
 
-    // Cancel the given proposal. Cancellation can happen by any address if the average voting weight is below the proposal_creation_threshold.
+    // Cancel the given proposal. The proposer may cancel the proposal at any time during before or during the voting period.
+    // Cancellation can happen by any address if the average voting weight is below the proposal_creation_threshold.
     fn cancel(ref self: TContractState, id: felt252);
 
     // Execute the given proposal.
@@ -131,7 +133,7 @@ pub mod Governor {
         staker: IStakerDispatcher,
         config: Config,
         proposals: LegacyMap<felt252, ProposalInfo>,
-        voted: LegacyMap<(ContractAddress, felt252), bool>,
+        has_voted: LegacyMap<(ContractAddress, felt252), bool>,
         latest_proposal_by_proposer: LegacyMap<ContractAddress, felt252>,
     }
 
@@ -184,7 +186,11 @@ pub mod Governor {
                     id,
                     ProposalInfo {
                         proposer,
-                        timestamps: ProposalTimestamps { created: timestamp_current, executed: 0 },
+                        timestamps: ProposalTimestamps {
+                            created: timestamp_current,
+                            executed: Zero::zero(),
+                            canceled: Zero::zero()
+                        },
                         yea: 0,
                         nay: 0
                     }
@@ -198,18 +204,20 @@ pub mod Governor {
         }
 
         fn vote(ref self: ContractState, id: felt252, yea: bool) {
-            let config = self.config.read();
             let mut proposal = self.proposals.read(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
+            assert(proposal.timestamps.canceled.is_zero(), 'PROPOSAL_CANCELED');
+            
+            let config = self.config.read();
             let timestamp_current = get_block_timestamp();
             let voting_start_time = (proposal.timestamps.created + config.voting_start_delay);
             let voter = get_caller_address();
-            let voted = self.voted.read((voter, id));
+            let has_voted = self.has_voted.read((voter, id));
 
             assert(timestamp_current >= voting_start_time, 'VOTING_NOT_STARTED');
             assert(timestamp_current < (voting_start_time + config.voting_period), 'VOTING_ENDED');
-            assert(!voted, 'ALREADY_VOTED');
+            assert(!has_voted, 'ALREADY_VOTED');
 
             let weight = self
                 .staker
@@ -226,7 +234,7 @@ pub mod Governor {
                 proposal.nay = proposal.nay + weight;
             }
             self.proposals.write(id, proposal);
-            self.voted.write((voter, id), true);
+            self.has_voted.write((voter, id), true);
 
             self.emit(Voted { id, voter, weight, yea, });
         }
@@ -235,11 +243,9 @@ pub mod Governor {
         fn cancel(ref self: ContractState, id: felt252) {
             let config = self.config.read();
             let voting_token = self.staker.read();
-            let proposal = self.proposals.read(id);
+            let mut proposal = self.proposals.read(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
-
-            let timestamp_current = get_block_timestamp();
 
             if (proposal.proposer != get_caller_address()) {
                 // if at any point the average voting weight is below the proposal_creation_threshold for the proposer, it can be canceled
@@ -254,6 +260,8 @@ pub mod Governor {
                 );
             }
 
+            let timestamp_current = get_block_timestamp();
+
             assert(
                 timestamp_current < (proposal.timestamps.created
                     + config.voting_start_delay
@@ -261,17 +269,16 @@ pub mod Governor {
                 'VOTING_ENDED'
             );
 
-            self
-                .proposals
-                .write(
-                    id,
-                    ProposalInfo {
-                        proposer: contract_address_const::<0>(),
-                        timestamps: ProposalTimestamps { created: 0, executed: 0 },
-                        yea: 0,
-                        nay: 0
-                    }
-                );
+            // we know it's not executed since we check voting has not ended
+            proposal
+                .timestamps =
+                    ProposalTimestamps {
+                        created: proposal.timestamps.created,
+                        executed: 0,
+                        canceled: timestamp_current
+                    };
+
+            self.proposals.write(id, proposal);
 
             // allows the proposer to create a new proposal
             self.latest_proposal_by_proposer.write(proposal.proposer, Zero::zero());
@@ -306,7 +313,9 @@ pub mod Governor {
             proposal
                 .timestamps =
                     ProposalTimestamps {
-                        created: proposal.timestamps.created, executed: timestamp_current
+                        created: proposal.timestamps.created,
+                        executed: timestamp_current,
+                        canceled: Zero::zero()
                     };
 
             self.proposals.write(id, proposal);

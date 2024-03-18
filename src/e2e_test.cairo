@@ -146,7 +146,7 @@ fn test_create_proposal_that_fails() {
 
     assert_eq!(proposal_info.proposer, delegate_yes);
     assert_eq!(
-        proposal_info.timestamps, ProposalTimestamps { created: start_time + 30, executed: 0 }
+        proposal_info.timestamps, ProposalTimestamps { created: start_time + 30, executed: 0, canceled: 0 }
     );
     assert_eq!(proposal_info.yea, 100);
     assert_eq!(proposal_info.nay, 101);

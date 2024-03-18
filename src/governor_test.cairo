@@ -141,7 +141,7 @@ fn test_propose() {
         ProposalInfo {
             proposer: proposer(),
             timestamps: ProposalTimestamps {
-                created: config.voting_weight_smoothing_duration, executed: 0
+                created: config.voting_weight_smoothing_duration, executed: 0, canceled: 0
             },
             yea: 0,
             nay: 0
@@ -164,7 +164,8 @@ fn test_propose_has_active_proposal() {
 }
 
 #[test]
-fn test_proposer_can_cancel_and_re_propose() {
+#[should_panic(expected: ('ALREADY_PROPOSED', 'ENTRYPOINT_FAILED'))]
+fn test_proposer_cannot_cancel_and_re_propose() {
     let (staker, token, governor, config) = setup();
 
     token.approve(staker.contract_address, config.proposal_creation_threshold.into());
@@ -172,22 +173,9 @@ fn test_proposer_can_cancel_and_re_propose() {
     advance_time(config.voting_weight_smoothing_duration);
 
     set_contract_address(proposer());
-    let id_1 = governor.propose(transfer_call(token, recipient(), amount: 100));
-    governor.cancel(id_1);
-    let id_2 = governor.propose(transfer_call(token, recipient(), amount: 100));
-    assert_eq!(id_1, id_2);
-
-    assert_eq!(
-        governor.get_proposal(id_2),
-        ProposalInfo {
-            proposer: proposer(),
-            timestamps: ProposalTimestamps {
-                created: config.voting_weight_smoothing_duration, executed: 0
-            },
-            yea: 0,
-            nay: 0
-        }
-    );
+    let id = governor.propose(transfer_call(token, recipient(), amount: 100));
+    governor.cancel(id);
+    governor.propose(transfer_call(token, recipient(), amount: 100));
 }
 
 #[test]
@@ -233,6 +221,21 @@ fn test_vote_yes() {
 }
 
 #[test]
+fn test_anyone_can_vote() {
+    let (staker, token, governor, config) = setup();
+    let id = create_proposal(governor, token, staker);
+
+    advance_time(config.voting_start_delay);
+
+    set_contract_address(anyone());
+    governor.vote(id, true);
+
+    let proposal = governor.get_proposal(id);
+    assert_eq!(proposal.yea, 0);
+    assert_eq!(proposal.nay, 0);
+}
+
+#[test]
 fn test_vote_no_staking_after_period_starts() {
     let (staker, token, governor, config) = setup();
     let id = create_proposal(governor, token, staker);
@@ -249,6 +252,27 @@ fn test_vote_no_staking_after_period_starts() {
     let proposal = governor.get_proposal(id);
     assert_eq!(proposal.nay, 0);
     assert_eq!(proposal.yea, 0);
+}
+
+
+#[test]
+#[should_panic(expected: ('DOES_NOT_EXIST', 'ENTRYPOINT_FAILED'))]
+fn test_vote_invalid_proposal() {
+    let (_, _, governor, _) = setup();
+
+    governor.vote(123, true);
+}
+
+#[test]
+#[should_panic(expected: ('PROPOSAL_CANCELED', 'ENTRYPOINT_FAILED'))]
+fn test_vote_after_cancel_proposal() {
+    let (staker, token, governor, config) = setup();
+
+    let id = create_proposal(governor, token, staker);
+    set_contract_address(proposer());
+    governor.cancel(id);
+    set_contract_address(voter1());
+    governor.vote(id, true);
 }
 
 #[test]
@@ -310,25 +334,30 @@ fn test_vote_after_voting_period_should_fail() {
 
 #[test]
 fn test_cancel_by_proposer() {
-    let (staker, token, governor, _config) = setup();
+    let (staker, token, governor, config) = setup();
 
     let proposer = proposer();
 
     let id = create_proposal(governor, token, staker);
 
-    set_contract_address(proposer);
-    governor.cancel(id); // Cancel the proposal
+    advance_time(30);
 
-    // Expect that proposal is no longer available
+    set_contract_address(proposer);
+    governor.cancel(id);
+
     let proposal = governor.get_proposal(id);
-    assert(
-        proposal == ProposalInfo {
-            proposer: contract_address_const::<0>(),
-            timestamps: ProposalTimestamps { created: 0, executed: 0 },
+    assert_eq!(
+        proposal,
+        ProposalInfo {
+            proposer: proposer(),
+            timestamps: ProposalTimestamps {
+                created: config.voting_weight_smoothing_duration,
+                executed: 0,
+                canceled: config.voting_weight_smoothing_duration + 30
+            },
             yea: 0,
             nay: 0,
-        },
-        'proposal not cancelled'
+        }
     );
 }
 
@@ -351,8 +380,12 @@ fn test_cancel_by_non_proposer() {
     assert_eq!(
         proposal,
         ProposalInfo {
-            proposer: contract_address_const::<0>(),
-            timestamps: ProposalTimestamps { created: 0, executed: 0 },
+            proposer: proposer(),
+            timestamps: ProposalTimestamps {
+                created: config.voting_weight_smoothing_duration,
+                executed: 0,
+                canceled: config.voting_weight_smoothing_duration * 2
+            },
             yea: 0,
             nay: 0,
         }
