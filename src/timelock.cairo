@@ -43,7 +43,7 @@ pub trait ITimelock<TContractState> {
     fn get_owner(self: @TContractState) -> ContractAddress;
 
     // Returns the delay and the window for call execution
-    fn get_configuration(self: @TContractState) -> Config;
+    fn get_config(self: @TContractState) -> Config;
 
     // Transfer ownership, i.e. the address that can queue and cancel calls. This must be self-called via #queue.
     fn transfer(ref self: TContractState, to: ContractAddress);
@@ -144,6 +144,7 @@ pub mod Timelock {
             let id = to_id(calls);
             let execution_state = self.execution_state.read(id);
 
+            assert(execution_state.canceled.is_zero(), 'HAS_BEEN_CANCELED');
             assert(execution_state.created.is_zero(), 'ALREADY_QUEUED');
 
             self
@@ -152,13 +153,14 @@ pub mod Timelock {
                     id, ExecutionState { created: get_block_timestamp(), executed: 0, canceled: 0 }
                 );
 
-            self.emit(Queued { id, calls, });
+            self.emit(Queued { id, calls });
 
             id
         }
 
         fn cancel(ref self: ContractState, id: felt252) {
             self.check_owner();
+
             let execution_state = self.execution_state.read(id);
             assert(execution_state.created.is_non_zero(), 'DOES_NOT_EXIST');
             assert(execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
@@ -168,13 +170,13 @@ pub mod Timelock {
                 .write(
                     id,
                     ExecutionState {
-                        created: 0,
+                        created: execution_state.created,
                         executed: execution_state.executed,
-                        canceled: execution_state.canceled
+                        canceled: get_block_timestamp()
                     }
                 );
 
-            self.emit(Canceled { id, });
+            self.emit(Canceled { id });
         }
 
         fn execute(ref self: ContractState, mut calls: Span<Call>) -> Array<Span<felt252>> {
@@ -183,6 +185,7 @@ pub mod Timelock {
             let execution_state = self.execution_state.read(id);
 
             assert(execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
+            assert(execution_state.canceled.is_zero(), 'HAS_BEEN_CANCELED');
 
             let execution_window = self.get_execution_window(id);
             let time_current = get_block_timestamp();
@@ -207,22 +210,22 @@ pub mod Timelock {
                 results.append(call.execute());
             };
 
-            self.emit(Executed { id, });
+            self.emit(Executed { id });
 
             results
         }
 
         fn get_execution_window(self: @ContractState, id: felt252) -> ExecutionWindow {
-            let start_time = self.execution_state.read(id).created;
+            let created = self.execution_state.read(id).created;
 
-            // this is how we prevent the 0 timestamp from being considered valid
-            assert(start_time.is_non_zero(), 'DOES_NOT_EXIST');
+            // this prevents the 0 timestamp for created from being considered valid and also executed
+            assert(created.is_non_zero(), 'DOES_NOT_EXIST');
 
-            let configuration = (self.get_configuration());
+            let config = self.get_config();
 
-            let earliest = start_time + configuration.delay;
+            let earliest = created + config.delay;
 
-            let latest = earliest + configuration.window;
+            let latest = earliest + config.window;
 
             ExecutionWindow { earliest, latest }
         }
@@ -231,7 +234,7 @@ pub mod Timelock {
             self.owner.read()
         }
 
-        fn get_configuration(self: @ContractState) -> Config {
+        fn get_config(self: @ContractState) -> Config {
             self.config.read()
         }
 

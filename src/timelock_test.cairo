@@ -1,10 +1,8 @@
 use core::array::{Array, ArrayTrait, SpanTrait};
+use governance::execution_state::{ExecutionState};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::test::test_token::{deploy as deploy_token};
-use governance::execution_state::{ExecutionState};
-use governance::timelock::{
-    ITimelockDispatcher, ITimelockDispatcherTrait, Timelock, Config
-};
+use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait, Timelock, Config};
 use starknet::account::{Call};
 use starknet::{
     get_contract_address, syscalls::{deploy_syscall}, ClassHash, contract_address_const,
@@ -26,7 +24,7 @@ pub(crate) fn deploy(owner: ContractAddress, delay: u64, window: u64) -> ITimelo
 fn test_deploy() {
     let timelock = deploy(contract_address_const::<2300>(), 10239, 3600);
 
-    let configuration = timelock.get_configuration();
+    let configuration = timelock.get_config();
     assert(configuration.delay == 10239, 'delay');
     assert(configuration.window == 3600, 'window');
     let owner = timelock.get_owner();
@@ -74,7 +72,7 @@ fn test_queue_execute() {
 }
 
 #[test]
-#[should_panic(expected: ('DOES_NOT_EXIST', 'ENTRYPOINT_FAILED'))]
+#[should_panic(expected: ('HAS_BEEN_CANCELED', 'ENTRYPOINT_FAILED'))]
 fn test_queue_cancel() {
     set_block_timestamp(1);
     let timelock = deploy(get_contract_address(), 86400, 3600);

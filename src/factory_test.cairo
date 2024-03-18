@@ -70,6 +70,6 @@ fn test_deploy() {
             proposal_creation_threshold: 100,
         }
     );
-    assert_eq!(result.timelock.get_configuration().delay, 320);
-    assert_eq!(result.timelock.get_configuration().window, 60);
+    assert_eq!(result.timelock.get_config().delay, 320);
+    assert_eq!(result.timelock.get_config().window, 60);
 }
