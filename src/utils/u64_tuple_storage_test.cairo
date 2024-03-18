@@ -1,5 +1,5 @@
-use starknet::storage_access::{StorePacking};
 use governance::utils::u64_tuple_storage::{ThreeU64TupleStorePacking, TwoU64TupleStorePacking};
+use starknet::storage_access::{StorePacking};
 
 pub(crate) fn assert_pack_unpack<
     T, U, +StorePacking<T, U>, +PartialEq<T>, +core::fmt::Debug<T>, +Drop<T>, +Copy<T>
