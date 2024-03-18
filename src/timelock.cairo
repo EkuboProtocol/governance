@@ -1,7 +1,7 @@
 use core::option::OptionTrait;
 use core::result::ResultTrait;
 use core::traits::TryInto;
-use governance::utils::timestamps::{ThreeU64TupleStorePacking, TwoU64TupleStorePacking};
+use governance::utils::u64_tuple_storage::{ThreeU64TupleStorePacking, TwoU64TupleStorePacking};
 use starknet::account::{Call};
 use starknet::class_hash::{ClassHash};
 use starknet::contract_address::{ContractAddress};

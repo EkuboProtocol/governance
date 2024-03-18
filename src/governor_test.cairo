@@ -280,7 +280,7 @@ fn test_vote_invalid_proposal() {
 #[test]
 #[should_panic(expected: ('PROPOSAL_CANCELED', 'ENTRYPOINT_FAILED'))]
 fn test_vote_after_cancel_proposal() {
-    let (staker, token, governor, config) = setup();
+    let (staker, token, governor, _config) = setup();
 
     let id = create_proposal(governor, token, staker);
     set_contract_address(proposer());

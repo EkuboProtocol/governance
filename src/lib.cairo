@@ -24,7 +24,9 @@ pub(crate) mod interfaces {
 }
 pub(crate) mod utils {
     pub(crate) mod exp2;
-    pub(crate) mod timestamps;
+    pub(crate) mod u64_tuple_storage;
+#[cfg(test)]
+    pub(crate) mod u64_tuple_storage_test;
 }
 
 #[cfg(test)]
