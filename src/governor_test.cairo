@@ -179,6 +179,20 @@ fn test_proposer_cannot_cancel_and_re_propose() {
 }
 
 #[test]
+fn test_proposer_can_cancel_and_propose_different() {
+    let (staker, token, governor, config) = setup();
+
+    token.approve(staker.contract_address, config.proposal_creation_threshold.into());
+    staker.stake(proposer());
+    advance_time(config.voting_weight_smoothing_duration);
+
+    set_contract_address(proposer());
+    let id = governor.propose(transfer_call(token, recipient(), amount: 100));
+    governor.cancel(id);
+    governor.propose(transfer_call(token, recipient(), amount: 101));
+}
+
+#[test]
 #[should_panic(expected: ('ALREADY_PROPOSED', 'ENTRYPOINT_FAILED'))]
 fn test_propose_already_exists_should_fail() {
     let (staker, token, governor, _config) = setup();

@@ -161,12 +161,14 @@ pub mod Governor {
             if latest_proposal_id.is_non_zero() {
                 let latest_proposal_timestamps = self.get_proposal(latest_proposal_id).timestamps;
 
-                assert(
-                    latest_proposal_timestamps.created
-                        + config.voting_start_delay
-                        + config.voting_period < timestamp_current,
-                    'PROPOSER_HAS_ACTIVE_PROPOSAL'
-                );
+                if (latest_proposal_timestamps.canceled.is_zero()) {
+                    assert(
+                        latest_proposal_timestamps.created
+                            + config.voting_start_delay
+                            + config.voting_period <= timestamp_current,
+                        'PROPOSER_HAS_ACTIVE_PROPOSAL'
+                    );
+                }
             }
 
             assert(
@@ -208,7 +210,7 @@ pub mod Governor {
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
             assert(proposal.timestamps.canceled.is_zero(), 'PROPOSAL_CANCELED');
-            
+
             let config = self.config.read();
             let timestamp_current = get_block_timestamp();
             let voting_start_time = (proposal.timestamps.created + config.voting_start_delay);
