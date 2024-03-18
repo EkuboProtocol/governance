@@ -1,29 +1,12 @@
 use core::option::OptionTrait;
 use core::result::ResultTrait;
 use core::traits::TryInto;
-use governance::utils::u64_tuple_storage::{ThreeU64TupleStorePacking, TwoU64TupleStorePacking};
+use governance::execution_state::{ExecutionState};
+use governance::utils::u64_tuple_storage::{TwoU64TupleStorePacking};
 use starknet::account::{Call};
 use starknet::class_hash::{ClassHash};
 use starknet::contract_address::{ContractAddress};
 use starknet::storage_access::{StorePacking};
-
-#[derive(Copy, Drop, Serde)]
-pub struct ExecutionState {
-    pub started: u64,
-    pub executed: u64,
-    pub canceled: u64
-}
-
-pub(crate) impl ExecutionStateStorePacking of StorePacking<ExecutionState, felt252> {
-    fn pack(value: ExecutionState) -> felt252 {
-        ThreeU64TupleStorePacking::pack((value.started, value.executed, value.canceled))
-    }
-
-    fn unpack(value: felt252) -> ExecutionState {
-        let (started, executed, canceled) = ThreeU64TupleStorePacking::unpack(value);
-        ExecutionState { started, executed, canceled }
-    }
-}
 
 #[derive(Copy, Drop, Serde)]
 pub struct Config {
@@ -90,7 +73,7 @@ pub mod Timelock {
     };
     use super::{
         ClassHash, ITimelock, ContractAddress, Call, Config, ExecutionState, ConfigStorePacking,
-        ExecutionStateStorePacking, ExecutionWindow
+        ExecutionWindow
     };
 
 
@@ -161,12 +144,12 @@ pub mod Timelock {
             let id = to_id(calls);
             let execution_state = self.execution_state.read(id);
 
-            assert(execution_state.started.is_zero(), 'ALREADY_QUEUED');
+            assert(execution_state.created.is_zero(), 'ALREADY_QUEUED');
 
             self
                 .execution_state
                 .write(
-                    id, ExecutionState { started: get_block_timestamp(), executed: 0, canceled: 0 }
+                    id, ExecutionState { created: get_block_timestamp(), executed: 0, canceled: 0 }
                 );
 
             self.emit(Queued { id, calls, });
@@ -177,7 +160,7 @@ pub mod Timelock {
         fn cancel(ref self: ContractState, id: felt252) {
             self.check_owner();
             let execution_state = self.execution_state.read(id);
-            assert(execution_state.started.is_non_zero(), 'DOES_NOT_EXIST');
+            assert(execution_state.created.is_non_zero(), 'DOES_NOT_EXIST');
             assert(execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
 
             self
@@ -185,7 +168,7 @@ pub mod Timelock {
                 .write(
                     id,
                     ExecutionState {
-                        started: 0,
+                        created: 0,
                         executed: execution_state.executed,
                         canceled: execution_state.canceled
                     }
@@ -212,7 +195,7 @@ pub mod Timelock {
                 .write(
                     id,
                     ExecutionState {
-                        started: execution_state.started,
+                        created: execution_state.created,
                         executed: time_current,
                         canceled: execution_state.canceled
                     }
@@ -230,10 +213,10 @@ pub mod Timelock {
         }
 
         fn get_execution_window(self: @ContractState, id: felt252) -> ExecutionWindow {
-            let start_time = self.execution_state.read(id).started;
+            let start_time = self.execution_state.read(id).created;
 
             // this is how we prevent the 0 timestamp from being considered valid
-            assert(start_time != 0, 'DOES_NOT_EXIST');
+            assert(start_time.is_non_zero(), 'DOES_NOT_EXIST');
 
             let configuration = (self.get_configuration());
 

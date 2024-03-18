@@ -7,6 +7,7 @@ pub mod call_trait;
 pub(crate) mod call_trait_test;
 #[cfg(test)]
 mod e2e_test;
+pub mod execution_state;
 pub mod factory;
 #[cfg(test)]
 pub(crate) mod factory_test;

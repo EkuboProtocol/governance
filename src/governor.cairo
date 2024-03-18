@@ -2,40 +2,18 @@ use core::array::{Array};
 use core::integer::{u128_safe_divmod};
 use core::option::{Option, OptionTrait};
 use core::traits::{Into, TryInto};
+use governance::execution_state::{ExecutionState};
 use governance::staker::{IStakerDispatcher};
-use governance::utils::u64_tuple_storage::{ThreeU64TupleStorePacking};
 use starknet::account::{Call};
 use starknet::{ContractAddress, storage_access::{StorePacking}};
 
-#[derive(Copy, Drop, Serde, PartialEq, Debug)]
-pub struct ProposalTimestamps {
-    // the timestamp when the proposal was created
-    pub created: u64,
-    // the timestamp when the proposal was executed
-    pub executed: u64,
-    // the timestamp when the proposal was canceled
-    pub canceled: u64,
-}
-
-const TWO_POW_64: u128 = 0x10000000000000000_u128;
-
-impl ProposalTimestampsStorePacking of StorePacking<ProposalTimestamps, felt252> {
-    fn pack(value: ProposalTimestamps) -> felt252 {
-        ThreeU64TupleStorePacking::pack((value.created, value.executed, value.canceled))
-    }
-
-    fn unpack(value: felt252) -> ProposalTimestamps {
-        let (created, executed, canceled) = ThreeU64TupleStorePacking::unpack(value);
-        ProposalTimestamps { created, executed, canceled }
-    }
-}
 
 #[derive(Copy, Drop, Serde, starknet::Store, PartialEq, Debug)]
 pub struct ProposalInfo {
     // the address of the proposer
     pub proposer: ContractAddress,
-    // the relevant timestamps
-    pub timestamps: ProposalTimestamps,
+    // the execution state of the proposal
+    pub execution_state: ExecutionState,
     // how many yes votes have been collected
     pub yea: u128,
     // how many no votes have been collected
@@ -90,7 +68,7 @@ pub mod Governor {
     use starknet::{get_block_timestamp, get_caller_address, contract_address_const};
     use super::{
         IStakerDispatcher, ContractAddress, Array, IGovernor, Config, ProposalInfo, Call,
-        ProposalTimestamps
+        ExecutionState
     };
 
 
@@ -159,11 +137,11 @@ pub mod Governor {
 
             let latest_proposal_id = self.latest_proposal_by_proposer.read(proposer);
             if latest_proposal_id.is_non_zero() {
-                let latest_proposal_timestamps = self.get_proposal(latest_proposal_id).timestamps;
+                let latest_proposal_state = self.get_proposal(latest_proposal_id).execution_state;
 
-                if (latest_proposal_timestamps.canceled.is_zero()) {
+                if (latest_proposal_state.canceled.is_zero()) {
                     assert(
-                        latest_proposal_timestamps.created
+                        latest_proposal_state.created
                             + config.voting_start_delay
                             + config.voting_period <= timestamp_current,
                         'PROPOSER_HAS_ACTIVE_PROPOSAL'
@@ -188,7 +166,7 @@ pub mod Governor {
                     id,
                     ProposalInfo {
                         proposer,
-                        timestamps: ProposalTimestamps {
+                        execution_state: ExecutionState {
                             created: timestamp_current,
                             executed: Zero::zero(),
                             canceled: Zero::zero()
@@ -209,11 +187,11 @@ pub mod Governor {
             let mut proposal = self.proposals.read(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
-            assert(proposal.timestamps.canceled.is_zero(), 'PROPOSAL_CANCELED');
+            assert(proposal.execution_state.canceled.is_zero(), 'PROPOSAL_CANCELED');
 
             let config = self.config.read();
             let timestamp_current = get_block_timestamp();
-            let voting_start_time = (proposal.timestamps.created + config.voting_start_delay);
+            let voting_start_time = (proposal.execution_state.created + config.voting_start_delay);
             let voter = get_caller_address();
             let has_voted = self.has_voted.read((voter, id));
 
@@ -265,7 +243,7 @@ pub mod Governor {
             let timestamp_current = get_block_timestamp();
 
             assert(
-                timestamp_current < (proposal.timestamps.created
+                timestamp_current < (proposal.execution_state.created
                     + config.voting_start_delay
                     + config.voting_period),
                 'VOTING_ENDED'
@@ -273,9 +251,9 @@ pub mod Governor {
 
             // we know it's not executed since we check voting has not ended
             proposal
-                .timestamps =
-                    ProposalTimestamps {
-                        created: proposal.timestamps.created,
+                .execution_state =
+                    ExecutionState {
+                        created: proposal.execution_state.created,
                         executed: 0,
                         canceled: timestamp_current
                     };
@@ -295,7 +273,7 @@ pub mod Governor {
             let mut proposal = self.proposals.read(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
-            assert(proposal.timestamps.executed.is_zero(), 'ALREADY_EXECUTED');
+            assert(proposal.execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
 
             let timestamp_current = get_block_timestamp();
             // we cannot tell if a proposal is executed if it is executed at timestamp 0
@@ -303,7 +281,7 @@ pub mod Governor {
             assert(timestamp_current.is_non_zero(), 'TIMESTAMP_ZERO');
 
             assert(
-                timestamp_current >= (proposal.timestamps.created
+                timestamp_current >= (proposal.execution_state.created
                     + config.voting_start_delay
                     + config.voting_period),
                 'VOTING_NOT_ENDED'
@@ -313,9 +291,9 @@ pub mod Governor {
             assert(proposal.yea >= proposal.nay, 'NO_MAJORITY');
 
             proposal
-                .timestamps =
-                    ProposalTimestamps {
-                        created: proposal.timestamps.created,
+                .execution_state =
+                    ExecutionState {
+                        created: proposal.execution_state.created,
                         executed: timestamp_current,
                         canceled: Zero::zero()
                     };

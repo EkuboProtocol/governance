@@ -8,9 +8,10 @@ use core::serde::Serde;
 use core::traits::{TryInto};
 
 use governance::call_trait::{CallTrait};
+use governance::execution_state::{ExecutionState};
 use governance::governor::{
     IGovernorDispatcher, IGovernorDispatcherTrait, Governor, Config, ProposalInfo,
-    ProposalTimestamps, Governor::{to_call_id}
+    Governor::{to_call_id}
 };
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::staker::{IStakerDispatcher, IStakerDispatcherTrait};
@@ -140,7 +141,7 @@ fn test_propose() {
         proposal,
         ProposalInfo {
             proposer: proposer(),
-            timestamps: ProposalTimestamps {
+            execution_state: ExecutionState {
                 created: config.voting_weight_smoothing_duration, executed: 0, canceled: 0
             },
             yea: 0,
@@ -364,7 +365,7 @@ fn test_cancel_by_proposer() {
         proposal,
         ProposalInfo {
             proposer: proposer(),
-            timestamps: ProposalTimestamps {
+            execution_state: ExecutionState {
                 created: config.voting_weight_smoothing_duration,
                 executed: 0,
                 canceled: config.voting_weight_smoothing_duration + 30
@@ -395,7 +396,7 @@ fn test_cancel_by_non_proposer() {
         proposal,
         ProposalInfo {
             proposer: proposer(),
-            timestamps: ProposalTimestamps {
+            execution_state: ExecutionState {
                 created: config.voting_weight_smoothing_duration,
                 executed: 0,
                 canceled: config.voting_weight_smoothing_duration * 2
@@ -457,7 +458,7 @@ fn test_execute_valid_proposal() {
     governor.execute(transfer_call(token: token, recipient: recipient(), amount: 100));
 
     let proposal = governor.get_proposal(id);
-    assert(proposal.timestamps.executed.is_non_zero(), 'execute failed');
+    assert(proposal.execution_state.executed.is_non_zero(), 'execute failed');
     assert_eq!(token.balanceOf(recipient()), 100);
 }
 

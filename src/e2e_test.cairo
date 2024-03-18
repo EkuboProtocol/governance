@@ -7,7 +7,8 @@ use governance::factory::{
     IFactoryDispatcher, IFactoryDispatcherTrait, Factory, DeploymentParameters, DeploymentResult,
 };
 use governance::factory_test::{deploy as deploy_factory};
-use governance::governor::{Config as GovernorConfig, ProposalTimestamps};
+use governance::governor::{Config as GovernorConfig};
+use governance::execution_state::{ExecutionState};
 use governance::governor::{Governor, Governor::{to_call_id}};
 use governance::governor::{IGovernorDispatcherTrait};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
@@ -146,8 +147,8 @@ fn test_create_proposal_that_fails() {
 
     assert_eq!(proposal_info.proposer, delegate_yes);
     assert_eq!(
-        proposal_info.timestamps,
-        ProposalTimestamps { created: start_time + 30, executed: 0, canceled: 0 }
+        proposal_info.execution_state,
+        ExecutionState { created: start_time + 30, executed: 0, canceled: 0 }
     );
     assert_eq!(proposal_info.yea, 100);
     assert_eq!(proposal_info.nay, 101);
