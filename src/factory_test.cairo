@@ -11,7 +11,7 @@ use governance::governor::{Governor};
 use governance::governor::{IGovernorDispatcherTrait};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::staker::{Staker, IStakerDispatcherTrait};
-use governance::timelock::{Timelock, ITimelockDispatcherTrait, TimelockConfig};
+use governance::timelock::{Timelock, ITimelockDispatcherTrait, Config as TimelockConfig};
 use starknet::testing::{set_contract_address, set_block_timestamp, pop_log};
 use starknet::{
     get_contract_address, syscalls::deploy_syscall, ClassHash, contract_address_const,
@@ -21,11 +21,7 @@ use starknet::{
 pub(crate) fn deploy() -> IFactoryDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
     Serde::serialize(
-        @(
-            Staker::TEST_CLASS_HASH,
-            Governor::TEST_CLASS_HASH,
-            Timelock::TEST_CLASS_HASH
-        ),
+        @(Staker::TEST_CLASS_HASH, Governor::TEST_CLASS_HASH, Timelock::TEST_CLASS_HASH),
         ref constructor_args
     );
 

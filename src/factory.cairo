@@ -1,9 +1,7 @@
-use governance::airdrop::{IAirdropDispatcher};
 use governance::governor::{Config as GovernorConfig};
-use governance::airdrop::{Config as AirdropConfig};
 use governance::governor::{IGovernorDispatcher};
 use governance::staker::{IStakerDispatcher};
-use governance::timelock::{ITimelockDispatcher, TimelockConfig};
+use governance::timelock::{ITimelockDispatcher, Config as TimelockConfig};
 use starknet::{ContractAddress};
 
 #[derive(Copy, Drop, Serde)]
