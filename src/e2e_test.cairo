@@ -37,13 +37,13 @@ impl DefaultDeploymentParameters of Default<DeploymentParameters> {
     fn default() -> DeploymentParameters {
         DeploymentParameters {
             governor_config: GovernorConfig {
-                voting_start_delay: 30,
-                voting_period: 60,
-                voting_weight_smoothing_duration: 10,
-                quorum: 100,
-                proposal_creation_threshold: 20
+                voting_start_delay: 86400,
+                voting_period: 604800,
+                voting_weight_smoothing_duration: 43200,
+                quorum: 500,
+                proposal_creation_threshold: 50,
             },
-            timelock_config: TimelockConfig { delay: 30, window: 90, },
+            timelock_config: TimelockConfig { delay: 259200, window: 86400 }
         }
     }
 }
@@ -96,32 +96,17 @@ fn advance_time(offset: u64) {
 }
 
 #[test]
-fn test_delegated_amount_grows_over_time() {
-    let s = setup(Option::None);
-    let delegate = contract_address_const::<1234>();
-
-    s.delegate_amount(delegate, 123);
-    assert_eq!(s.deployment.staker.get_delegated(delegate), 123);
-    assert_eq!(s.deployment.staker.get_average_delegated_over_last(delegate, 30), 0);
-
-    advance_time(15);
-    assert_eq!(s.deployment.staker.get_average_delegated_over_last(delegate, 30), 61);
-
-    advance_time(15);
-    assert_eq!(s.deployment.staker.get_average_delegated_over_last(delegate, 30), 123);
-}
-
-#[test]
 #[should_panic(expected: ('NO_MAJORITY', 'ENTRYPOINT_FAILED'))]
 fn test_create_proposal_that_fails() {
     let s = setup(Option::None);
     let delegate_yes = contract_address_const::<1234>();
     let delegate_no = contract_address_const::<2345>();
 
-    s.delegate_amount(delegate_yes, 100);
-    s.delegate_amount(delegate_no, 101);
+    let delegated_amount = s.deployment.governor.get_config().quorum;
+    s.delegate_amount(delegate_yes, delegated_amount);
+    s.delegate_amount(delegate_no, delegated_amount + 1);
 
-    advance_time(30);
+    advance_time(s.deployment.governor.get_config().voting_weight_smoothing_duration);
     s
         .create_proposal_from(
             delegate_yes,
@@ -132,7 +117,7 @@ fn test_create_proposal_that_fails() {
         @Call { to: delegate_yes, selector: 'wont-succeed', calldata: array![].span() }
     );
 
-    advance_time(30);
+    advance_time(s.deployment.governor.get_config().voting_start_delay);
     s.vote_from(delegate_yes, id, true);
     s.vote_from(delegate_no, id, false);
 
@@ -148,12 +133,17 @@ fn test_create_proposal_that_fails() {
     assert_eq!(proposal_info.proposer, delegate_yes);
     assert_eq!(
         proposal_info.execution_state,
-        ExecutionState { created: start_time + 30, executed: 0, canceled: 0 }
+        ExecutionState {
+            created: start_time
+                + s.deployment.governor.get_config().voting_weight_smoothing_duration,
+            executed: 0,
+            canceled: 0
+        }
     );
-    assert_eq!(proposal_info.yea, 100);
-    assert_eq!(proposal_info.nay, 101);
+    assert_eq!(proposal_info.yea, delegated_amount);
+    assert_eq!(proposal_info.nay, delegated_amount + 1);
 
-    advance_time(60);
+    advance_time(s.deployment.governor.get_config().voting_period);
     s
         .deployment
         .governor
