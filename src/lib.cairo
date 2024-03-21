@@ -1,3 +1,4 @@
+mod airdrop_claim_check;
 pub mod airdrop;
 
 #[cfg(test)]
