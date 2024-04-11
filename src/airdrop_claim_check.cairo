@@ -1,5 +1,5 @@
-use starknet::{ContractAddress};
 use governance::airdrop::{IAirdropDispatcher};
+use starknet::{ContractAddress};
 
 #[derive(Serde, Copy, Drop)]
 struct CheckParams {
@@ -21,11 +21,11 @@ trait IAirdropClaimCheck<TContractState> {
 
 #[starknet::contract]
 mod AirdropClaimCheck {
-    use super::{IAirdropClaimCheck, IAirdropDispatcher, CheckParams, CheckResult};
-    use governance::airdrop::{IAirdropDispatcherTrait};
-    use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use core::array::{SpanTrait};
     use core::option::{OptionTrait};
+    use governance::airdrop::{IAirdropDispatcherTrait};
+    use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+    use super::{IAirdropClaimCheck, IAirdropDispatcher, CheckParams, CheckResult};
 
     #[storage]
     struct Storage {}

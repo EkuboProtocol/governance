@@ -1,5 +1,5 @@
-mod airdrop_claim_check;
 pub mod airdrop;
+mod airdrop_claim_check;
 
 #[cfg(test)]
 pub(crate) mod airdrop_test;
