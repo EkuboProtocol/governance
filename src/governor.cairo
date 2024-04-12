@@ -50,7 +50,7 @@ pub trait IGovernor<TContractState> {
     // Execute the given proposal.
     fn execute(ref self: TContractState, call: Call) -> Span<felt252>;
 
-    // Attaches the given text to the proposal. Triggers an event containing the proposal description.
+    // Attaches the given text to the proposal. Simply emits an event containing the proposal description.
     fn describe(ref self: TContractState, id: felt252, description: ByteArray);
 
     // Get the configuration for this governor contract.
@@ -83,7 +83,7 @@ pub mod Governor {
         pub call: Call,
     }
 
-    #[derive(starknet::Event, Drop)]
+    #[derive(starknet::Event, Drop, Debug, PartialEq)]
     pub struct Described {
         pub id: felt252,
         pub description: ByteArray,
@@ -196,9 +196,10 @@ pub mod Governor {
 
         fn describe(ref self: ContractState, id: felt252, description: ByteArray) {
             let proposal = self.proposals.read(id);
+            assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
             assert(proposal.proposer == get_caller_address(), 'NOT_PROPOSER');
             assert(proposal.execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
-            assert(proposal.execution_state.canceled.is_zero(),'CANCELED');
+            assert(proposal.execution_state.canceled.is_zero(), 'PROPOSAL_CANCELED');
             self.emit(Described { id, description });
         }
 
