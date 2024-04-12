@@ -85,8 +85,14 @@ fn setup() -> (IStakerDispatcher, IERC20Dispatcher, IGovernorDispatcher, Config)
 fn create_proposal(
     governor: IGovernorDispatcher, token: IERC20Dispatcher, staker: IStakerDispatcher
 ) -> felt252 {
-    let transfer_call = transfer_call(token, recipient(), amount: 100);
+    create_proposal_with_call(
+        governor, token, staker, transfer_call(token, recipient(), amount: 100)
+    )
+}
 
+fn create_proposal_with_call(
+    governor: IGovernorDispatcher, token: IERC20Dispatcher, staker: IStakerDispatcher, call: Call
+) -> felt252 {
     // Delegate token to the proposer so that he reaches threshold.
     token
         .approve(staker.contract_address, governor.get_config().proposal_creation_threshold.into());
@@ -96,7 +102,7 @@ fn create_proposal(
 
     let address_before = get_contract_address();
     set_contract_address(proposer());
-    let id = governor.propose(transfer_call);
+    let id = governor.propose(call);
     set_contract_address(address_before);
     id
 }
@@ -295,6 +301,30 @@ fn test_describe_proposal_fails_if_canceled() {
 fn test_describe_proposal_fails_if_not_proposer() {
     let (_staker, _token, governor, _config) = setup();
     governor.describe(123, "This proposal does not exist");
+}
+
+#[test]
+#[should_panic(expected: ('ALREADY_EXECUTED', 'ENTRYPOINT_FAILED'))]
+fn test_describe_proposal_fails_if_executed() {
+    let (staker, token, governor, config) = setup();
+    let id = create_proposal_with_call(
+        governor, token, staker, transfer_call(token: token, recipient: anyone(), amount: 0)
+    );
+
+    // make the proposal execute
+    token.approve(staker.contract_address, config.quorum.into());
+    staker.stake(voter1());
+    advance_time(config.voting_start_delay);
+    set_contract_address(proposer());
+    governor.vote(id, true);
+    set_contract_address(voter1());
+    governor.vote(id, true);
+    advance_time(config.voting_period);
+    set_contract_address(anyone());
+    governor.execute(transfer_call(token: token, recipient: anyone(), amount: 0));
+
+    set_contract_address(proposer());
+    governor.describe(id, "This proposal is already executed");
 }
 
 #[test]
