@@ -1,4 +1,5 @@
 use core::array::{Array};
+use core::byte_array::{ByteArray};
 use core::integer::{u128_safe_divmod};
 use core::option::{Option, OptionTrait};
 use core::traits::{Into, TryInto};
@@ -49,6 +50,9 @@ pub trait IGovernor<TContractState> {
     // Execute the given proposal.
     fn execute(ref self: TContractState, call: Call) -> Span<felt252>;
 
+    // Attaches the given text to the proposal. Simply emits an event containing the proposal description.
+    fn describe(ref self: TContractState, id: felt252, description: ByteArray);
+
     // Get the configuration for this governor contract.
     fn get_staker(self: @TContractState) -> IStakerDispatcher;
 
@@ -68,7 +72,7 @@ pub mod Governor {
     use starknet::{get_block_timestamp, get_caller_address, contract_address_const};
     use super::{
         IStakerDispatcher, ContractAddress, Array, IGovernor, Config, ProposalInfo, Call,
-        ExecutionState
+        ExecutionState, ByteArray
     };
 
 
@@ -77,6 +81,12 @@ pub mod Governor {
         pub id: felt252,
         pub proposer: ContractAddress,
         pub call: Call,
+    }
+
+    #[derive(starknet::Event, Drop, Debug, PartialEq)]
+    pub struct Described {
+        pub id: felt252,
+        pub description: ByteArray,
     }
 
     #[derive(starknet::Event, Drop)]
@@ -101,6 +111,7 @@ pub mod Governor {
     #[event]
     enum Event {
         Proposed: Proposed,
+        Described: Described,
         Voted: Voted,
         Canceled: Canceled,
         Executed: Executed,
@@ -181,6 +192,15 @@ pub mod Governor {
             self.emit(Proposed { id, proposer, call });
 
             id
+        }
+
+        fn describe(ref self: ContractState, id: felt252, description: ByteArray) {
+            let proposal = self.proposals.read(id);
+            assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
+            assert(proposal.proposer == get_caller_address(), 'NOT_PROPOSER');
+            assert(proposal.execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
+            assert(proposal.execution_state.canceled.is_zero(), 'PROPOSAL_CANCELED');
+            self.emit(Described { id, description });
         }
 
         fn vote(ref self: ContractState, id: felt252, yea: bool) {

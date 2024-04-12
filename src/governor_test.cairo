@@ -21,7 +21,8 @@ use governance::timelock_test::{single_call, transfer_call, deploy as deploy_tim
 use starknet::account::{Call};
 use starknet::{
     get_contract_address, syscalls::deploy_syscall, ClassHash, contract_address_const,
-    ContractAddress, get_block_timestamp, testing::{set_block_timestamp, set_contract_address}
+    ContractAddress, get_block_timestamp,
+    testing::{set_block_timestamp, set_contract_address, pop_log}
 };
 
 
@@ -248,6 +249,52 @@ fn test_anyone_can_vote() {
     let proposal = governor.get_proposal(id);
     assert_eq!(proposal.yea, 0);
     assert_eq!(proposal.nay, 0);
+}
+
+#[test]
+fn test_describe_proposal_successful() {
+    let (staker, token, governor, _config) = setup();
+    let id = create_proposal(governor, token, staker);
+
+    set_contract_address(proposer());
+    governor
+        .describe(
+            id,
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
+        );
+    pop_log::<Governor::Proposed>(governor.contract_address).unwrap();
+    assert_eq!(
+        pop_log::<Governor::Described>(governor.contract_address).unwrap(),
+        Governor::Described {
+            id,
+            description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
+        }
+    );
+}
+
+#[test]
+#[should_panic(expected: ('NOT_PROPOSER', 'ENTRYPOINT_FAILED'))]
+fn test_describe_proposal_fails_for_unknown_proposal() {
+    let (staker, token, governor, _config) = setup();
+    let id = create_proposal(governor, token, staker);
+    governor.describe(id, "I am not the proposer");
+}
+
+#[test]
+#[should_panic(expected: ('PROPOSAL_CANCELED', 'ENTRYPOINT_FAILED'))]
+fn test_describe_proposal_fails_if_canceled() {
+    let (staker, token, governor, _config) = setup();
+    let id = create_proposal(governor, token, staker);
+    set_contract_address(proposer());
+    governor.cancel(id);
+    governor.describe(id, "This proposal is canceled");
+}
+
+#[test]
+#[should_panic(expected: ('DOES_NOT_EXIST', 'ENTRYPOINT_FAILED'))]
+fn test_describe_proposal_fails_if_not_proposer() {
+    let (_staker, _token, governor, _config) = setup();
+    governor.describe(123, "This proposal does not exist");
 }
 
 #[test]
