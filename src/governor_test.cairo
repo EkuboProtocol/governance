@@ -425,6 +425,14 @@ fn test_vote_after_voting_period_should_fail() {
 }
 
 #[test]
+#[should_panic(expected: ('DOES_NOT_EXIST', 'ENTRYPOINT_FAILED'))]
+fn test_cancel_fails_if_proposal_not_exists() {
+    let (_staker, _token, governor, _config) = setup();
+    let id = 1234;
+    governor.cancel(id);
+}
+
+#[test]
 fn test_cancel_by_proposer() {
     let (staker, token, governor, config) = setup();
 
@@ -451,6 +459,22 @@ fn test_cancel_by_proposer() {
             nay: 0,
         }
     );
+}
+
+#[test]
+#[should_panic(expected: ('ALREADY_CANCELED', 'ENTRYPOINT_FAILED'))]
+fn test_double_cancel_by_proposer() {
+    let (staker, token, governor, _config) = setup();
+
+    let proposer = proposer();
+
+    let id = create_proposal(governor, token, staker);
+
+    advance_time(30);
+
+    set_contract_address(proposer);
+    governor.cancel(id);
+    governor.cancel(id);
 }
 
 #[test]
