@@ -26,8 +26,8 @@ Contracts in this repository are designed so that they may be used together _or_
 
 `Staker` enables users to delegate the balance of a token towards an account, and tracks the historical delegation at each block. In addition, it allows the computation of the time-weighted average delegated tokens of any account over any historical period.
 
-- Users call `Token#approve(staker, stake_amount)`, then `Staker#stake(delegate)` to stake and delegate their tokens to other addresses
-- Users call `Staker#withdraw(delegate, recipient, amount)` to remove part or all of their delegation
+- Users call `Token#approve(staker, stake_amount)`, then `Staker#stake_amount(delegate, stake_amount)` to stake and delegate their tokens to other addresses
+- Users call `Staker#withdraw_amount(delegate, recipient, amount)` to remove part or all of their delegation
 - The average delegation weight is computable over *any* historical period
 - The contract has no owner, and cannot be updated nor configured
 

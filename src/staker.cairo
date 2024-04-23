@@ -13,8 +13,14 @@ pub trait IStaker<TContractState> {
     // Transfer the approved amount of token from the caller into this contract and delegates it to the given address
     fn stake(ref self: TContractState, delegate: ContractAddress);
 
-    // Withdraws the delegated tokens from the contract to the given recipient address
-    fn withdraw(
+    // Transfer the specified amount of token from the caller into this contract and delegates the voting weight to the specified delegate
+    fn stake_amount(ref self: TContractState, delegate: ContractAddress, amount: u128);
+
+    // Unstakes and withdraws all of the tokens delegated by the sender to the delegate from the contract to the given recipient address
+    fn withdraw(ref self: TContractState, delegate: ContractAddress, recipient: ContractAddress);
+
+    // Unstakes and withdraws the specified amount of tokens delegated by the sender to the delegate from the contract to the given recipient address
+    fn withdraw_amount(
         ref self: TContractState,
         delegate: ContractAddress,
         recipient: ContractAddress,
@@ -214,27 +220,45 @@ pub mod Staker {
         }
 
         fn stake(ref self: ContractState, delegate: ContractAddress) {
-            let from = get_caller_address();
-            let this_address = get_contract_address();
-            let token = self.token.read();
-            let amount = token.allowance(from, this_address);
+            self
+                .stake_amount(
+                    delegate,
+                    self
+                        .token
+                        .read()
+                        .allowance(get_caller_address(), get_contract_address())
+                        .try_into()
+                        .expect('ALLOWANCE_OVERFLOW')
+                );
+        }
 
-            let amount_small: u128 = amount.try_into().expect('ALLOWANCE_OVERFLOW');
+        fn stake_amount(ref self: ContractState, delegate: ContractAddress, amount: u128) {
+            let from = get_caller_address();
+            let token = self.token.read();
+
             assert(
-                token.transferFrom(from, get_contract_address(), amount), 'TRANSFER_FROM_FAILED'
+                token.transferFrom(from, get_contract_address(), amount.into()),
+                'TRANSFER_FROM_FAILED'
             );
 
             let key = (from, delegate);
-            self.staked.write((from, delegate), amount_small + self.staked.read(key));
+            self.staked.write((from, delegate), amount + self.staked.read(key));
             self
                 .amount_delegated
-                .write(
-                    delegate, self.insert_snapshot(delegate, get_block_timestamp()) + amount_small
-                );
-            self.emit(Staked { from, delegate, amount: amount_small });
+                .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) + amount);
+            self.emit(Staked { from, delegate, amount });
         }
 
         fn withdraw(
+            ref self: ContractState, delegate: ContractAddress, recipient: ContractAddress
+        ) {
+            self
+                .withdraw_amount(
+                    delegate, recipient, self.staked.read((get_caller_address(), delegate))
+                )
+        }
+
+        fn withdraw_amount(
             ref self: ContractState,
             delegate: ContractAddress,
             recipient: ContractAddress,

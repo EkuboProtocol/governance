@@ -305,7 +305,7 @@ fn test_get_average_delegated() {
 
     // rewind to undelegate at 8
     set_block_timestamp(8);
-    staker.withdraw(delegatee, recipient: contract_address_const::<0>(), amount: 12345);
+    staker.withdraw_amount(delegatee, recipient: contract_address_const::<0>(), amount: 12345);
 
     set_block_timestamp(12);
     assert(staker.get_average_delegated(delegatee, 4, 10) == 8230, 'average (4 sec * 12345)/6');
@@ -320,7 +320,7 @@ fn test_transfer_delegates_moved() {
     set_block_timestamp(2);
     token.approve(staker.contract_address, 12345);
     staker.stake(delegatee);
-    staker.withdraw(delegatee, contract_address_const::<3456>(), 500);
+    staker.withdraw_amount(delegatee, contract_address_const::<3456>(), 500);
     set_block_timestamp(5);
 
     assert_eq!(staker.get_delegated(delegatee), (12345 - 500));
@@ -338,7 +338,7 @@ fn test_delegate_undelegate() {
     staker.stake(delegatee);
 
     set_block_timestamp(5);
-    staker.withdraw(delegatee, Zero::zero(), 12345);
+    staker.withdraw_amount(delegatee, Zero::zero(), 12345);
     set_block_timestamp(8);
 
     assert(staker.get_delegated(delegatee) == 0, 'delegated');

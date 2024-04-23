@@ -150,7 +150,8 @@ pub mod Governor {
             if latest_proposal_id.is_non_zero() {
                 let latest_proposal_state = self.get_proposal(latest_proposal_id).execution_state;
 
-                if (latest_proposal_state.canceled.is_zero()) {
+                // if the proposal is not canceled, check that the voting for that proposal has ended
+                if latest_proposal_state.canceled.is_zero() {
                     assert(
                         latest_proposal_state.created
                             + config.voting_start_delay
@@ -236,13 +237,13 @@ pub mod Governor {
             self.proposals.write(id, proposal);
             self.has_voted.write((voter, id), true);
 
-            self.emit(Voted { id, voter, weight, yea, });
+            self.emit(Voted { id, voter, weight, yea });
         }
 
 
         fn cancel(ref self: ContractState, id: felt252) {
             let config = self.config.read();
-            let voting_token = self.staker.read();
+            let staker = self.staker.read();
             let mut proposal = self.proposals.read(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
@@ -250,7 +251,7 @@ pub mod Governor {
             if (proposal.proposer != get_caller_address()) {
                 // if at any point the average voting weight is below the proposal_creation_threshold for the proposer, it can be canceled
                 assert(
-                    voting_token
+                    staker
                         .get_average_delegated_over_last(
                             delegate: proposal.proposer,
                             period: config.voting_weight_smoothing_duration
