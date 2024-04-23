@@ -281,9 +281,6 @@ pub mod Governor {
 
             self.proposals.write(id, proposal);
 
-            // allows the proposer to create a new proposal
-            self.latest_proposal_by_proposer.write(proposal.proposer, Zero::zero());
-
             self.emit(Canceled { id });
         }
 
