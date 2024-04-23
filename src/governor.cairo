@@ -43,9 +43,14 @@ pub trait IGovernor<TContractState> {
     // Vote on the given proposal.
     fn vote(ref self: TContractState, id: felt252, yea: bool);
 
-    // Cancel the given proposal. The proposer may cancel the proposal at any time during before or during the voting period.
-    // Cancellation can happen by any address if the average voting weight is below the proposal_creation_threshold.
+    // Cancel the proposal with the given ID. Same as #cancel_at_timestamp, but uses the current timestamp for computing the voting weight.
     fn cancel(ref self: TContractState, id: felt252);
+
+    // Cancel the proposal with the given ID. The proposal may be canceled at any time before it is executed.
+    // There are two ways the proposal cancellation can be authorized:
+    // - The proposer can cancel the proposal
+    // - Anyone can cancel if the average voting weight of the proposer was below the proposal_creation_threshold during the voting period (at the given breach_timestamp)
+    fn cancel_at_timestamp(ref self: TContractState, id: felt252, breach_timestamp: u64);
 
     // Execute the given proposal.
     fn execute(ref self: TContractState, call: Call) -> Span<felt252>;
@@ -100,6 +105,7 @@ pub mod Governor {
     #[derive(starknet::Event, Drop)]
     pub struct Canceled {
         pub id: felt252,
+        pub breach_timestamp: u64,
     }
 
     #[derive(starknet::Event, Drop)]
@@ -150,7 +156,8 @@ pub mod Governor {
             if latest_proposal_id.is_non_zero() {
                 let latest_proposal_state = self.get_proposal(latest_proposal_id).execution_state;
 
-                if (latest_proposal_state.canceled.is_zero()) {
+                // if the proposal is not canceled, check that the voting for that proposal has ended
+                if latest_proposal_state.canceled.is_zero() {
                     assert(
                         latest_proposal_state.created
                             + config.voting_start_delay
@@ -236,54 +243,60 @@ pub mod Governor {
             self.proposals.write(id, proposal);
             self.has_voted.write((voter, id), true);
 
-            self.emit(Voted { id, voter, weight, yea, });
+            self.emit(Voted { id, voter, weight, yea });
         }
 
 
         fn cancel(ref self: ContractState, id: felt252) {
+            self.cancel_at_timestamp(id, get_block_timestamp())
+        }
+
+        fn cancel_at_timestamp(ref self: ContractState, id: felt252, breach_timestamp: u64) {
             let config = self.config.read();
-            let voting_token = self.staker.read();
+            let staker = self.staker.read();
             let mut proposal = self.proposals.read(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
 
-            if (proposal.proposer != get_caller_address()) {
-                // if at any point the average voting weight is below the proposal_creation_threshold for the proposer, it can be canceled
+            assert(proposal.execution_state.canceled.is_zero(), 'ALREADY_CANCELED');
+            assert(proposal.execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
+            assert(breach_timestamp >= proposal.execution_state.created, 'PROPOSAL_NOT_CREATED');
+
+            assert(
+                breach_timestamp < (proposal.execution_state.created
+                    + config.voting_start_delay
+                    + config.voting_period),
+                'VOTING_ENDED'
+            );
+
+            // iff the proposer is not calling this we need to check the voting weight
+            if proposal.proposer != get_caller_address() {
+                // if at the given timestamp (during the voting period),
+                // the average voting weight is below the proposal_creation_threshold for the proposer, it can be canceled
                 assert(
-                    voting_token
-                        .get_average_delegated_over_last(
+                    staker
+                        .get_average_delegated(
                             delegate: proposal.proposer,
-                            period: config.voting_weight_smoothing_duration
+                            start: breach_timestamp - config.voting_weight_smoothing_duration,
+                            end: breach_timestamp
                         ) < config
                         .proposal_creation_threshold,
                     'THRESHOLD_NOT_BREACHED'
                 );
             }
 
-            let timestamp_current = get_block_timestamp();
-
-            assert(
-                timestamp_current < (proposal.execution_state.created
-                    + config.voting_start_delay
-                    + config.voting_period),
-                'VOTING_ENDED'
-            );
-
-            // we know it's not executed since we check voting has not ended
             proposal
                 .execution_state =
                     ExecutionState {
                         created: proposal.execution_state.created,
+                        // we asserted that it is not already executed
                         executed: 0,
-                        canceled: timestamp_current
+                        canceled: get_block_timestamp()
                     };
 
             self.proposals.write(id, proposal);
 
-            // allows the proposer to create a new proposal
-            self.latest_proposal_by_proposer.write(proposal.proposer, Zero::zero());
-
-            self.emit(Canceled { id });
+            self.emit(Canceled { id, breach_timestamp });
         }
 
         fn execute(ref self: ContractState, call: Call) -> Span<felt252> {

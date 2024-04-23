@@ -425,6 +425,14 @@ fn test_vote_after_voting_period_should_fail() {
 }
 
 #[test]
+#[should_panic(expected: ('DOES_NOT_EXIST', 'ENTRYPOINT_FAILED'))]
+fn test_cancel_fails_if_proposal_not_exists() {
+    let (_staker, _token, governor, _config) = setup();
+    let id = 1234;
+    governor.cancel(id);
+}
+
+#[test]
 fn test_cancel_by_proposer() {
     let (staker, token, governor, config) = setup();
 
@@ -454,11 +462,27 @@ fn test_cancel_by_proposer() {
 }
 
 #[test]
+#[should_panic(expected: ('ALREADY_CANCELED', 'ENTRYPOINT_FAILED'))]
+fn test_double_cancel_by_proposer() {
+    let (staker, token, governor, _config) = setup();
+
+    let proposer = proposer();
+
+    let id = create_proposal(governor, token, staker);
+
+    advance_time(30);
+
+    set_contract_address(proposer);
+    governor.cancel(id);
+    governor.cancel(id);
+}
+
+#[test]
 fn test_cancel_by_non_proposer() {
     let (staker, token, governor, config) = setup();
 
     let id = create_proposal(governor, token, staker);
-    staker.withdraw(proposer(), recipient: Zero::zero(), amount: 25);
+    staker.withdraw_amount(proposer(), recipient: Zero::zero(), amount: 25);
 
     // Fast forward one smoothing duration
     advance_time(config.voting_weight_smoothing_duration);
@@ -630,7 +654,7 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
     advance_time(config.voting_start_delay - (config.voting_weight_smoothing_duration / 3));
     // undelegate 1/3rd of a duration before voting starts, so only a third of voting power is counted for voter1
     set_contract_address(voter1);
-    staker.withdraw(voter1, recipient: Zero::zero(), amount: 49);
+    staker.withdraw_amount(voter1, recipient: Zero::zero(), amount: 49);
 
     advance_time((config.voting_weight_smoothing_duration / 3));
 
