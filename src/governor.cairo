@@ -307,6 +307,7 @@ pub mod Governor {
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
             assert(proposal.execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
+            assert(proposal.execution_state.canceled.is_zero(), 'PROPOSAL_CANCELED');
 
             let timestamp_current = get_block_timestamp();
             // we cannot tell if a proposal is executed if it is executed at timestamp 0

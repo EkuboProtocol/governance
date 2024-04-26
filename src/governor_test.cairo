@@ -564,6 +564,33 @@ fn test_execute_valid_proposal() {
 }
 
 #[test]
+#[should_panic(expected: ('PROPOSAL_CANCELED', 'ENTRYPOINT_FAILED'))]
+fn test_canceled_proposal_cannot_be_executed() {
+    let (staker, token, governor, config) = setup();
+    let id = create_proposal(governor, token, staker);
+
+    token.transfer(governor.contract_address, 100);
+
+    token.approve(staker.contract_address, config.quorum.into());
+    staker.stake(voter1());
+
+    advance_time(config.voting_start_delay);
+    set_contract_address(proposer());
+    governor.vote(id, true);
+    set_contract_address(voter1());
+    governor.vote(id, true);
+
+    set_contract_address(proposer());
+    governor.cancel(id);
+
+    advance_time(config.voting_period);
+
+    set_contract_address(anyone());
+
+    governor.execute(transfer_call(token: token, recipient: recipient(), amount: 100));
+}
+
+#[test]
 #[should_panic(expected: ('VOTING_NOT_ENDED', 'ENTRYPOINT_FAILED'))]
 fn test_execute_before_voting_ends_should_fail() {
     let (staker, token, governor, config) = setup();
