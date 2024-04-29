@@ -1,5 +1,5 @@
 use governance::utils::u64_tuple_storage::{ThreeU64TupleStorePacking, TwoU64TupleStorePacking};
-[use governance::utils::u64_tuple_storage_test::{assert_pack_unpack};
+use governance::utils::u64_tuple_storage_test::{assert_pack_unpack};
 use starknet::storage_access::{StorePacking};
 
 #[test]
