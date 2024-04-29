@@ -67,19 +67,23 @@ pub mod Staker {
         pub delegated_cumulative: u256,
     }
 
-    const TWO_POW_64: u128 = 0x10000000000000000_u128;
+    const TWO_POW_64: u128 = 0x10000000000000000;
+    const TWO_POW_192: u256 = 0x1000000000000000000000000000000000000000000000000;
+    const TWO_POW_192_DIVISOR: NonZero<u256> = 0x1000000000000000000000000000000000000000000000000;
 
     pub(crate) impl DelegatedSnapshotStorePacking of StorePacking<DelegatedSnapshot, felt252> {
         fn pack(value: DelegatedSnapshot) -> felt252 {
+            assert(value.delegated_cumulative < TWO_POW_192, 'MAX_DELEGATED_CUMULATIVE');
             (value.delegated_cumulative
                 + u256 { high: value.timestamp.into() * TWO_POW_64, low: 0 })
                 .try_into()
                 .unwrap()
         }
+
         fn unpack(value: felt252) -> DelegatedSnapshot {
-            let (timestamp, delegated_cumulative) = DivRem::<
-                u256
-            >::div_rem(value.into(), u256 { low: 0, high: TWO_POW_64 }.into().try_into().unwrap());
+            let (timestamp, delegated_cumulative) = DivRem::div_rem(
+                value.into(), TWO_POW_192_DIVISOR
+            );
             DelegatedSnapshot { timestamp: timestamp.low.try_into().unwrap(), delegated_cumulative }
         }
     }

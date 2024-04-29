@@ -10,6 +10,7 @@ use governance::staker::{
     Staker::{DelegatedSnapshotStorePacking, DelegatedSnapshot},
 };
 use governance::test::test_token::{TestToken, deploy as deploy_token};
+use governance::utils::u64_tuple_storage_test::{assert_pack_unpack};
 use starknet::testing::{set_contract_address, set_block_timestamp, pop_log};
 use starknet::{
     get_contract_address, syscalls::deploy_syscall, ClassHash, contract_address_const,
@@ -90,7 +91,7 @@ mod stake_withdraw {
 }
 
 #[test]
-fn test_governance_token_delegated_snapshot_store_pack() {
+fn test_staker_delegated_snapshot_store_pack() {
     assert_eq!(
         DelegatedSnapshotStorePacking::pack(
             DelegatedSnapshot { timestamp: 0, delegated_cumulative: 0 }
@@ -119,8 +120,8 @@ fn test_governance_token_delegated_snapshot_store_pack() {
     assert_eq!(
         DelegatedSnapshotStorePacking::pack(
             DelegatedSnapshot {
-                timestamp: 576460752303423488, // this timestamp equal to 2**59 is so large it's invalid
-                delegated_cumulative: 6277101735386680763835789423207666416102355444464034512895 // max u192
+                timestamp: 576460752303423488,
+                delegated_cumulative: 6277101735386680763835789423207666416102355444464034512895
             }
         ),
         3618502788666131113263695016908177884250476444008934042335404944711319814143
@@ -128,7 +129,7 @@ fn test_governance_token_delegated_snapshot_store_pack() {
 }
 
 #[test]
-fn test_governance_token_delegated_snapshot_store_unpack() {
+fn test_staker_delegated_snapshot_store_unpack() {
     assert_eq!(
         DelegatedSnapshotStorePacking::unpack(0),
         DelegatedSnapshot { timestamp: 0, delegated_cumulative: 0 }
@@ -152,7 +153,64 @@ fn test_governance_token_delegated_snapshot_store_unpack() {
         ),
         DelegatedSnapshot {
             timestamp: 576460752303423488,
-            delegated_cumulative: 6277101735386680763835789423207666416102355444464034512895
+            delegated_cumulative: 6277101735386680763835789423207666416102355444464034512895 // 2**192 - 1
+        }
+    );
+
+    assert_eq!(
+        DelegatedSnapshotStorePacking::unpack(
+            // max felt252
+            3618502788666131213697322783095070105623107215331596699973092056135872020480
+        ),
+        DelegatedSnapshot { timestamp: 576460752303423505, delegated_cumulative: 0 }
+    );
+}
+
+#[test]
+fn test_staker_delegated_snapshot_store_pack_unpack() {
+    assert_pack_unpack(DelegatedSnapshot { timestamp: 0, delegated_cumulative: 0 });
+    assert_pack_unpack(DelegatedSnapshot { timestamp: 0, delegated_cumulative: 1 });
+    assert_pack_unpack(DelegatedSnapshot { timestamp: 1, delegated_cumulative: 0 });
+    assert_pack_unpack(DelegatedSnapshot { timestamp: 1, delegated_cumulative: 1 });
+    assert_pack_unpack(
+        DelegatedSnapshot {
+            timestamp: 0,
+            delegated_cumulative: 0x1000000000000000000000000000000000000000000000000 - 1
+        }
+    );
+    assert_pack_unpack(
+        DelegatedSnapshot { timestamp: 576460752303423505, delegated_cumulative: 0 }
+    );
+    assert_pack_unpack(
+        DelegatedSnapshot {
+            timestamp: 576460752303423504,
+            delegated_cumulative: 0x1000000000000000000000000000000000000000000000000 - 1
+        }
+    );
+}
+
+#[test]
+#[should_panic(expected: ('Option::unwrap failed.',))]
+fn test_staker_delegated_snapshot_pack_max_timestamp_and_delegated() {
+    DelegatedSnapshotStorePacking::pack(
+        DelegatedSnapshot { timestamp: 576460752303423505, delegated_cumulative: 1 }
+    );
+}
+
+#[test]
+#[should_panic(expected: ('Option::unwrap failed.',))]
+fn test_staker_delegated_snapshot_pack_max_timestamp_plus_one() {
+    DelegatedSnapshotStorePacking::pack(
+        DelegatedSnapshot { timestamp: 576460752303423506, delegated_cumulative: 0 }
+    );
+}
+
+#[test]
+#[should_panic(expected: ('MAX_DELEGATED_CUMULATIVE',))]
+fn test_staker_delegated_snapshot_pack_max_delegated_cumulative() {
+    DelegatedSnapshotStorePacking::pack(
+        DelegatedSnapshot {
+            timestamp: 0, delegated_cumulative: 0x1000000000000000000000000000000000000000000000000
         }
     );
 }
