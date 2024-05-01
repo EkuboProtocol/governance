@@ -2,7 +2,7 @@ use governance::governor::{Config as GovernorConfig};
 use governance::governor::{IGovernorDispatcher};
 use governance::staker::{IStakerDispatcher};
 use governance::timelock::{ITimelockDispatcher, Config as TimelockConfig};
-use starknet::{ContractAddress};
+use starknet::{ClassHash, ContractAddress};
 
 #[derive(Copy, Drop, Serde)]
 pub struct DeploymentParameters {
@@ -20,8 +20,12 @@ pub struct DeploymentResult {
 // This contract makes it easy to deploy a set of governance contracts from a block explorer just by specifying parameters
 #[starknet::interface]
 pub trait IFactory<TContractState> {
+    fn get_staker_class_hash(self: @TContractState) -> ClassHash;
+    fn get_governor_class_hash(self: @TContractState) -> ClassHash;
+    fn get_timelock_class_hash(self: @TContractState) -> ClassHash;
+
     fn deploy(
-        self: @TContractState, token: ContractAddress, params: DeploymentParameters
+        ref self: TContractState, token: ContractAddress, params: DeploymentParameters
     ) -> DeploymentResult;
 }
 
@@ -29,10 +33,10 @@ pub trait IFactory<TContractState> {
 pub mod Factory {
     use core::result::{ResultTrait};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
-    use starknet::{ClassHash, syscalls::{deploy_syscall}, get_caller_address, get_contract_address};
+    use starknet::{syscalls::{deploy_syscall}, get_caller_address, get_contract_address};
     use super::{
-        IFactory, DeploymentParameters, DeploymentResult, ContractAddress, IGovernorDispatcher,
-        ITimelockDispatcher, IStakerDispatcher
+        ClassHash, IFactory, DeploymentParameters, DeploymentResult, ContractAddress,
+        IGovernorDispatcher, ITimelockDispatcher, IStakerDispatcher
     };
 
     #[storage]
@@ -56,8 +60,18 @@ pub mod Factory {
 
     #[abi(embed_v0)]
     impl FactoryImpl of IFactory<ContractState> {
+        fn get_staker_class_hash(self: @ContractState) -> ClassHash {
+            self.staker_class_hash.read()
+        }
+        fn get_governor_class_hash(self: @ContractState) -> ClassHash {
+            self.governor_class_hash.read()
+        }
+        fn get_timelock_class_hash(self: @ContractState) -> ClassHash {
+            self.timelock_class_hash.read()
+        }
+        
         fn deploy(
-            self: @ContractState, token: ContractAddress, params: DeploymentParameters
+            ref self: ContractState, token: ContractAddress, params: DeploymentParameters
         ) -> DeploymentResult {
             let mut staker_constructor_args: Array<felt252> = ArrayTrait::new();
             Serde::serialize(@(token), ref staker_constructor_args);
