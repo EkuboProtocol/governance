@@ -7,17 +7,14 @@ use core::result::{Result, ResultTrait};
 use core::serde::Serde;
 use core::traits::{TryInto};
 
-use governance::call_trait::{CallTrait};
 use governance::execution_state::{ExecutionState};
 use governance::governor::{
     IGovernorDispatcher, IGovernorDispatcherTrait, Governor, Config, ProposalInfo,
-    Governor::{hash_call}
+    Governor::{hash_calls}
 };
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::staker::{IStakerDispatcher, IStakerDispatcherTrait};
 use governance::staker_test::{setup as setup_staker};
-use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait};
-use governance::timelock_test::{single_call, transfer_call, deploy as deploy_timelock};
 use starknet::account::{Call};
 use starknet::{
     get_contract_address, syscalls::deploy_syscall, ClassHash, contract_address_const,
@@ -56,6 +53,18 @@ fn advance_time(by: u64) -> u64 {
     next
 }
 
+fn transfer_call(token: IERC20Dispatcher, recipient: ContractAddress, amount: u256) -> Call {
+    let mut calldata: Array<felt252> = ArrayTrait::new();
+    Serde::serialize(@(recipient, amount), ref calldata);
+
+    Call {
+        to: token.contract_address,
+        // transfer
+        selector: 0x83afd3f4caedc6eebf44246fe54e38c95e3179a5ec9ea81740eca5b482d12e,
+        calldata: calldata.span()
+    }
+}
+
 fn deploy(staker: IStakerDispatcher, config: Config) -> IGovernorDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
     Serde::serialize(@(staker, config), ref constructor_args);
@@ -75,6 +84,8 @@ fn setup() -> (IStakerDispatcher, IERC20Dispatcher, IGovernorDispatcher, Config)
         voting_weight_smoothing_duration: 43200,
         quorum: 500,
         proposal_creation_threshold: 50,
+        execution_delay: 86400,
+        execution_window: 604800,
     };
     let governor = deploy(staker, config);
 
@@ -102,7 +113,7 @@ fn create_proposal_with_call(
 
     let address_before = get_contract_address();
     set_contract_address(proposer());
-    let id = governor.propose(call);
+    let id = governor.propose(array![call].span());
     set_contract_address(address_before);
     id
 }
@@ -110,14 +121,17 @@ fn create_proposal_with_call(
 #[test]
 fn test_hash_call() {
     assert_eq!(
-        hash_call(
-            @Call {
-                to: contract_address_const::<'to'>(),
-                selector: 'selector',
-                calldata: array![1, 2, 3].span()
-            }
+        hash_calls(
+            @array![
+                Call {
+                    to: contract_address_const::<'to'>(),
+                    selector: 'selector',
+                    calldata: array![1, 2, 3].span()
+                }
+            ]
+                .span()
         ),
-        1740338028730353233444923211377046042821284356597274888496499093775825440467
+        207204210864586401596949218336835721921077270974490243136789894626374071116
     );
 }
 
@@ -140,14 +154,14 @@ fn test_propose() {
     advance_time(config.voting_weight_smoothing_duration);
 
     set_contract_address(proposer());
-    let id = governor.propose(transfer_call(token, recipient(), amount: 100));
+    let id = governor.propose(array![transfer_call(token, recipient(), amount: 100)].span());
 
     let proposal = governor.get_proposal(id);
 
     assert_eq!(
         proposal,
         ProposalInfo {
-            call_hash: hash_call(@transfer_call(token, recipient(), amount: 100)),
+            calls_hash: hash_calls(@array![transfer_call(token, recipient(), amount: 100)].span()),
             proposer: proposer(),
             execution_state: ExecutionState {
                 created: config.voting_weight_smoothing_duration, executed: 0, canceled: 0
@@ -168,8 +182,8 @@ fn test_propose_has_active_proposal() {
     advance_time(config.voting_weight_smoothing_duration);
 
     set_contract_address(proposer());
-    governor.propose(transfer_call(token, recipient(), amount: 100));
-    governor.propose(transfer_call(token, recipient(), amount: 101));
+    governor.propose(array![transfer_call(token, recipient(), amount: 100)].span());
+    governor.propose(array![transfer_call(token, recipient(), amount: 101)].span());
 }
 
 #[test]
@@ -181,9 +195,9 @@ fn test_proposer_can_cancel_and_re_propose() {
     advance_time(config.voting_weight_smoothing_duration);
 
     set_contract_address(proposer());
-    let id_1 = governor.propose(transfer_call(token, recipient(), amount: 100));
+    let id_1 = governor.propose(array![transfer_call(token, recipient(), amount: 100)].span());
     governor.cancel(id_1);
-    let id_2 = governor.propose(transfer_call(token, recipient(), amount: 100));
+    let id_2 = governor.propose(array![transfer_call(token, recipient(), amount: 100)].span());
     assert_ne!(id_1, id_2);
 }
 
@@ -196,9 +210,9 @@ fn test_proposer_can_wait_out_original_proposal_and_re_propose() {
     advance_time(config.voting_weight_smoothing_duration);
 
     set_contract_address(proposer());
-    let id_1 = governor.propose(transfer_call(token, recipient(), amount: 100));
+    let id_1 = governor.propose(array![transfer_call(token, recipient(), amount: 100)].span());
     advance_time(config.voting_period + config.voting_start_delay);
-    let id_2 = governor.propose(transfer_call(token, recipient(), amount: 100));
+    let id_2 = governor.propose(array![transfer_call(token, recipient(), amount: 100)].span());
     assert_ne!(id_1, id_2);
 }
 
@@ -211,9 +225,9 @@ fn test_proposer_can_cancel_and_propose_different() {
     advance_time(config.voting_weight_smoothing_duration);
 
     set_contract_address(proposer());
-    let id = governor.propose(transfer_call(token, recipient(), amount: 100));
+    let id = governor.propose(array![transfer_call(token, recipient(), amount: 100)].span());
     governor.cancel(id);
-    governor.propose(transfer_call(token, recipient(), amount: 101));
+    governor.propose(array![transfer_call(token, recipient(), amount: 101)].span());
 }
 
 #[test]
@@ -235,7 +249,7 @@ fn test_propose_below_threshold_should_fail() {
     // since time starts at 0, we have to advance time by the duration just so the staker doesn't revert on time - voting_weight_smoothing_duration
     advance_time(config.voting_weight_smoothing_duration);
     // no tokens delegated to the proposer
-    governor.propose(transfer_call(token: token, recipient: recipient(), amount: 100));
+    governor.propose(array![transfer_call(token, recipient(), amount: 100)].span());
 }
 
 #[test]
@@ -336,9 +350,9 @@ fn test_describe_proposal_fails_if_executed() {
     governor.vote(id, true);
     set_contract_address(voter1());
     governor.vote(id, true);
-    advance_time(config.voting_period);
+    advance_time(config.voting_period + config.execution_delay);
     set_contract_address(anyone());
-    governor.execute(id, transfer_call(token: token, recipient: anyone(), amount: 0));
+    governor.execute(id, array![transfer_call(token, anyone(), amount: 0)].span());
 
     set_contract_address(proposer());
     governor.describe(id, "This proposal is already executed");
@@ -466,7 +480,7 @@ fn test_cancel_by_proposer() {
     assert_eq!(
         proposal,
         ProposalInfo {
-            call_hash: hash_call(@transfer_call(token, recipient(), amount: 100)),
+            calls_hash: hash_calls(@array![transfer_call(token, recipient(), amount: 100)].span()),
             proposer: proposer(),
             execution_state: ExecutionState {
                 created: config.voting_weight_smoothing_duration,
@@ -514,7 +528,9 @@ fn test_cancel_by_non_proposer() {
     assert_eq!(
         proposal,
         ProposalInfo {
-            call_hash: hash_call(@transfer_call(token, recipient(), amount: 100)),
+            calls_hash: hash_calls(
+                @array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+            ),
             proposer: proposer(),
             execution_state: ExecutionState {
                 created: config.voting_weight_smoothing_duration,
@@ -571,11 +587,14 @@ fn test_execute_valid_proposal() {
     set_contract_address(voter1());
     governor.vote(id, true);
 
-    advance_time(config.voting_period);
+    advance_time(config.voting_period + config.execution_delay);
 
     set_contract_address(anyone());
 
-    governor.execute(id, transfer_call(token: token, recipient: recipient(), amount: 100));
+    governor
+        .execute(
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+        );
 
     let proposal = governor.get_proposal(id);
     assert(proposal.execution_state.executed.is_non_zero(), 'execute failed');
@@ -606,7 +625,10 @@ fn test_canceled_proposal_cannot_be_executed() {
 
     set_contract_address(anyone());
 
-    governor.execute(id, transfer_call(token: token, recipient: recipient(), amount: 100));
+    governor
+        .execute(
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+        );
 }
 
 #[test]
@@ -618,8 +640,10 @@ fn test_execute_before_voting_ends_should_fail() {
     advance_time(config.voting_start_delay);
 
     // Execute the proposal. The vote is still active, this should fail.
-    let transfer_call = transfer_call(token: token, recipient: recipient(), amount: 100);
-    governor.execute(id, transfer_call);
+    governor
+        .execute(
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+        );
 }
 
 
@@ -629,12 +653,14 @@ fn test_execute_quorum_not_met_should_fail() {
     let (staker, token, governor, config) = setup();
     let id = create_proposal(governor, token, staker);
 
-    advance_time(config.voting_start_delay + config.voting_period);
+    advance_time(config.voting_start_delay + config.voting_period + config.execution_delay);
     set_contract_address(proposer());
 
     // Execute the proposal. The quorum was not met, this should fail.
-    let transfer_call = transfer_call(token: token, recipient: recipient(), amount: 100);
-    governor.execute(id, transfer_call);
+    governor
+        .execute(
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+        );
 }
 
 #[test]
@@ -651,7 +677,8 @@ fn test_execute_no_majority_should_fail() {
     advance_time(config.voting_weight_smoothing_duration);
 
     set_contract_address(voter2());
-    let id = governor.propose(transfer_call(token: token, recipient: recipient(), amount: 100));
+    let id = governor
+        .propose(array![transfer_call(token: token, recipient: recipient(), amount: 100)].span());
 
     advance_time(config.voting_start_delay);
 
@@ -668,10 +695,13 @@ fn test_execute_no_majority_should_fail() {
     assert_eq!(proposal.yea, 499);
     assert_eq!(proposal.nay, 501);
 
-    advance_time(config.voting_period);
+    advance_time(config.voting_period + config.execution_delay);
 
     // Execute the proposal. The majority of votes are no, this should fail.
-    governor.execute(id, transfer_call(token: token, recipient: recipient(), amount: 100));
+    governor
+        .execute(
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+        );
 }
 
 #[test]
@@ -695,7 +725,8 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
     // the full amount of delegation should be vested over 30 seconds
     advance_time(config.voting_weight_smoothing_duration);
 
-    let id = governor.propose(transfer_call(token: token, recipient: recipient(), amount: 100));
+    let id = governor
+        .propose(array![transfer_call(token: token, recipient: recipient(), amount: 100)].span());
 
     advance_time(config.voting_start_delay - (config.voting_weight_smoothing_duration / 3));
     // undelegate 1/3rd of a duration before voting starts, so only a third of voting power is counted for voter1
@@ -717,10 +748,13 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
     assert_eq!(proposal.yea, 32);
     assert_eq!(proposal.nay, 51);
 
-    advance_time(config.voting_period);
+    advance_time(config.voting_period + config.execution_delay);
 
     // Execute the proposal. The quorum was not met, this should fail.
-    governor.execute(id, transfer_call(token: token, recipient: recipient(), amount: 100));
+    governor
+        .execute(
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+        );
 }
 
 #[test]
@@ -737,18 +771,21 @@ fn test_execute_already_executed_should_fail() {
     advance_time(config.voting_start_delay);
     set_contract_address(proposer());
     governor.vote(id, true); // vote so that proposal reaches quorum
-    advance_time(config.voting_period);
+    advance_time(config.voting_period + config.execution_delay);
 
     set_contract_address(anyone());
-    governor.execute(id, transfer_call(token: token, recipient: recipient(), amount: 100));
     governor
         .execute(
-            id, transfer_call(token: token, recipient: recipient(), amount: 100)
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+        );
+    governor
+        .execute(
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
         ); // Try to execute again
 }
 
 #[test]
-#[should_panic(expected: ('CALL_HASH_MISMATCH', 'ENTRYPOINT_FAILED'))]
+#[should_panic(expected: ('CALLS_HASH_MISMATCH', 'ENTRYPOINT_FAILED'))]
 fn test_execute_invalid_call_id() {
     let (staker, token, governor, config) = setup();
 
@@ -764,5 +801,8 @@ fn test_execute_invalid_call_id() {
     advance_time(config.voting_period);
 
     set_contract_address(anyone());
-    governor.execute(id, transfer_call(token: token, recipient: recipient(), amount: 101));
+    governor
+        .execute(
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 101)].span()
+        );
 }

@@ -47,19 +47,7 @@ Contracts in this repository are designed so that they may be used together _or_
 - Proposers may only have one active proposal at any time
 - The only thing stored regarding a proposal is the call that it makes, along with the metadata
 - The single call can be to `Timelock#queue(calls)`, which may execute multiple calls
-- The contract has no owner, and cannot be updated nor re-configured
-
-#### Timelock
-
-`Timelock` allows a list of calls to be executed after a configurable delay by its owner
-
-- Anyone can execute the calls after a period of time, once queued by the owner
-- The contract has an owner, and may be upgraded or configured via a call to self
-- Designed to be the principal agent in representation of the DAO, i.e. hold all assets
-
-#### Factory
-
-`Factory` creates the set of governance contracts (`Staker`, `Timelock`, `Governor`) in a single call.
+- The contract can be reconfigured or upgraded via calls to self
 
 ## Testing
 
