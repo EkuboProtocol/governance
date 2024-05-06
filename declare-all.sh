@@ -48,17 +48,10 @@ echo "Declaring Staker"
 STAKER_CLASS_HASH=$(declare_class_hash Staker)
 echo "Declaring Governor"
 GOVERNOR_CLASS_HASH=$(declare_class_hash Governor)
-echo "Declaring Timelock"
-TIMELOCK_CLASS_HASH=$(declare_class_hash Timelock)
-echo "Declaring Factory"
-FACTORY_CLASS_HASH=$(declare_class_hash Factory)
 
 echo "AirdropClaimCheck @ $AIRDROP_CLAIM_CHECK_CLASS_HASH"
 echo "Airdrop @ $AIRDROP_CLASS_HASH"
 echo "Staker @ $STAKER_CLASS_HASH"
 echo "Governor @ $GOVERNOR_CLASS_HASH"
-echo "Timelock @ $TIMELOCK_CLASS_HASH"
-echo "Factory @ $FACTORY_CLASS_HASH"
 
 # starkli deploy --max-fee 0.001 --watch --network "$NETWORK" --keystore-password "$STARKNET_KEYSTORE_PASSWORD" "$AIRDROP_CLAIM_CHECK_CLASS_HASH"
-# starkli deploy --max-fee 0.001 --watch --network "$NETWORK" --keystore-password "$STARKNET_KEYSTORE_PASSWORD" "$FACTORY_CLASS_HASH" "$STAKER_CLASS_HASH" "$GOVERNOR_CLASS_HASH" "$TIMELOCK_CLASS_HASH"
