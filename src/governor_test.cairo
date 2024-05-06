@@ -77,7 +77,7 @@ fn deploy(staker: IStakerDispatcher, config: Config) -> IGovernorDispatcher {
 }
 
 fn setup() -> (IStakerDispatcher, IERC20Dispatcher, IGovernorDispatcher, Config) {
-    let (staker, token) = setup_staker(1000);
+    let (staker, token) = setup_staker(1000000);
     let config = Config {
         voting_start_delay: 86400,
         voting_period: 604800,
@@ -668,9 +668,9 @@ fn test_execute_quorum_not_met_should_fail() {
 fn test_execute_no_majority_should_fail() {
     let (staker, token, governor, config) = setup();
 
-    token.approve(staker.contract_address, 499);
+    token.approve(staker.contract_address, config.quorum.into());
     staker.stake(voter1());
-    token.approve(staker.contract_address, 501);
+    token.approve(staker.contract_address, (config.quorum + 1).into());
     staker.stake(voter2());
 
     // now voter2 has enough weighted voting power to propose
@@ -686,18 +686,67 @@ fn test_execute_no_majority_should_fail() {
     set_contract_address(voter1());
     governor.vote(id, true);
     let proposal = governor.get_proposal(id);
-    assert_eq!(proposal.yea, 499);
+    assert_eq!(proposal.yea, config.quorum);
     assert_eq!(proposal.nay, 0);
 
     set_contract_address(voter2());
     governor.vote(id, false);
     let proposal = governor.get_proposal(id);
-    assert_eq!(proposal.yea, 499);
-    assert_eq!(proposal.nay, 501);
+    assert_eq!(proposal.yea, config.quorum);
+    assert_eq!(proposal.nay, config.quorum + 1);
 
     advance_time(config.voting_period + config.execution_delay);
 
     // Execute the proposal. The majority of votes are no, this should fail.
+    governor
+        .execute(
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+        );
+}
+
+#[test]
+#[should_panic(expected: ('EXECUTION_WINDOW_NOT_STARTED', 'ENTRYPOINT_FAILED'))]
+fn test_execute_before_execution_window_begins() {
+    let (staker, token, governor, config) = setup();
+
+    token.approve(staker.contract_address, config.quorum.into());
+    staker.stake(voter1());
+
+    // now voter2 has enough weighted voting power to propose
+    advance_time(config.voting_weight_smoothing_duration);
+
+    set_contract_address(voter1());
+    let id = governor
+        .propose(array![transfer_call(token: token, recipient: recipient(), amount: 100)].span());
+    advance_time(config.voting_start_delay);
+    governor.vote(id, true);
+
+    advance_time(config.voting_period);
+    governor
+        .execute(
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+        );
+}
+
+
+#[test]
+#[should_panic(expected: ('EXECUTION_WINDOW_OVER', 'ENTRYPOINT_FAILED'))]
+fn test_execute_after_execution_window_ends() {
+    let (staker, token, governor, config) = setup();
+
+    token.approve(staker.contract_address, config.quorum.into());
+    staker.stake(voter1());
+
+    // now voter2 has enough weighted voting power to propose
+    advance_time(config.voting_weight_smoothing_duration);
+
+    set_contract_address(voter1());
+    let id = governor
+        .propose(array![transfer_call(token: token, recipient: recipient(), amount: 100)].span());
+    advance_time(config.voting_start_delay);
+    governor.vote(id, true);
+
+    advance_time(config.voting_period + config.execution_delay + config.execution_window);
     governor
         .execute(
             id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
