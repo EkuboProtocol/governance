@@ -9,7 +9,7 @@ use governance::factory::{
 };
 use governance::factory_test::{deploy as deploy_factory};
 use governance::governor::{Config as GovernorConfig};
-use governance::governor::{Governor, Governor::{to_call_id}};
+use governance::governor::{Governor};
 use governance::governor::{IGovernorDispatcherTrait};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::staker::{Staker, IStakerDispatcherTrait};
@@ -76,11 +76,12 @@ impl SetupTraitImpl of SetupTrait {
         set_contract_address(address_before);
     }
 
-    fn create_proposal_from(self: @Setup, delegate: ContractAddress, call: Call) {
+    fn create_proposal_from(self: @Setup, delegate: ContractAddress, call: Call) -> felt252 {
         let address_before = get_contract_address();
         set_contract_address(delegate);
-        (*self.deployment.governor).propose(call);
+        let id = (*self.deployment.governor).propose(call);
         set_contract_address(address_before);
+        id
     }
 
     fn vote_from(self: @Setup, delegate: ContractAddress, id: felt252, yea: bool) {
@@ -107,28 +108,17 @@ fn test_create_proposal_that_fails() {
     s.delegate_amount(delegate_no, delegated_amount + 1);
 
     advance_time(s.deployment.governor.get_config().voting_weight_smoothing_duration);
-    s
+    let id = s
         .create_proposal_from(
             delegate_yes,
             Call { to: delegate_yes, selector: 'wont-succeed', calldata: array![].span() }
         );
 
-    let id = to_call_id(
-        @Call { to: delegate_yes, selector: 'wont-succeed', calldata: array![].span() }
-    );
-
     advance_time(s.deployment.governor.get_config().voting_start_delay);
     s.vote_from(delegate_yes, id, true);
     s.vote_from(delegate_no, id, false);
 
-    let proposal_info = s
-        .deployment
-        .governor
-        .get_proposal(
-            to_call_id(
-                @Call { to: delegate_yes, selector: 'wont-succeed', calldata: array![].span() }
-            )
-        );
+    let proposal_info = s.deployment.governor.get_proposal(id);
 
     assert_eq!(proposal_info.proposer, delegate_yes);
     assert_eq!(
@@ -147,5 +137,7 @@ fn test_create_proposal_that_fails() {
     s
         .deployment
         .governor
-        .execute(id, Call { to: delegate_yes, selector: 'wont-succeed', calldata: array![].span() });
+        .execute(
+            id, Call { to: delegate_yes, selector: 'wont-succeed', calldata: array![].span() }
+        );
 }

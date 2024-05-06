@@ -10,7 +10,7 @@ use starknet::{ContractAddress, storage_access::{StorePacking}};
 #[derive(Copy, Drop, Serde, starknet::Store, PartialEq, Debug)]
 pub struct ProposalInfo {
     // the ID of the call that this proposal represents
-    pub call_id: felt252,
+    pub call_hash: felt252,
     // the address of the proposer
     pub proposer: ContractAddress,
     // the execution state of the proposal
@@ -150,9 +150,9 @@ pub mod Governor {
             .finalize()
     }
 
-    pub fn to_call_id(call: @Call) -> felt252 {
+    pub fn hash_call(call: @Call) -> felt252 {
         PoseidonTrait::new()
-            .update(selector!("governance::governor::Governor::to_call_id"))
+            .update(selector!("governance::governor::Governor::hash_call"))
             .update_with(call)
             .finalize()
     }
@@ -199,7 +199,7 @@ pub mod Governor {
                 .write(
                     id,
                     ProposalInfo {
-                        call_id: to_call_id(@call),
+                        call_hash: hash_call(@call),
                         proposer,
                         execution_state: ExecutionState {
                             created: timestamp_current,
@@ -317,12 +317,12 @@ pub mod Governor {
         }
 
         fn execute(ref self: ContractState, id: felt252, call: Call) -> Span<felt252> {
-            let call_id = to_call_id(@call);
+            let call_hash = hash_call(@call);
 
             let config = self.config.read();
             let mut proposal = self.proposals.read(id);
 
-            assert(proposal.call_id == call_id, 'CALL_ID_MISMATCH');
+            assert(proposal.call_hash == call_hash, 'CALL_HASH_MISMATCH');
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
             assert(proposal.execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
             assert(proposal.execution_state.canceled.is_zero(), 'PROPOSAL_CANCELED');

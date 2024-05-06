@@ -11,7 +11,7 @@ use governance::call_trait::{CallTrait};
 use governance::execution_state::{ExecutionState};
 use governance::governor::{
     IGovernorDispatcher, IGovernorDispatcherTrait, Governor, Config, ProposalInfo,
-    Governor::{to_call_id}
+    Governor::{hash_call}
 };
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::staker::{IStakerDispatcher, IStakerDispatcherTrait};
@@ -108,16 +108,16 @@ fn create_proposal_with_call(
 }
 
 #[test]
-fn test_to_call_id() {
+fn test_hash_call() {
     assert_eq!(
-        to_call_id(
+        hash_call(
             @Call {
                 to: contract_address_const::<'to'>(),
                 selector: 'selector',
                 calldata: array![1, 2, 3].span()
             }
         ),
-        1066148822741379800704886069792510413495941578585564382784326423848733446336
+        1740338028730353233444923211377046042821284356597274888496499093775825440467
     );
 }
 
@@ -147,7 +147,7 @@ fn test_propose() {
     assert_eq!(
         proposal,
         ProposalInfo {
-            call_id: to_call_id(@transfer_call(token, recipient(), amount: 100)),
+            call_hash: hash_call(@transfer_call(token, recipient(), amount: 100)),
             proposer: proposer(),
             execution_state: ExecutionState {
                 created: config.voting_weight_smoothing_duration, executed: 0, canceled: 0
@@ -218,9 +218,10 @@ fn test_proposer_can_cancel_and_propose_different() {
 
 #[test]
 fn test_propose_already_exists_should_suceed() {
-    let (staker, token, governor, _config) = setup();
+    let (staker, token, governor, config) = setup();
 
     let id_1 = create_proposal(governor, token, staker);
+    advance_time(config.voting_start_delay + config.voting_period);
     let id_2 = create_proposal(governor, token, staker);
     assert_ne!(id_1, id_2);
 }
@@ -465,7 +466,7 @@ fn test_cancel_by_proposer() {
     assert_eq!(
         proposal,
         ProposalInfo {
-            call_id: to_call_id(@transfer_call(token, recipient(), amount: 100)),
+            call_hash: hash_call(@transfer_call(token, recipient(), amount: 100)),
             proposer: proposer(),
             execution_state: ExecutionState {
                 created: config.voting_weight_smoothing_duration,
@@ -513,7 +514,7 @@ fn test_cancel_by_non_proposer() {
     assert_eq!(
         proposal,
         ProposalInfo {
-            call_id: to_call_id(@transfer_call(token, recipient(), amount: 100)),
+            call_hash: hash_call(@transfer_call(token, recipient(), amount: 100)),
             proposer: proposer(),
             execution_state: ExecutionState {
                 created: config.voting_weight_smoothing_duration,
@@ -747,7 +748,7 @@ fn test_execute_already_executed_should_fail() {
 }
 
 #[test]
-#[should_panic(expected: ('CALL_ID_MISMATCH', 'ENTRYPOINT_FAILED'))]
+#[should_panic(expected: ('CALL_HASH_MISMATCH', 'ENTRYPOINT_FAILED'))]
 fn test_execute_invalid_call_id() {
     let (staker, token, governor, config) = setup();
 
