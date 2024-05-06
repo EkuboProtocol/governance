@@ -7,6 +7,8 @@ pub mod call_trait;
 #[cfg(test)]
 pub(crate) mod call_trait_test;
 pub mod execution_state;
+#[cfg(test)]
+pub(crate) mod execution_state_test;
 pub mod governor;
 #[cfg(test)]
 pub(crate) mod governor_test;
@@ -18,9 +20,6 @@ pub(crate) mod interfaces {
 }
 pub(crate) mod utils {
     pub(crate) mod exp2;
-    pub(crate) mod u64_tuple_storage;
-    #[cfg(test)]
-    pub(crate) mod u64_tuple_storage_test;
 }
 
 #[cfg(test)]

@@ -3,6 +3,7 @@ use core::num::traits::zero::{Zero};
 use core::option::{OptionTrait};
 use core::result::{Result, ResultTrait};
 use core::traits::{TryInto};
+use governance::execution_state_test::{assert_pack_unpack};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 
 use governance::staker::{
@@ -10,7 +11,6 @@ use governance::staker::{
     Staker::{DelegatedSnapshotStorePacking, DelegatedSnapshot},
 };
 use governance::test::test_token::{TestToken, deploy as deploy_token};
-use governance::utils::u64_tuple_storage_test::{assert_pack_unpack};
 use starknet::testing::{set_contract_address, set_block_timestamp, pop_log};
 use starknet::{
     get_contract_address, syscalls::deploy_syscall, ClassHash, contract_address_const,

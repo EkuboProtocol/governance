@@ -71,7 +71,6 @@ pub trait IGovernor<TContractState> {
     // Get the proposal info for the given proposal id.
     fn get_proposal(self: @TContractState, id: felt252) -> ProposalInfo;
 
-
     // Configure the delay and the window for call execution. This must be self-called via #queue.
     fn configure(ref self: TContractState, config: Config);
 
