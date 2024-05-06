@@ -122,9 +122,10 @@ pub mod Governor {
         pub breach_timestamp: u64,
     }
 
-    #[derive(starknet::Event, Drop)]
+    #[derive(starknet::Event, Drop, PartialEq, Debug)]
     pub struct Executed {
         pub id: felt252,
+        pub result_data: Span<Span<felt252>>,
     }
 
     #[derive(starknet::Event, Drop)]
@@ -383,9 +384,11 @@ pub mod Governor {
                 results.append(call.execute());
             };
 
-            self.emit(Executed { id });
+            let result_span = results.span();
 
-            results.span()
+            self.emit(Executed { id, result_data: result_span });
+
+            result_span
         }
 
         fn get_config(self: @ContractState) -> Config {

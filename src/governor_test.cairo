@@ -807,6 +807,110 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
 }
 
 #[test]
+#[should_panic(expected: ('QUORUM_NOT_MET', 'ENTRYPOINT_FAILED'))]
+fn test_quorum_counts_only_yes_votes_not_met() {
+    let (staker, token, governor, config) = setup();
+
+    token.approve(staker.contract_address, config.quorum.into());
+    staker.stake_amount(voter1(), (config.quorum - 1));
+    staker.stake_amount(voter2(), 1);
+
+    // the full amount of delegation should be vested over 30 seconds
+    advance_time(config.voting_weight_smoothing_duration);
+
+    set_contract_address(voter1());
+    let id = governor
+        .propose(array![transfer_call(token: token, recipient: recipient(), amount: 100)].span());
+
+    advance_time(config.voting_start_delay);
+    governor.vote(id, true);
+
+    set_contract_address(voter2());
+    governor.vote(id, false);
+
+    advance_time(config.voting_period + config.execution_delay);
+
+    governor
+        .execute(
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+        );
+}
+
+#[test]
+fn test_quorum_counts_only_yes_votes_exactly_met() {
+    let (staker, token, governor, config) = setup();
+    let calls = array![
+        transfer_call(token: token, recipient: recipient(), amount: 150),
+        transfer_call(token: token, recipient: recipient(), amount: 50)
+    ]
+        .span();
+    // so execution can succeed
+    token.transfer(governor.contract_address, 200);
+
+    token.approve(staker.contract_address, config.quorum.into());
+    staker.stake_amount(voter1(), (config.quorum - 1));
+    staker.stake_amount(voter2(), 1);
+
+    // the full amount of delegation should be vested over 30 seconds
+    advance_time(config.voting_weight_smoothing_duration);
+
+    set_contract_address(voter1());
+    let id = governor.propose(calls);
+
+    advance_time(config.voting_start_delay);
+    governor.vote(id, true);
+
+    set_contract_address(voter2());
+    governor.vote(id, true);
+
+    advance_time(config.voting_period + config.execution_delay);
+
+    governor.execute(id, calls);
+}
+
+#[test]
+fn test_execute_emits_logs_from_data() {
+    let (staker, token, governor, config) = setup();
+    let calls = array![
+        transfer_call(token: token, recipient: recipient(), amount: 150),
+        transfer_call(token: token, recipient: recipient(), amount: 50)
+    ]
+        .span();
+    // so execution can succeed
+    token.transfer(governor.contract_address, 200);
+
+    token.approve(staker.contract_address, config.quorum.into());
+    staker.stake_amount(voter1(), (config.quorum - 1));
+    staker.stake_amount(voter2(), 1);
+
+    // the full amount of delegation should be vested over 30 seconds
+    advance_time(config.voting_weight_smoothing_duration);
+
+    set_contract_address(voter1());
+    let id = governor.propose(calls);
+
+    advance_time(config.voting_start_delay);
+    governor.vote(id, true);
+
+    set_contract_address(voter2());
+    governor.vote(id, true);
+
+    advance_time(config.voting_period + config.execution_delay);
+
+    let result = governor.execute(id, calls);
+    let expected = array![array![1_felt252].span(), array![1].span()].span();
+    // both transfers suceeded
+    assert_eq!(result, expected);
+
+    pop_log::<Governor::Proposed>(governor.contract_address).unwrap();
+    pop_log::<Governor::Voted>(governor.contract_address).unwrap();
+    pop_log::<Governor::Voted>(governor.contract_address).unwrap();
+    // and the governor emitted it too
+    let executed = pop_log::<Governor::Executed>(governor.contract_address).unwrap();
+    assert_eq!(executed, Governor::Executed { id, result_data: expected });
+}
+
+#[test]
 #[should_panic(expected: ('ALREADY_EXECUTED', 'ENTRYPOINT_FAILED'))]
 fn test_execute_already_executed_should_fail() {
     let (staker, token, governor, config) = setup();
