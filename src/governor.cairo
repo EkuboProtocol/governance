@@ -71,7 +71,7 @@ pub trait IGovernor<TContractState> {
     // Get the proposal info for the given proposal id.
     fn get_proposal(self: @TContractState, id: felt252) -> ProposalInfo;
 
-    // Replace the code at this address. This must be self-called via #queue.
+    // Replace the code at this address. This must be self-called via a proposal.
     fn upgrade(ref self: TContractState, class_hash: ClassHash);
 }
 
