@@ -69,7 +69,7 @@ pub mod Factory {
         fn get_timelock_class_hash(self: @ContractState) -> ClassHash {
             self.timelock_class_hash.read()
         }
-        
+
         fn deploy(
             ref self: ContractState, token: ContractAddress, params: DeploymentParameters
         ) -> DeploymentResult {

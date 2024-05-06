@@ -63,10 +63,11 @@ pub struct ExecutionWindow {
 
 #[starknet::contract]
 pub mod Timelock {
-    use core::hash::LegacyHash;
+    use core::hash::{HashStateExTrait, HashStateTrait};
     use core::num::traits::zero::{Zero};
-    use core::result::ResultTrait;
-    use governance::call_trait::{CallTrait, HashCall};
+    use core::poseidon::{PoseidonTrait, HashState as PoseidonHashState};
+    use core::result::{ResultTrait};
+    use governance::call_trait::{CallTrait, HashSerializable};
     use starknet::{
         get_caller_address, get_contract_address, SyscallResult,
         syscalls::{call_contract_syscall, replace_class_syscall}, get_block_timestamp
@@ -117,12 +118,11 @@ pub mod Timelock {
     // Take a list of calls and convert it to a unique identifier for the execution
     // Two lists of calls will always have the same ID if they are equivalent
     // A list of calls can only be queued and executed once. To make 2 different calls, add an empty call.
-    pub(crate) fn to_id(mut calls: Span<Call>) -> felt252 {
-        let mut state = selector!("ekubo::governance::Timelock::to_id");
-        while let Option::Some(call) = calls.pop_front() {
-            state = LegacyHash::hash(state, call);
-        };
-        state
+    pub fn to_calls_id(mut calls: Span<Call>) -> felt252 {
+        PoseidonTrait::new()
+            .update(selector!("governance::timelock::Timelock::to_calls_id"))
+            .update_with(@calls)
+            .finalize()
     }
 
     #[generate_trait]
@@ -141,7 +141,7 @@ pub mod Timelock {
         fn queue(ref self: ContractState, calls: Span<Call>) -> felt252 {
             self.check_owner();
 
-            let id = to_id(calls);
+            let id = to_calls_id(calls);
             let execution_state = self.execution_state.read(id);
 
             assert(execution_state.canceled.is_zero(), 'HAS_BEEN_CANCELED');
@@ -180,7 +180,7 @@ pub mod Timelock {
         }
 
         fn execute(ref self: ContractState, mut calls: Span<Call>) -> Array<Span<felt252>> {
-            let id = to_id(calls);
+            let id = to_calls_id(calls);
 
             let execution_state = self.execution_state.read(id);
 
