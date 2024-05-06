@@ -147,6 +147,7 @@ fn test_propose() {
     assert_eq!(
         proposal,
         ProposalInfo {
+            call_id: to_call_id(@transfer_call(token, recipient(), amount: 100)),
             proposer: proposer(),
             execution_state: ExecutionState {
                 created: config.voting_weight_smoothing_duration, executed: 0, canceled: 0
@@ -172,8 +173,7 @@ fn test_propose_has_active_proposal() {
 }
 
 #[test]
-#[should_panic(expected: ('ALREADY_PROPOSED', 'ENTRYPOINT_FAILED'))]
-fn test_proposer_cannot_cancel_and_re_propose() {
+fn test_proposer_can_cancel_and_re_propose() {
     let (staker, token, governor, config) = setup();
 
     token.approve(staker.contract_address, config.proposal_creation_threshold.into());
@@ -181,9 +181,25 @@ fn test_proposer_cannot_cancel_and_re_propose() {
     advance_time(config.voting_weight_smoothing_duration);
 
     set_contract_address(proposer());
-    let id = governor.propose(transfer_call(token, recipient(), amount: 100));
-    governor.cancel(id);
-    governor.propose(transfer_call(token, recipient(), amount: 100));
+    let id_1 = governor.propose(transfer_call(token, recipient(), amount: 100));
+    governor.cancel(id_1);
+    let id_2 = governor.propose(transfer_call(token, recipient(), amount: 100));
+    assert_ne!(id_1, id_2);
+}
+
+#[test]
+fn test_proposer_can_wait_out_original_proposal_and_re_propose() {
+    let (staker, token, governor, config) = setup();
+
+    token.approve(staker.contract_address, config.proposal_creation_threshold.into());
+    staker.stake(proposer());
+    advance_time(config.voting_weight_smoothing_duration);
+
+    set_contract_address(proposer());
+    let id_1 = governor.propose(transfer_call(token, recipient(), amount: 100));
+    advance_time(config.voting_period + config.voting_start_delay);
+    let id_2 = governor.propose(transfer_call(token, recipient(), amount: 100));
+    assert_ne!(id_1, id_2);
 }
 
 #[test]
@@ -201,12 +217,12 @@ fn test_proposer_can_cancel_and_propose_different() {
 }
 
 #[test]
-#[should_panic(expected: ('ALREADY_PROPOSED', 'ENTRYPOINT_FAILED'))]
-fn test_propose_already_exists_should_fail() {
+fn test_propose_already_exists_should_suceed() {
     let (staker, token, governor, _config) = setup();
 
-    create_proposal(governor, token, staker);
-    create_proposal(governor, token, staker);
+    let id_1 = create_proposal(governor, token, staker);
+    let id_2 = create_proposal(governor, token, staker);
+    assert_ne!(id_1, id_2);
 }
 
 #[test]
@@ -321,7 +337,7 @@ fn test_describe_proposal_fails_if_executed() {
     governor.vote(id, true);
     advance_time(config.voting_period);
     set_contract_address(anyone());
-    governor.execute(transfer_call(token: token, recipient: anyone(), amount: 0));
+    governor.execute(id, transfer_call(token: token, recipient: anyone(), amount: 0));
 
     set_contract_address(proposer());
     governor.describe(id, "This proposal is already executed");
@@ -449,6 +465,7 @@ fn test_cancel_by_proposer() {
     assert_eq!(
         proposal,
         ProposalInfo {
+            call_id: to_call_id(@transfer_call(token, recipient(), amount: 100)),
             proposer: proposer(),
             execution_state: ExecutionState {
                 created: config.voting_weight_smoothing_duration,
@@ -496,6 +513,7 @@ fn test_cancel_by_non_proposer() {
     assert_eq!(
         proposal,
         ProposalInfo {
+            call_id: to_call_id(@transfer_call(token, recipient(), amount: 100)),
             proposer: proposer(),
             execution_state: ExecutionState {
                 created: config.voting_weight_smoothing_duration,
@@ -556,7 +574,7 @@ fn test_execute_valid_proposal() {
 
     set_contract_address(anyone());
 
-    governor.execute(transfer_call(token: token, recipient: recipient(), amount: 100));
+    governor.execute(id, transfer_call(token: token, recipient: recipient(), amount: 100));
 
     let proposal = governor.get_proposal(id);
     assert(proposal.execution_state.executed.is_non_zero(), 'execute failed');
@@ -587,20 +605,20 @@ fn test_canceled_proposal_cannot_be_executed() {
 
     set_contract_address(anyone());
 
-    governor.execute(transfer_call(token: token, recipient: recipient(), amount: 100));
+    governor.execute(id, transfer_call(token: token, recipient: recipient(), amount: 100));
 }
 
 #[test]
 #[should_panic(expected: ('VOTING_NOT_ENDED', 'ENTRYPOINT_FAILED'))]
 fn test_execute_before_voting_ends_should_fail() {
     let (staker, token, governor, config) = setup();
-    create_proposal(governor, token, staker);
+    let id = create_proposal(governor, token, staker);
 
     advance_time(config.voting_start_delay);
 
     // Execute the proposal. The vote is still active, this should fail.
     let transfer_call = transfer_call(token: token, recipient: recipient(), amount: 100);
-    governor.execute(transfer_call);
+    governor.execute(id, transfer_call);
 }
 
 
@@ -608,14 +626,14 @@ fn test_execute_before_voting_ends_should_fail() {
 #[should_panic(expected: ('QUORUM_NOT_MET', 'ENTRYPOINT_FAILED'))]
 fn test_execute_quorum_not_met_should_fail() {
     let (staker, token, governor, config) = setup();
-    create_proposal(governor, token, staker);
+    let id = create_proposal(governor, token, staker);
 
     advance_time(config.voting_start_delay + config.voting_period);
     set_contract_address(proposer());
 
     // Execute the proposal. The quorum was not met, this should fail.
     let transfer_call = transfer_call(token: token, recipient: recipient(), amount: 100);
-    governor.execute(transfer_call);
+    governor.execute(id, transfer_call);
 }
 
 #[test]
@@ -652,7 +670,7 @@ fn test_execute_no_majority_should_fail() {
     advance_time(config.voting_period);
 
     // Execute the proposal. The majority of votes are no, this should fail.
-    governor.execute(transfer_call(token: token, recipient: recipient(), amount: 100));
+    governor.execute(id, transfer_call(token: token, recipient: recipient(), amount: 100));
 }
 
 #[test]
@@ -701,7 +719,7 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
     advance_time(config.voting_period);
 
     // Execute the proposal. The quorum was not met, this should fail.
-    governor.execute(transfer_call(token: token, recipient: recipient(), amount: 100));
+    governor.execute(id, transfer_call(token: token, recipient: recipient(), amount: 100));
 }
 
 #[test]
@@ -721,9 +739,29 @@ fn test_execute_already_executed_should_fail() {
     advance_time(config.voting_period);
 
     set_contract_address(anyone());
-    governor.execute(transfer_call(token: token, recipient: recipient(), amount: 100));
+    governor.execute(id, transfer_call(token: token, recipient: recipient(), amount: 100));
     governor
         .execute(
-            transfer_call(token: token, recipient: recipient(), amount: 100)
+            id, transfer_call(token: token, recipient: recipient(), amount: 100)
         ); // Try to execute again
+}
+
+#[test]
+#[should_panic(expected: ('CALL_ID_MISMATCH', 'ENTRYPOINT_FAILED'))]
+fn test_execute_invalid_call_id() {
+    let (staker, token, governor, config) = setup();
+
+    token.approve(staker.contract_address, config.quorum.into());
+    staker.stake(proposer());
+
+    let id = create_proposal(governor, token, staker);
+    token.transfer(governor.contract_address, 100);
+
+    advance_time(config.voting_start_delay);
+    set_contract_address(proposer());
+    governor.vote(id, true); // vote so that proposal reaches quorum
+    advance_time(config.voting_period);
+
+    set_contract_address(anyone());
+    governor.execute(id, transfer_call(token: token, recipient: recipient(), amount: 101));
 }

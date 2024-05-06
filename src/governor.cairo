@@ -9,6 +9,8 @@ use starknet::{ContractAddress, storage_access::{StorePacking}};
 
 #[derive(Copy, Drop, Serde, starknet::Store, PartialEq, Debug)]
 pub struct ProposalInfo {
+    // the ID of the call that this proposal represents
+    pub call_id: felt252,
     // the address of the proposer
     pub proposer: ContractAddress,
     // the execution state of the proposal
@@ -51,7 +53,7 @@ pub trait IGovernor<TContractState> {
     fn cancel_at_timestamp(ref self: TContractState, id: felt252, breach_timestamp: u64);
 
     // Execute the given proposal.
-    fn execute(ref self: TContractState, call: Call) -> Span<felt252>;
+    fn execute(ref self: TContractState, id: felt252, call: Call) -> Span<felt252>;
 
     // Attaches the given text to the proposal. Simply emits an event containing the proposal description.
     fn describe(ref self: TContractState, id: felt252, description: ByteArray);
@@ -73,7 +75,9 @@ pub mod Governor {
     use core::poseidon::{PoseidonTrait};
     use governance::call_trait::{HashSerializable, CallTrait};
     use governance::staker::{IStakerDispatcherTrait};
-    use starknet::{get_block_timestamp, get_caller_address, contract_address_const};
+    use starknet::{
+        get_block_timestamp, get_caller_address, contract_address_const, get_contract_address
+    };
     use super::{
         IStakerDispatcher, ContractAddress, Array, IGovernor, Config, ProposalInfo, Call,
         ExecutionState, ByteArray
@@ -126,6 +130,7 @@ pub mod Governor {
     struct Storage {
         staker: IStakerDispatcher,
         config: Config,
+        nonce: u64,
         proposals: LegacyMap<felt252, ProposalInfo>,
         has_voted: LegacyMap<(ContractAddress, felt252), bool>,
         latest_proposal_by_proposer: LegacyMap<ContractAddress, felt252>,
@@ -135,6 +140,14 @@ pub mod Governor {
     fn constructor(ref self: ContractState, staker: IStakerDispatcher, config: Config) {
         self.staker.write(staker);
         self.config.write(config);
+    }
+
+    pub fn get_proposal_id(address: ContractAddress, nonce: u64) -> felt252 {
+        PoseidonTrait::new()
+            .update(selector!("governance::governor::Governor::get_proposal_id"))
+            .update_with(address)
+            .update_with(nonce)
+            .finalize()
     }
 
     pub fn to_call_id(call: @Call) -> felt252 {
@@ -147,8 +160,9 @@ pub mod Governor {
     #[abi(embed_v0)]
     impl GovernorImpl of IGovernor<ContractState> {
         fn propose(ref self: ContractState, call: Call) -> felt252 {
-            let id = to_call_id(@call);
-            assert(self.proposals.read(id).proposer.is_zero(), 'ALREADY_PROPOSED');
+            let nonce = self.nonce.read();
+            self.nonce.write(nonce + 1);
+            let id = get_proposal_id(get_contract_address(), nonce);
 
             let proposer = get_caller_address();
             let config = self.config.read();
@@ -185,6 +199,7 @@ pub mod Governor {
                 .write(
                     id,
                     ProposalInfo {
+                        call_id: to_call_id(@call),
                         proposer,
                         execution_state: ExecutionState {
                             created: timestamp_current,
@@ -301,12 +316,13 @@ pub mod Governor {
             self.emit(Canceled { id, breach_timestamp });
         }
 
-        fn execute(ref self: ContractState, call: Call) -> Span<felt252> {
-            let id = to_call_id(@call);
+        fn execute(ref self: ContractState, id: felt252, call: Call) -> Span<felt252> {
+            let call_id = to_call_id(@call);
 
             let config = self.config.read();
             let mut proposal = self.proposals.read(id);
 
+            assert(proposal.call_id == call_id, 'CALL_ID_MISMATCH');
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
             assert(proposal.execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
             assert(proposal.execution_state.canceled.is_zero(), 'PROPOSAL_CANCELED');
