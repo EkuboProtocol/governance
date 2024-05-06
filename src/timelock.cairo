@@ -144,6 +144,7 @@ pub mod Timelock {
             let id = to_calls_id(calls);
             let execution_state = self.execution_state.read(id);
 
+            assert(execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
             assert(execution_state.canceled.is_zero(), 'HAS_BEEN_CANCELED');
             assert(execution_state.created.is_zero(), 'ALREADY_QUEUED');
 
@@ -164,6 +165,7 @@ pub mod Timelock {
             let execution_state = self.execution_state.read(id);
             assert(execution_state.created.is_non_zero(), 'DOES_NOT_EXIST');
             assert(execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
+            assert(execution_state.canceled.is_zero(), 'ALREADY_CANCELED');
 
             self
                 .execution_state
