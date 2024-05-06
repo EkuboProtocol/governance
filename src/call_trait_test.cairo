@@ -1,7 +1,8 @@
 use core::array::{Array, ArrayTrait};
-use core::hash::{LegacyHash};
+use core::hash::{LegacyHash, HashStateExTrait, HashStateTrait};
+use core::poseidon::{PoseidonTrait};
 use core::serde::{Serde};
-use governance::call_trait::{CallTrait, HashCall};
+use governance::call_trait::{CallTrait, HashSerializable};
 use governance::test::test_token::{deploy as deploy_token};
 use starknet::{contract_address_const, get_contract_address, account::{Call}};
 
@@ -10,7 +11,7 @@ fn test_hash_empty() {
     let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: array![].span() };
     assert_eq!(
         LegacyHash::hash(0, @call),
-        0x6bf1b215edde951b1b50c19e77f7b362d23c6cb4232ae8b95bc112ff94d3956
+        592531356294457842089938121745653035784273932434733687203842865999223838417
     );
 }
 
@@ -19,7 +20,7 @@ fn test_hash_empty_different_state() {
     let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: array![].span() };
     assert_eq!(
         LegacyHash::hash(1, @call),
-        1832368551659298682277041292338758811780503233378895654121359846824467233868
+        641779498390055840747899186344080567584946769797748441152535133488389427639
     );
 }
 
@@ -28,7 +29,7 @@ fn test_hash_address_one() {
     let call = Call { to: contract_address_const::<1>(), selector: 0, calldata: array![].span() };
     assert_eq!(
         LegacyHash::hash(0, @call),
-        0x5f6208726bc717f95f23a8e3632dd5a30f4b61d11db5ea4f4fab24bf931a053
+        822101510419032526850572827036529302322534847455039029719271666012578939011
     );
 }
 
@@ -36,7 +37,8 @@ fn test_hash_address_one() {
 fn test_hash_address_entry_point_one() {
     let call = Call { to: contract_address_const::<0>(), selector: 1, calldata: array![].span() };
     assert_eq!(
-        LegacyHash::hash(0, @call), 0x137c95c76862129847d0f5e3618c7a4c3822ee344f4aa80bcb897cb97d3e16
+        LegacyHash::hash(0, @call),
+        2649728997388989667623494598440207295058382579827039351281187174838687580826
     );
 }
 
@@ -46,7 +48,7 @@ fn test_hash_address_data_one() {
 
     assert_eq!(
         LegacyHash::hash(0, @call),
-        0x200a54d7737c13f1013835f88c566515921c2b9c7c7a50cc44ff6f176cf06b2
+        941644435636445739851438544160869526074009333114430642156303468449419287369
     );
 }
 
@@ -58,7 +60,7 @@ fn test_hash_address_data_one_two() {
 
     assert_eq!(
         LegacyHash::hash(0, @call),
-        0x6f615c05fa309e4041f96f83d47a23acec3d725b47f8c1005f388aa3d26c187
+        2486526694913415670406871967728275622122901127926391718078378231682443645806
     );
 }
 
@@ -111,5 +113,26 @@ fn test_execute_valid_call_data() {
     };
 
     call.execute();
+}
+
+#[test]
+fn test_hash_no_collision_span_length() {
+    let call_a1 = Call {
+        to: contract_address_const::<1>(), selector: 2, calldata: array![3, 4].span()
+    };
+    let call_a2 = Call {
+        to: contract_address_const::<5>(), selector: 6, calldata: array![].span()
+    };
+    let hash_a = PoseidonTrait::new().update_with(@call_a1).update_with(@call_a2).finalize();
+
+    let call_b1 = Call {
+        to: contract_address_const::<1>(), selector: 2, calldata: array![].span()
+    };
+    let call_b2 = Call {
+        to: contract_address_const::<3>(), selector: 4, calldata: array![5, 6].span()
+    };
+    let hash_b = PoseidonTrait::new().update_with(@call_b1).update_with(@call_b2).finalize();
+
+    assert_ne!(hash_a, hash_b);
 }
 

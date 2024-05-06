@@ -2,7 +2,9 @@ use core::array::{Array, ArrayTrait, SpanTrait};
 use governance::execution_state::{ExecutionState};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::test::test_token::{deploy as deploy_token};
-use governance::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait, Timelock, Config};
+use governance::timelock::{
+    ITimelockDispatcher, ITimelockDispatcherTrait, Timelock, Config, Timelock::{to_calls_id}
+};
 use starknet::account::{Call};
 use starknet::{
     get_contract_address, syscalls::{deploy_syscall}, ClassHash, contract_address_const,
@@ -143,4 +145,27 @@ fn test_queue_executed_too_late() {
     let execution_window = timelock.get_execution_window(id);
     set_block_timestamp(execution_window.latest);
     timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
+}
+
+
+#[test]
+fn test_no_collision_to_calls_id() {
+    let call_a1 = Call {
+        to: contract_address_const::<1>(), selector: 2, calldata: array![3, 4].span()
+    };
+    let call_a2 = Call {
+        to: contract_address_const::<5>(), selector: 6, calldata: array![].span()
+    };
+
+    let call_b1 = Call {
+        to: contract_address_const::<1>(), selector: 2, calldata: array![].span()
+    };
+    let call_b2 = Call {
+        to: contract_address_const::<3>(), selector: 4, calldata: array![5, 6].span()
+    };
+
+    let calls_a: Span<Call> = array![call_a1, call_a2].span();
+    let calls_b: Span<Call> = array![call_b1, call_b2].span();
+
+    assert_ne!(to_calls_id(calls_a), to_calls_id(calls_b));
 }

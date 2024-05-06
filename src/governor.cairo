@@ -68,9 +68,10 @@ pub trait IGovernor<TContractState> {
 
 #[starknet::contract]
 pub mod Governor {
-    use core::hash::{LegacyHash};
+    use core::hash::{HashStateTrait, HashStateExTrait};
     use core::num::traits::zero::{Zero};
-    use governance::call_trait::{HashCall, CallTrait};
+    use core::poseidon::{PoseidonTrait};
+    use governance::call_trait::{HashSerializable, CallTrait};
     use governance::staker::{IStakerDispatcherTrait};
     use starknet::{get_block_timestamp, get_caller_address, contract_address_const};
     use super::{
@@ -137,7 +138,10 @@ pub mod Governor {
     }
 
     pub fn to_call_id(call: @Call) -> felt252 {
-        LegacyHash::hash(selector!("ekubo::governance::governor::Governor::to_call_id"), call)
+        PoseidonTrait::new()
+            .update(selector!("governance::governor::Governor::to_call_id"))
+            .update_with(call)
+            .finalize()
     }
 
     #[abi(embed_v0)]
