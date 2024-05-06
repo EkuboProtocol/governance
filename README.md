@@ -45,7 +45,7 @@ Contracts in this repository are designed so that they may be used together _or_
 - Proposals can be canceled at any time by _anyone_ iff the voting weight of the proposer falls below the proposal creation threshold, up until it is executed
 - The proposer may also cancel the proposal at any time before the end of the voting period
 - Proposers may only have one active proposal at any time
-- The contract can be reconfigured or upgraded via calls to self
+- The contract can be upgraded via calls to self
 
 ## Testing
 

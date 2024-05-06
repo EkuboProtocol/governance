@@ -62,7 +62,7 @@ pub trait IGovernor<TContractState> {
     // Attaches the given text to the proposal. Simply emits an event containing the proposal description.
     fn describe(ref self: TContractState, id: felt252, description: ByteArray);
 
-    // Get the configuration for this governor contract.
+    // Get the staker that is used by this governor contract.
     fn get_staker(self: @TContractState) -> IStakerDispatcher;
 
     // Get the configuration for this governor contract.
@@ -70,9 +70,6 @@ pub trait IGovernor<TContractState> {
 
     // Get the proposal info for the given proposal id.
     fn get_proposal(self: @TContractState, id: felt252) -> ProposalInfo;
-
-    // Configure the delay and the window for call execution. This must be self-called via #queue.
-    fn configure(ref self: TContractState, config: Config);
 
     // Replace the code at this address. This must be self-called via #queue.
     fn upgrade(ref self: TContractState, class_hash: ClassHash);
@@ -401,13 +398,6 @@ pub mod Governor {
 
         fn get_proposal(self: @ContractState, id: felt252) -> ProposalInfo {
             self.proposals.read(id)
-        }
-
-
-        fn configure(ref self: ContractState, config: Config) {
-            self.check_self_call();
-
-            self.config.write(config);
         }
 
         fn upgrade(ref self: ContractState, class_hash: ClassHash) {
