@@ -33,20 +33,18 @@ Contracts in this repository are designed so that they may be used together _or_
 
 #### Governor
 
-`Governor` enables stakers to vote on whether to make a _single_ call.
+`Governor` enables stakers to vote on whether to make a batch of calls.
 
 - A user's **voting weight** for a period is determined by their average total delegation over the period `voting_weight_smoothing_duration`
-- A delegate may create a proposal to make a `call` if their voting weight exceeds the proposal creation threshold
+- A delegate may create a proposal to make a batch of `calls` if their voting weight exceeds the proposal creation threshold
 - After the `voting_start_delay`, users may choose to vote `yea` or `nay` on the created proposal for the duration of the `voting_period`
   - A voter's voting weight is computed based on their average delegation over the period `voting_weight_smoothing_duration` from before the start time of the proposal
 - If a proposal receives at least `quorum` in voting weight, and the simple majority of total votes is yea, and the voting period is over, the proposal may be executed exactly once
-  - If the call fails, the transaction will revert, and anyone may attempt to execute the proposal again
-- Proposals can be canceled at any time by _anyone_ iff the voting weight of the proposer falls below the proposal creation threshold
+  - Must happen after the voting has ended and the execution delay has passed
+  - If any of the calls fails, the transaction will revert, and anyone may attempt to execute the proposal again, up until the end of the execution window
+- Proposals can be canceled at any time by _anyone_ iff the voting weight of the proposer falls below the proposal creation threshold, up until it is executed
 - The proposer may also cancel the proposal at any time before the end of the voting period
-- A canceled proposal may not be re-proposed. The call may be slightly modified and re-proposed
 - Proposers may only have one active proposal at any time
-- The only thing stored regarding a proposal is the call that it makes, along with the metadata
-- The single call can be to `Timelock#queue(calls)`, which may execute multiple calls
 - The contract can be reconfigured or upgraded via calls to self
 
 ## Testing
