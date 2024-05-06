@@ -7,7 +7,9 @@ use starknet::account::{Call};
 use starknet::{ContractAddress};
 use starknet::{SyscallResult, syscalls::call_contract_syscall};
 
-pub impl HashSerializable<T, S, +Serde<T>, +HashStateTrait<S>, +Drop<S>> of Hash<@T, S> {
+// Care must be taken when using this implementation: Serde of the type T must be safe for hashing.
+// This means that no two values of type T have the same serialization.
+pub(crate) impl HashSerializable<T, S, +Serde<T>, +HashStateTrait<S>, +Drop<S>> of Hash<@T, S> {
     fn update_state(mut state: S, value: @T) -> S {
         let mut arr = array![];
         Serde::serialize(value, ref arr);
