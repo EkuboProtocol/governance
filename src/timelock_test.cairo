@@ -93,6 +93,23 @@ fn test_queue_cancel() {
 }
 
 #[test]
+#[should_panic(expected: ('ALREADY_CANCELED', 'ENTRYPOINT_FAILED'))]
+fn test_queue_cancel_twice() {
+    set_block_timestamp(1);
+    let timelock = deploy(get_contract_address(), 86400, 3600);
+
+    let token = deploy_token(get_contract_address(), 12345);
+    token.transfer(timelock.contract_address, 12345);
+
+    let recipient = contract_address_const::<12345>();
+
+    let id = timelock.queue(single_call(transfer_call(token, recipient, 500_u256)));
+
+    timelock.cancel(id);
+    timelock.cancel(id);
+}
+
+#[test]
 #[should_panic(expected: ('ALREADY_EXECUTED', 'ENTRYPOINT_FAILED'))]
 fn test_queue_execute_twice() {
     set_block_timestamp(1);
