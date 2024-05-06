@@ -34,7 +34,7 @@ pub trait ITimelock<TContractState> {
     fn cancel(ref self: TContractState, id: felt252);
 
     // Execute a list of calls that have previously been queued. Anyone may call this.
-    fn execute(ref self: TContractState, calls: Span<Call>) -> Array<Span<felt252>>;
+    fn execute(ref self: TContractState, id: felt252, calls: Span<Call>) -> Span<Span<felt252>>;
 
     // Return the execution window, i.e. the start and end timestamp in which the call can be executed
     fn get_execution_window(self: @TContractState, id: felt252) -> ExecutionWindow;
@@ -102,11 +102,18 @@ pub mod Timelock {
         Executed: Executed,
     }
 
+    #[derive(Copy, Drop, starknet::Store)]
+    struct BatchState {
+        calls_hash: felt252,
+        execution_state: ExecutionState,
+    }
+
     #[storage]
     struct Storage {
         owner: ContractAddress,
         config: Config,
-        execution_state: LegacyMap<felt252, ExecutionState>,
+        batch_state: LegacyMap<felt252, BatchState>,
+        nonce: u64,
     }
 
     #[constructor]
@@ -115,13 +122,18 @@ pub mod Timelock {
         self.config.write(config);
     }
 
-    // Take a list of calls and convert it to a unique identifier for the execution
-    // Two lists of calls will always have the same ID if they are equivalent
-    // A list of calls can only be queued and executed once. To make 2 different calls, add an empty call.
-    pub fn to_calls_id(mut calls: Span<Call>) -> felt252 {
+    pub fn hash_calls(mut calls: Span<Call>) -> felt252 {
         PoseidonTrait::new()
-            .update(selector!("governance::timelock::Timelock::to_calls_id"))
+            .update(selector!("governance::timelock::Timelock::hash_calls"))
             .update_with(@calls)
+            .finalize()
+    }
+
+    pub fn get_batch_id(address: ContractAddress, nonce: u64) -> felt252 {
+        PoseidonTrait::new()
+            .update(selector!("governance::timelock::Timelock::get_batch_id"))
+            .update_with(address)
+            .update_with(nonce)
             .finalize()
     }
 
@@ -141,17 +153,21 @@ pub mod Timelock {
         fn queue(ref self: ContractState, calls: Span<Call>) -> felt252 {
             self.check_owner();
 
-            let id = to_calls_id(calls);
-            let execution_state = self.execution_state.read(id);
+            let nonce = self.nonce.read();
+            self.nonce.write(nonce + 1);
 
-            assert(execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
-            assert(execution_state.canceled.is_zero(), 'HAS_BEEN_CANCELED');
-            assert(execution_state.created.is_zero(), 'ALREADY_QUEUED');
+            let id = get_batch_id(get_contract_address(), nonce);
 
             self
-                .execution_state
+                .batch_state
                 .write(
-                    id, ExecutionState { created: get_block_timestamp(), executed: 0, canceled: 0 }
+                    id,
+                    BatchState {
+                        calls_hash: hash_calls(calls),
+                        execution_state: ExecutionState {
+                            created: get_block_timestamp(), executed: 0, canceled: 0
+                        }
+                    }
                 );
 
             self.emit(Queued { id, calls });
@@ -162,32 +178,38 @@ pub mod Timelock {
         fn cancel(ref self: ContractState, id: felt252) {
             self.check_owner();
 
-            let execution_state = self.execution_state.read(id);
-            assert(execution_state.created.is_non_zero(), 'DOES_NOT_EXIST');
-            assert(execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
-            assert(execution_state.canceled.is_zero(), 'ALREADY_CANCELED');
+            let batch_state = self.batch_state.read(id);
+            assert(batch_state.execution_state.created.is_non_zero(), 'DOES_NOT_EXIST');
+            assert(batch_state.execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
+            assert(batch_state.execution_state.canceled.is_zero(), 'ALREADY_CANCELED');
 
             self
-                .execution_state
+                .batch_state
                 .write(
                     id,
-                    ExecutionState {
-                        created: execution_state.created,
-                        executed: execution_state.executed,
-                        canceled: get_block_timestamp()
+                    BatchState {
+                        calls_hash: batch_state.calls_hash,
+                        execution_state: ExecutionState {
+                            created: batch_state.execution_state.created,
+                            executed: 0,
+                            canceled: get_block_timestamp()
+                        }
                     }
                 );
 
             self.emit(Canceled { id });
         }
 
-        fn execute(ref self: ContractState, mut calls: Span<Call>) -> Array<Span<felt252>> {
-            let id = to_calls_id(calls);
+        fn execute(
+            ref self: ContractState, id: felt252, mut calls: Span<Call>
+        ) -> Span<Span<felt252>> {
+            let batch_state = self.batch_state.read(id);
 
-            let execution_state = self.execution_state.read(id);
+            let calls_hash = hash_calls(calls);
 
-            assert(execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
-            assert(execution_state.canceled.is_zero(), 'HAS_BEEN_CANCELED');
+            assert(batch_state.calls_hash == calls_hash, 'CALLS_HASH_MISMATCH');
+            assert(batch_state.execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
+            assert(batch_state.execution_state.canceled.is_zero(), 'HAS_BEEN_CANCELED');
 
             let execution_window = self.get_execution_window(id);
             let time_current = get_block_timestamp();
@@ -196,13 +218,16 @@ pub mod Timelock {
             assert(time_current < execution_window.latest, 'TOO_LATE');
 
             self
-                .execution_state
+                .batch_state
                 .write(
                     id,
-                    ExecutionState {
-                        created: execution_state.created,
-                        executed: time_current,
-                        canceled: execution_state.canceled
+                    BatchState {
+                        calls_hash,
+                        execution_state: ExecutionState {
+                            created: batch_state.execution_state.created,
+                            executed: time_current,
+                            canceled: batch_state.execution_state.canceled
+                        }
                     }
                 );
 
@@ -214,11 +239,11 @@ pub mod Timelock {
 
             self.emit(Executed { id });
 
-            results
+            results.span()
         }
 
         fn get_execution_window(self: @ContractState, id: felt252) -> ExecutionWindow {
-            let created = self.execution_state.read(id).created;
+            let created = self.batch_state.read(id).execution_state.created;
 
             // this prevents the 0 timestamp for created from being considered valid and also executed
             assert(created.is_non_zero(), 'DOES_NOT_EXIST');

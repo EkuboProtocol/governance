@@ -3,7 +3,7 @@ use governance::execution_state::{ExecutionState};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::test::test_token::{deploy as deploy_token};
 use governance::timelock::{
-    ITimelockDispatcher, ITimelockDispatcherTrait, Timelock, Config, Timelock::{to_calls_id}
+    ITimelockDispatcher, ITimelockDispatcherTrait, Timelock, Config, Timelock::{hash_calls}
 };
 use starknet::account::{Call};
 use starknet::{
@@ -69,7 +69,7 @@ fn test_queue_execute() {
 
     set_block_timestamp(86401);
 
-    timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
+    timelock.execute(id, single_call(transfer_call(token, recipient, 500_u256)));
     assert(token.balanceOf(recipient) == 500_u256, 'balance');
 }
 
@@ -89,7 +89,7 @@ fn test_queue_cancel() {
     set_block_timestamp(86401);
     timelock.cancel(id);
 
-    timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
+    timelock.execute(id, single_call(transfer_call(token, recipient, 500_u256)));
 }
 
 #[test]
@@ -120,12 +120,12 @@ fn test_queue_execute_twice() {
 
     let recipient = contract_address_const::<12345>();
 
-    timelock.queue(single_call(transfer_call(token, recipient, 500_u256)));
+    let id = timelock.queue(single_call(transfer_call(token, recipient, 500_u256)));
 
     set_block_timestamp(86401);
 
-    timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
-    timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
+    timelock.execute(id, single_call(transfer_call(token, recipient, 500_u256)));
+    timelock.execute(id, single_call(transfer_call(token, recipient, 500_u256)));
 }
 
 #[test]
@@ -143,7 +143,7 @@ fn test_queue_executed_too_early() {
 
     let execution_window = timelock.get_execution_window(id);
     set_block_timestamp(execution_window.earliest - 1);
-    timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
+    timelock.execute(id, single_call(transfer_call(token, recipient, 500_u256)));
 }
 
 #[test]
@@ -161,12 +161,12 @@ fn test_queue_executed_too_late() {
 
     let execution_window = timelock.get_execution_window(id);
     set_block_timestamp(execution_window.latest);
-    timelock.execute(single_call(transfer_call(token, recipient, 500_u256)));
+    timelock.execute(id, single_call(transfer_call(token, recipient, 500_u256)));
 }
 
 
 #[test]
-fn test_no_collision_to_calls_id() {
+fn test_no_collision_hash_calls() {
     let call_a1 = Call {
         to: contract_address_const::<1>(), selector: 2, calldata: array![3, 4].span()
     };
@@ -184,5 +184,5 @@ fn test_no_collision_to_calls_id() {
     let calls_a: Span<Call> = array![call_a1, call_a2].span();
     let calls_b: Span<Call> = array![call_b1, call_b2].span();
 
-    assert_ne!(to_calls_id(calls_a), to_calls_id(calls_b));
+    assert_ne!(hash_calls(calls_a), hash_calls(calls_b));
 }
