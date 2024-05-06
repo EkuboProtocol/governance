@@ -6,21 +6,13 @@ pub(crate) mod airdrop_test;
 pub mod call_trait;
 #[cfg(test)]
 pub(crate) mod call_trait_test;
-#[cfg(test)]
-mod e2e_test;
 pub mod execution_state;
-pub mod factory;
-#[cfg(test)]
-pub(crate) mod factory_test;
 pub mod governor;
 #[cfg(test)]
 pub(crate) mod governor_test;
 pub mod staker;
 #[cfg(test)]
 pub(crate) mod staker_test;
-pub mod timelock;
-#[cfg(test)]
-pub(crate) mod timelock_test;
 pub(crate) mod interfaces {
     pub(crate) mod erc20;
 }

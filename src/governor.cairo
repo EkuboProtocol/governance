@@ -5,38 +5,44 @@ use core::traits::{Into, TryInto};
 use governance::execution_state::{ExecutionState};
 use governance::staker::{IStakerDispatcher};
 use starknet::account::{Call};
-use starknet::{ContractAddress, storage_access::{StorePacking}};
+use starknet::{ContractAddress, storage_access::{StorePacking}, ClassHash};
 
 #[derive(Copy, Drop, Serde, starknet::Store, PartialEq, Debug)]
 pub struct ProposalInfo {
-    // the address of the proposer
+    // The hash of the set of calls that are executed in this proposal
+    pub calls_hash: felt252,
+    // The address of the proposer
     pub proposer: ContractAddress,
-    // the execution state of the proposal
+    // The execution state of the proposal
     pub execution_state: ExecutionState,
-    // how many yes votes have been collected
+    // How many yes votes have been collected
     pub yea: u128,
-    // how many no votes have been collected
+    // How many no votes have been collected
     pub nay: u128,
 }
 
 #[derive(Copy, Drop, Serde, starknet::Store, PartialEq, Debug)]
 pub struct Config {
-    // how long after a proposal is created does voting start
+    // How long after a proposal is created does voting start
     pub voting_start_delay: u64,
-    // the period during which votes are collected
+    // The period during which votes are collected
     pub voting_period: u64,
-    // over how many seconds the voting weight is averaged for proposal voting as well as creation/cancellation
+    // Over how many seconds the voting weight is averaged for proposal voting as well as creation/cancellation
     pub voting_weight_smoothing_duration: u64,
-    // how many total votes must be collected for the proposal
+    // How many total votes must be collected for the proposal
     pub quorum: u128,
-    // the minimum amount of average votes required to create a proposal
+    // The minimum amount of average votes required to create a proposal
     pub proposal_creation_threshold: u128,
+    // How much time must pass after the end of a voting period before the proposal can be executed
+    pub execution_delay: u64,
+    // The amount of time after the execution delay that the proposal may be executed
+    pub execution_window: u64,
 }
 
 #[starknet::interface]
 pub trait IGovernor<TContractState> {
     // Propose executing the given call from this contract.
-    fn propose(ref self: TContractState, call: Call) -> felt252;
+    fn propose(ref self: TContractState, calls: Span<Call>) -> felt252;
 
     // Vote on the given proposal.
     fn vote(ref self: TContractState, id: felt252, yea: bool);
@@ -51,7 +57,7 @@ pub trait IGovernor<TContractState> {
     fn cancel_at_timestamp(ref self: TContractState, id: felt252, breach_timestamp: u64);
 
     // Execute the given proposal.
-    fn execute(ref self: TContractState, call: Call) -> Span<felt252>;
+    fn execute(ref self: TContractState, id: felt252, calls: Span<Call>) -> Span<Span<felt252>>;
 
     // Attaches the given text to the proposal. Simply emits an event containing the proposal description.
     fn describe(ref self: TContractState, id: felt252, description: ByteArray);
@@ -64,6 +70,13 @@ pub trait IGovernor<TContractState> {
 
     // Get the proposal info for the given proposal id.
     fn get_proposal(self: @TContractState, id: felt252) -> ProposalInfo;
+
+
+    // Configure the delay and the window for call execution. This must be self-called via #queue.
+    fn configure(ref self: TContractState, config: Config);
+
+    // Replace the code at this address. This must be self-called via #queue.
+    fn upgrade(ref self: TContractState, class_hash: ClassHash);
 }
 
 #[starknet::contract]
@@ -73,10 +86,13 @@ pub mod Governor {
     use core::poseidon::{PoseidonTrait};
     use governance::call_trait::{HashSerializable, CallTrait};
     use governance::staker::{IStakerDispatcherTrait};
-    use starknet::{get_block_timestamp, get_caller_address, contract_address_const};
+    use starknet::{
+        get_block_timestamp, get_caller_address, contract_address_const, get_contract_address,
+        syscalls::{replace_class_syscall}
+    };
     use super::{
         IStakerDispatcher, ContractAddress, Array, IGovernor, Config, ProposalInfo, Call,
-        ExecutionState, ByteArray
+        ExecutionState, ByteArray, ClassHash
     };
 
 
@@ -84,7 +100,7 @@ pub mod Governor {
     pub struct Proposed {
         pub id: felt252,
         pub proposer: ContractAddress,
-        pub call: Call,
+        pub calls: Span<Call>,
     }
 
     #[derive(starknet::Event, Drop, Debug, PartialEq)]
@@ -126,6 +142,7 @@ pub mod Governor {
     struct Storage {
         staker: IStakerDispatcher,
         config: Config,
+        nonce: u64,
         proposals: LegacyMap<felt252, ProposalInfo>,
         has_voted: LegacyMap<(ContractAddress, felt252), bool>,
         latest_proposal_by_proposer: LegacyMap<ContractAddress, felt252>,
@@ -137,18 +154,35 @@ pub mod Governor {
         self.config.write(config);
     }
 
-    pub fn to_call_id(call: @Call) -> felt252 {
+    pub fn get_proposal_id(address: ContractAddress, nonce: u64) -> felt252 {
         PoseidonTrait::new()
-            .update(selector!("governance::governor::Governor::to_call_id"))
+            .update(selector!("governance::governor::Governor::get_proposal_id"))
+            .update_with(address)
+            .update_with(nonce)
+            .finalize()
+    }
+
+    pub fn hash_calls(call: @Span<Call>) -> felt252 {
+        PoseidonTrait::new()
+            .update(selector!("governance::governor::Governor::hash_calls"))
             .update_with(call)
             .finalize()
     }
 
+
+    #[generate_trait]
+    impl GovernorInternal of GovernorInternalTrait {
+        fn check_self_call(self: @ContractState) {
+            assert(get_caller_address() == get_contract_address(), 'SELF_CALL_ONLY');
+        }
+    }
+
     #[abi(embed_v0)]
     impl GovernorImpl of IGovernor<ContractState> {
-        fn propose(ref self: ContractState, call: Call) -> felt252 {
-            let id = to_call_id(@call);
-            assert(self.proposals.read(id).proposer.is_zero(), 'ALREADY_PROPOSED');
+        fn propose(ref self: ContractState, calls: Span<Call>) -> felt252 {
+            let nonce = self.nonce.read();
+            self.nonce.write(nonce + 1);
+            let id = get_proposal_id(get_contract_address(), nonce);
 
             let proposer = get_caller_address();
             let config = self.config.read();
@@ -185,6 +219,7 @@ pub mod Governor {
                 .write(
                     id,
                     ProposalInfo {
+                        calls_hash: hash_calls(@calls),
                         proposer,
                         execution_state: ExecutionState {
                             created: timestamp_current,
@@ -198,7 +233,7 @@ pub mod Governor {
 
             self.latest_proposal_by_proposer.write(proposer, id);
 
-            self.emit(Proposed { id, proposer, call });
+            self.emit(Proposed { id, proposer, calls });
 
             id
         }
@@ -301,12 +336,15 @@ pub mod Governor {
             self.emit(Canceled { id, breach_timestamp });
         }
 
-        fn execute(ref self: ContractState, call: Call) -> Span<felt252> {
-            let id = to_call_id(@call);
+        fn execute(
+            ref self: ContractState, id: felt252, mut calls: Span<Call>
+        ) -> Span<Span<felt252>> {
+            let calls_hash = hash_calls(@calls);
 
             let config = self.config.read();
             let mut proposal = self.proposals.read(id);
 
+            assert(proposal.calls_hash == calls_hash, 'CALLS_HASH_MISMATCH');
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
             assert(proposal.execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
             assert(proposal.execution_state.canceled.is_zero(), 'PROPOSAL_CANCELED');
@@ -316,12 +354,16 @@ pub mod Governor {
             // this can only happen in testing, but it makes this method locally correct
             assert(timestamp_current.is_non_zero(), 'TIMESTAMP_ZERO');
 
-            assert(
-                timestamp_current >= (proposal.execution_state.created
-                    + config.voting_start_delay
-                    + config.voting_period),
-                'VOTING_NOT_ENDED'
-            );
+            let voting_end = proposal.execution_state.created
+                + config.voting_start_delay
+                + config.voting_period;
+            assert(timestamp_current >= voting_end, 'VOTING_NOT_ENDED');
+
+            let window_start = voting_end + config.execution_delay;
+            assert(timestamp_current >= window_start, 'EXECUTION_WINDOW_NOT_STARTED');
+
+            let window_end = window_start + config.execution_window;
+            assert(timestamp_current < window_end, 'EXECUTION_WINDOW_OVER');
 
             assert((proposal.yea + proposal.nay) >= config.quorum, 'QUORUM_NOT_MET');
             assert(proposal.yea >= proposal.nay, 'NO_MAJORITY');
@@ -336,11 +378,15 @@ pub mod Governor {
 
             self.proposals.write(id, proposal);
 
-            let data = call.execute();
+            let mut results: Array<Span<felt252>> = array![];
 
-            self.emit(Executed { id, });
+            while let Option::Some(call) = calls.pop_front() {
+                results.append(call.execute());
+            };
 
-            data
+            self.emit(Executed { id });
+
+            results.span()
         }
 
         fn get_config(self: @ContractState) -> Config {
@@ -353,6 +399,19 @@ pub mod Governor {
 
         fn get_proposal(self: @ContractState, id: felt252) -> ProposalInfo {
             self.proposals.read(id)
+        }
+
+
+        fn configure(ref self: ContractState, config: Config) {
+            self.check_self_call();
+
+            self.config.write(config);
+        }
+
+        fn upgrade(ref self: ContractState, class_hash: ClassHash) {
+            self.check_self_call();
+
+            replace_class_syscall(class_hash).unwrap();
         }
     }
 }
