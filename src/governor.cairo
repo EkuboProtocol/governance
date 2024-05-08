@@ -19,6 +19,8 @@ pub struct ProposalInfo {
     pub yea: u128,
     // How many no votes have been collected
     pub nay: u128,
+    // The version of the config that this proposal was created with
+    pub config_version: u64,
 }
 
 #[derive(Copy, Drop, Serde, starknet::Store, PartialEq, Debug)]
@@ -47,14 +49,13 @@ pub trait IGovernor<TContractState> {
     // Vote on the given proposal.
     fn vote(ref self: TContractState, id: felt252, yea: bool);
 
-    // Cancel the proposal with the given ID. Same as #cancel_at_timestamp, but uses the current timestamp for computing the voting weight.
+    // Cancel the proposal with the given ID. Only callable by the proposer.
     fn cancel(ref self: TContractState, id: felt252);
 
-    // Cancel the proposal with the given ID. The proposal may be canceled at any time before it is executed.
-    // There are two ways the proposal cancellation can be authorized:
-    // - The proposer can cancel the proposal
-    // - Anyone can cancel if the average voting weight of the proposer was below the proposal_creation_threshold during the voting period (at the given breach_timestamp)
-    fn cancel_at_timestamp(ref self: TContractState, id: felt252, breach_timestamp: u64);
+    // Report a breach in the proposer's voting weight below the proposal creation threshold, canceling the proposal.
+    // Anyone can call this method if the voting weight of the proposer falls below the proposal_creation_threshold 
+    // at any time before the proposal is executed.
+    fn report_breach(ref self: TContractState, id: felt252, breach_timestamp: u64);
 
     // Execute the given proposal.
     fn execute(ref self: TContractState, id: felt252, calls: Span<Call>) -> Span<Span<felt252>>;
@@ -65,11 +66,20 @@ pub trait IGovernor<TContractState> {
     // Get the staker that is used by this governor contract.
     fn get_staker(self: @TContractState) -> IStakerDispatcher;
 
-    // Get the configuration for this governor contract.
+    // Get the latest configuration for this governor contract.
     fn get_config(self: @TContractState) -> Config;
+
+    // Get the configuration with the given version ID.
+    fn get_config_version(self: @TContractState, version: u64) -> Config;
 
     // Get the proposal info for the given proposal id.
     fn get_proposal(self: @TContractState, id: felt252) -> ProposalInfo;
+
+    // Gets the proposal and the config version with which it was created
+    fn get_proposal_with_config(self: @TContractState, id: felt252) -> (ProposalInfo, Config);
+
+    // Change the configuration of the governor. Only affects proposals created after the configuration change. Must be called by self, e.g. via a proposal.
+    fn reconfigure(ref self: TContractState, config: Config) -> u64;
 
     // Replace the code at this address. This must be self-called via a proposal.
     fn upgrade(ref self: TContractState, class_hash: ClassHash);
@@ -97,6 +107,7 @@ pub mod Governor {
         pub id: felt252,
         pub proposer: ContractAddress,
         pub calls: Span<Call>,
+        pub config_version: u64,
     }
 
     #[derive(starknet::Event, Drop, Debug, PartialEq)]
@@ -116,6 +127,11 @@ pub mod Governor {
     #[derive(starknet::Event, Drop)]
     pub struct Canceled {
         pub id: felt252,
+    }
+
+    #[derive(starknet::Event, Drop)]
+    pub struct CreationThresholdBreached {
+        pub id: felt252,
         pub breach_timestamp: u64,
     }
 
@@ -125,6 +141,12 @@ pub mod Governor {
         pub result_data: Span<Span<felt252>>,
     }
 
+    #[derive(starknet::Event, Drop, PartialEq, Debug)]
+    pub struct Reconfigured {
+        pub new_config: Config,
+        pub version: u64,
+    }
+
     #[derive(starknet::Event, Drop)]
     #[event]
     enum Event {
@@ -132,7 +154,9 @@ pub mod Governor {
         Described: Described,
         Voted: Voted,
         Canceled: Canceled,
+        CreationThresholdBreached: CreationThresholdBreached,
         Executed: Executed,
+        Reconfigured: Reconfigured,
     }
 
     #[storage]
@@ -143,6 +167,8 @@ pub mod Governor {
         proposals: LegacyMap<felt252, ProposalInfo>,
         has_voted: LegacyMap<(ContractAddress, felt252), bool>,
         latest_proposal_by_proposer: LegacyMap<ContractAddress, felt252>,
+        latest_config_version: u64,
+        config_versions: LegacyMap<u64, Config>,
     }
 
     #[constructor]
@@ -182,7 +208,7 @@ pub mod Governor {
             let id = get_proposal_id(get_contract_address(), nonce);
 
             let proposer = get_caller_address();
-            let config = self.config.read();
+            let config = self.get_config();
             let timestamp_current = get_block_timestamp();
 
             let latest_proposal_id = self.latest_proposal_by_proposer.read(proposer);
@@ -202,8 +228,7 @@ pub mod Governor {
 
             assert(
                 self
-                    .staker
-                    .read()
+                    .get_staker()
                     .get_average_delegated_over_last(
                         delegate: proposer, period: config.voting_weight_smoothing_duration
                     ) >= config
@@ -211,6 +236,7 @@ pub mod Governor {
                 'THRESHOLD'
             );
 
+            let config_version = self.latest_config_version.read();
             self
                 .proposals
                 .write(
@@ -224,19 +250,20 @@ pub mod Governor {
                             canceled: Zero::zero()
                         },
                         yea: 0,
-                        nay: 0
+                        nay: 0,
+                        config_version,
                     }
                 );
 
             self.latest_proposal_by_proposer.write(proposer, id);
 
-            self.emit(Proposed { id, proposer, calls });
+            self.emit(Proposed { id, proposer, calls, config_version });
 
             id
         }
 
         fn describe(ref self: ContractState, id: felt252, description: ByteArray) {
-            let proposal = self.proposals.read(id);
+            let proposal = self.get_proposal(id);
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
             assert(proposal.proposer == get_caller_address(), 'NOT_PROPOSER');
             assert(proposal.execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
@@ -245,12 +272,11 @@ pub mod Governor {
         }
 
         fn vote(ref self: ContractState, id: felt252, yea: bool) {
-            let mut proposal = self.proposals.read(id);
+            let (mut proposal, config) = self.get_proposal_with_config(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
             assert(proposal.execution_state.canceled.is_zero(), 'PROPOSAL_CANCELED');
 
-            let config = self.config.read();
             let timestamp_current = get_block_timestamp();
             let voting_start_time = (proposal.execution_state.created + config.voting_start_delay);
             let voter = get_caller_address();
@@ -261,8 +287,7 @@ pub mod Governor {
             assert(!has_voted, 'ALREADY_VOTED');
 
             let weight = self
-                .staker
-                .read()
+                .get_staker()
                 .get_average_delegated(
                     delegate: voter,
                     start: voting_start_time - config.voting_weight_smoothing_duration,
@@ -280,15 +305,29 @@ pub mod Governor {
             self.emit(Voted { id, voter, weight, yea });
         }
 
-
         fn cancel(ref self: ContractState, id: felt252) {
-            self.cancel_at_timestamp(id, get_block_timestamp())
+            let mut proposal = self.proposals.read(id);
+
+            assert(proposal.proposer == get_caller_address(), 'PROPOSER_ONLY');
+            assert(proposal.execution_state.canceled.is_zero(), 'ALREADY_CANCELED');
+            assert(proposal.execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
+
+            proposal
+                .execution_state =
+                    ExecutionState {
+                        created: proposal.execution_state.created,
+                        // we asserted that executed is zero
+                        executed: 0,
+                        canceled: get_block_timestamp()
+                    };
+
+            self.proposals.write(id, proposal);
+
+            self.emit(Canceled { id });
         }
 
-        fn cancel_at_timestamp(ref self: ContractState, id: felt252, breach_timestamp: u64) {
-            let config = self.config.read();
-            let staker = self.staker.read();
-            let mut proposal = self.proposals.read(id);
+        fn report_breach(ref self: ContractState, id: felt252, breach_timestamp: u64) {
+            let (mut proposal, config) = self.get_proposal_with_config(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
 
@@ -304,20 +343,20 @@ pub mod Governor {
             );
 
             // iff the proposer is not calling this we need to check the voting weight
-            if proposal.proposer != get_caller_address() {
-                // if at the given timestamp (during the voting period),
-                // the average voting weight is below the proposal_creation_threshold for the proposer, it can be canceled
-                assert(
-                    staker
-                        .get_average_delegated(
-                            delegate: proposal.proposer,
-                            start: breach_timestamp - config.voting_weight_smoothing_duration,
-                            end: breach_timestamp
-                        ) < config
-                        .proposal_creation_threshold,
-                    'THRESHOLD_NOT_BREACHED'
-                );
-            }
+
+            // if at the given timestamp (during the voting period),
+            // the average voting weight is below the proposal_creation_threshold for the proposer, it can be canceled
+            assert(
+                self
+                    .get_staker()
+                    .get_average_delegated(
+                        delegate: proposal.proposer,
+                        start: breach_timestamp - config.voting_weight_smoothing_duration,
+                        end: breach_timestamp
+                    ) < config
+                    .proposal_creation_threshold,
+                'THRESHOLD_NOT_BREACHED'
+            );
 
             proposal
                 .execution_state =
@@ -330,7 +369,7 @@ pub mod Governor {
 
             self.proposals.write(id, proposal);
 
-            self.emit(Canceled { id, breach_timestamp });
+            self.emit(CreationThresholdBreached { id, breach_timestamp });
         }
 
         fn execute(
@@ -389,7 +428,15 @@ pub mod Governor {
         }
 
         fn get_config(self: @ContractState) -> Config {
-            self.config.read()
+            self.get_config_version(self.latest_config_version.read())
+        }
+
+        fn get_config_version(self: @ContractState, version: u64) -> Config {
+            if version.is_zero() {
+                self.config.read()
+            } else {
+                self.config_versions.read(version)
+            }
         }
 
         fn get_staker(self: @ContractState) -> IStakerDispatcher {
@@ -398,6 +445,22 @@ pub mod Governor {
 
         fn get_proposal(self: @ContractState, id: felt252) -> ProposalInfo {
             self.proposals.read(id)
+        }
+
+        fn get_proposal_with_config(self: @ContractState, id: felt252) -> (ProposalInfo, Config) {
+            let proposal = self.get_proposal(id);
+            let config = self.get_config_version(proposal.config_version);
+            (proposal, config)
+        }
+
+        fn reconfigure(ref self: ContractState, config: Config) -> u64 {
+            self.check_self_call();
+
+            let version = self.latest_config_version.read() + 1;
+            self.config_versions.write(version, config);
+            self.latest_config_version.write(version);
+            self.emit(Reconfigured { new_config: config, version, });
+            version
         }
 
         fn upgrade(ref self: ContractState, class_hash: ClassHash) {

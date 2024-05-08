@@ -167,7 +167,8 @@ fn test_propose() {
                 created: config.voting_weight_smoothing_duration, executed: 0, canceled: 0
             },
             yea: 0,
-            nay: 0
+            nay: 0,
+            config_version: 0,
         }
     );
 }
@@ -489,6 +490,7 @@ fn test_cancel_by_proposer() {
             },
             yea: 0,
             nay: 0,
+            config_version: 0,
         }
     );
 }
@@ -539,6 +541,7 @@ fn test_cancel_by_non_proposer() {
             },
             yea: 0,
             nay: 0,
+            config_version: 0,
         }
     );
 }
