@@ -309,6 +309,34 @@ fn test_describe_proposal_successful() {
     );
 }
 
+
+#[test]
+fn test_propose_and_describe_successful() {
+    let (staker, token, governor, config) = setup();
+    token.approve(staker.contract_address, config.proposal_creation_threshold.into());
+    staker.stake(proposer());
+
+    advance_time(config.voting_weight_smoothing_duration);
+
+    let address_before = get_contract_address();
+    set_contract_address(proposer());
+    let id = governor
+        .propose_and_describe(
+            array![].span(),
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
+        );
+    set_contract_address(address_before);
+
+    pop_log::<Governor::Proposed>(governor.contract_address).unwrap();
+    assert_eq!(
+        pop_log::<Governor::Described>(governor.contract_address).unwrap(),
+        Governor::Described {
+            id,
+            description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
+        }
+    );
+}
+
 #[test]
 #[should_panic(expected: ('NOT_PROPOSER', 'ENTRYPOINT_FAILED'))]
 fn test_describe_proposal_fails_for_unknown_proposal() {
