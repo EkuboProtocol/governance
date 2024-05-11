@@ -9,6 +9,7 @@ pub(crate) mod call_trait_test;
 pub mod execution_state;
 #[cfg(test)]
 pub(crate) mod execution_state_test;
+pub mod fungible_staked_token;
 pub mod governor;
 #[cfg(test)]
 pub(crate) mod governor_test;
