@@ -63,6 +63,11 @@ pub trait IGovernor<TContractState> {
     // Attaches the given text to the proposal. Simply emits an event containing the proposal description.
     fn describe(ref self: TContractState, id: felt252, description: ByteArray);
 
+    // Combined propose and describe methods
+    fn propose_and_describe(
+        ref self: TContractState, calls: Span<Call>, description: ByteArray
+    ) -> felt252;
+
     // Get the staker that is used by this governor contract.
     fn get_staker(self: @TContractState) -> IStakerDispatcher;
 
@@ -269,6 +274,14 @@ pub mod Governor {
             assert(proposal.execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
             assert(proposal.execution_state.canceled.is_zero(), 'PROPOSAL_CANCELED');
             self.emit(Described { id, description });
+        }
+
+        fn propose_and_describe(
+            ref self: ContractState, calls: Span<Call>, description: ByteArray
+        ) -> felt252 {
+            let id = self.propose(calls);
+            self.describe(id, description);
+            id
         }
 
         fn vote(ref self: ContractState, id: felt252, yea: bool) {
