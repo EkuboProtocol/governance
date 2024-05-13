@@ -74,6 +74,9 @@ pub trait IGovernor<TContractState> {
     // Get the latest configuration for this governor contract.
     fn get_config(self: @TContractState) -> Config;
 
+    // Get the latest configuration for this governor contract and its config version ID
+    fn get_config_with_version(self: @TContractState) -> (Config, u64);
+
     // Get the configuration with the given version ID.
     fn get_config_version(self: @TContractState, version: u64) -> Config;
 
@@ -213,7 +216,7 @@ pub mod Governor {
             let id = get_proposal_id(get_contract_address(), nonce);
 
             let proposer = get_caller_address();
-            let config = self.get_config();
+            let (config, config_version) = self.get_config_with_version();
             let timestamp_current = get_block_timestamp();
 
             let latest_proposal_id = self.latest_proposal_by_proposer.read(proposer);
@@ -241,7 +244,6 @@ pub mod Governor {
                 'THRESHOLD'
             );
 
-            let config_version = self.latest_config_version.read();
             self
                 .proposals
                 .write(
@@ -319,14 +321,13 @@ pub mod Governor {
         }
 
         fn cancel(ref self: ContractState, id: felt252) {
-            let mut proposal = self.proposals.read(id);
+            let (mut proposal, config) = self.get_proposal_with_config(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
             assert(proposal.proposer == get_caller_address(), 'PROPOSER_ONLY');
             assert(proposal.execution_state.canceled.is_zero(), 'ALREADY_CANCELED');
 
             // This is prevented so that proposers cannot grief voters by creating proposals that they plan to cancel after the result is known
-            let config = self.config.read();
             assert(
                 get_block_timestamp() < (proposal.execution_state.created
                     + config.voting_start_delay),
@@ -398,8 +399,7 @@ pub mod Governor {
         ) -> Span<Span<felt252>> {
             let calls_hash = hash_calls(@calls);
 
-            let config = self.config.read();
-            let mut proposal = self.proposals.read(id);
+            let (mut proposal, config) = self.get_proposal_with_config(id);
 
             assert(proposal.calls_hash == calls_hash, 'CALLS_HASH_MISMATCH');
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
@@ -450,6 +450,11 @@ pub mod Governor {
 
         fn get_config(self: @ContractState) -> Config {
             self.get_config_version(self.latest_config_version.read())
+        }
+
+        fn get_config_with_version(self: @ContractState) -> (Config, u64) {
+            let config_version = self.latest_config_version.read();
+            (self.get_config_version(config_version), config_version)
         }
 
         fn get_config_version(self: @ContractState, version: u64) -> Config {

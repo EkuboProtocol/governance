@@ -1006,3 +1006,129 @@ fn test_execute_invalid_call_id() {
             id, array![transfer_call(token: token, recipient: recipient(), amount: 101)].span()
         );
 }
+
+#[test]
+#[should_panic(expected: ('SELF_CALL_ONLY', 'ENTRYPOINT_FAILED'))]
+fn test_upgrade_fails_if_not_self_call() {
+    let (_staker, _token, governor, _config) = setup();
+    governor.upgrade(Governor::TEST_CLASS_HASH.try_into().unwrap());
+}
+
+#[test]
+fn test_upgrade_succeeds_self_call() {
+    let (staker, token, governor, config) = setup();
+
+    token.approve(staker.contract_address, config.quorum.into());
+    staker.stake(proposer());
+    advance_time(config.voting_weight_smoothing_duration);
+
+    let id = create_proposal_with_call(
+        governor,
+        token,
+        staker,
+        Call {
+            to: governor.contract_address,
+            selector: selector!("upgrade"),
+            calldata: array![Governor::TEST_CLASS_HASH].span()
+        }
+    );
+
+    advance_time(config.voting_start_delay);
+
+    set_contract_address(proposer());
+    governor.vote(id, true);
+
+    advance_time(config.voting_period + config.execution_delay);
+
+    governor
+        .execute(
+            id,
+            array![
+                Call {
+                    to: governor.contract_address,
+                    selector: selector!("upgrade"),
+                    calldata: array![Governor::TEST_CLASS_HASH].span()
+                }
+            ]
+                .span()
+        );
+}
+
+#[test]
+#[should_panic(expected: ('SELF_CALL_ONLY', 'ENTRYPOINT_FAILED'))]
+fn test_reconfigure_fails_if_not_self_call() {
+    let (_staker, _token, governor, _config) = setup();
+    governor
+        .reconfigure(
+            Config {
+                voting_start_delay: 1,
+                voting_period: 2,
+                voting_weight_smoothing_duration: 3,
+                quorum: 4,
+                proposal_creation_threshold: 5,
+                execution_delay: 6,
+                execution_window: 7
+            }
+        );
+}
+
+
+#[test]
+fn test_reconfigure_succeeds_self_call() {
+    let (staker, token, governor, config) = setup();
+
+    token.approve(staker.contract_address, config.quorum.into());
+    staker.stake(proposer());
+    advance_time(config.voting_weight_smoothing_duration);
+
+    let mut args: Array<felt252> = array![];
+    let new_config = Config {
+        voting_start_delay: 1,
+        voting_period: 2,
+        voting_weight_smoothing_duration: 3,
+        quorum: 4,
+        proposal_creation_threshold: 5,
+        execution_delay: 6,
+        execution_window: 7
+    };
+    Serde::serialize(@new_config, ref args);
+
+    let id = create_proposal_with_call(
+        governor,
+        token,
+        staker,
+        Call {
+            to: governor.contract_address, selector: selector!("reconfigure"), calldata: args.span()
+        }
+    );
+
+    advance_time(config.voting_start_delay);
+
+    set_contract_address(proposer());
+    governor.vote(id, true);
+
+    advance_time(config.voting_period + config.execution_delay);
+
+    governor
+        .execute(
+            id,
+            array![
+                Call {
+                    to: governor.contract_address,
+                    selector: selector!("reconfigure"),
+                    calldata: args.span()
+                }
+            ]
+                .span()
+        );
+
+    pop_log::<Governor::Proposed>(governor.contract_address).unwrap();
+    pop_log::<Governor::Voted>(governor.contract_address).unwrap();
+    let reconfigured = pop_log::<Governor::Reconfigured>(governor.contract_address).unwrap();
+    assert_eq!(reconfigured.new_config, new_config);
+    assert_eq!(reconfigured.version, 1);
+    let executed = pop_log::<Governor::Executed>(governor.contract_address).unwrap();
+    assert_eq!(governor.get_config_with_version(), (new_config, 1));
+    assert_eq!(executed.id, id);
+    assert_eq!(executed.result_data, array![array![1_felt252].span()].span());
+}
