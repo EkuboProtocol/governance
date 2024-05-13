@@ -1131,4 +1131,11 @@ fn test_reconfigure_succeeds_self_call() {
     assert_eq!(governor.get_config_with_version(), (new_config, 1));
     assert_eq!(executed.id, id);
     assert_eq!(executed.result_data, array![array![1_felt252].span()].span());
+
+    let (_, first_proposal_config) = governor.get_proposal_with_config(id);
+    assert_eq!(first_proposal_config, config);
+
+    let id_next = governor.propose(array![].span());
+    let (_, next_proposal_config) = governor.get_proposal_with_config(id_next);
+    assert_eq!(next_proposal_config, new_config);
 }
