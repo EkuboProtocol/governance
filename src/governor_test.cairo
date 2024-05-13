@@ -488,7 +488,26 @@ fn test_vote_after_voting_period_should_fail() {
 #[should_panic(expected: ('DOES_NOT_EXIST', 'ENTRYPOINT_FAILED'))]
 fn test_cancel_fails_if_proposal_not_exists() {
     let (_staker, _token, governor, _config) = setup();
-    let id = 1234;
+    governor.cancel(1234);
+}
+
+#[test]
+#[should_panic(expected: ('PROPOSER_ONLY', 'ENTRYPOINT_FAILED'))]
+fn test_cancel_fails_if_not_from_proposer() {
+    let (staker, token, governor, _config) = setup();
+    let id = create_proposal(governor, token, staker);
+    set_contract_address(anyone());
+    governor.cancel(id);
+}
+
+
+#[test]
+#[should_panic(expected: ('ALREADY_CANCELED', 'ENTRYPOINT_FAILED'))]
+fn test_cancel_fails_if_already_canceled() {
+    let (staker, token, governor, _config) = setup();
+    let id = create_proposal(governor, token, staker);
+    set_contract_address(proposer());
+    governor.cancel(id);
     governor.cancel(id);
 }
 
@@ -540,7 +559,18 @@ fn test_double_cancel_by_proposer() {
 }
 
 #[test]
+#[should_panic(expected: ('PROPOSER_ONLY', 'ENTRYPOINT_FAILED'))]
 fn test_cancel_by_non_proposer() {
+    let (staker, token, governor, _config) = setup();
+
+    let id = create_proposal(governor, token, staker);
+
+    set_contract_address(anyone());
+    governor.cancel(id);
+}
+
+#[test]
+fn test_report_breach_by_non_proposer() {
     let (staker, token, governor, config) = setup();
 
     let id = create_proposal(governor, token, staker);
@@ -551,7 +581,7 @@ fn test_cancel_by_non_proposer() {
 
     // A random user can now cancel the proposal
     set_contract_address(anyone());
-    governor.cancel(id);
+    governor.report_breach(id, get_block_timestamp());
 
     // Expect that proposal is no longer available
     let proposal = governor.get_proposal(id);
@@ -584,21 +614,21 @@ fn test_cancel_by_non_proposer_threshold_not_breached_should_fail() {
     // A random user can't now cancel the proposal because
     // the proposer's voting power is still above threshold
     set_contract_address(anyone());
-    governor.cancel(id);
+    governor.report_breach(id, get_block_timestamp());
 }
 
 #[test]
-#[should_panic(expected: ('VOTING_ENDED', 'ENTRYPOINT_FAILED'))]
+#[should_panic(expected: ('VOTING_STARTED', 'ENTRYPOINT_FAILED'))]
 fn test_cancel_after_voting_end_should_fail() {
     let (staker, token, governor, config) = setup();
     let proposer = proposer();
 
     let id = create_proposal(governor, token, staker);
 
-    advance_time(config.voting_start_delay + config.voting_period);
+    advance_time(config.voting_start_delay);
     set_contract_address(proposer);
 
-    governor.cancel(id); // Try to cancel the proposal after voting started
+    governor.cancel(id); // Try to cancel the proposal after voting completed
 }
 
 #[test]
@@ -637,25 +667,11 @@ fn test_execute_valid_proposal() {
 fn test_canceled_proposal_cannot_be_executed() {
     let (staker, token, governor, config) = setup();
     let id = create_proposal(governor, token, staker);
-
-    token.transfer(governor.contract_address, 100);
-
-    token.approve(staker.contract_address, config.quorum.into());
-    staker.stake(voter1());
-
-    advance_time(config.voting_start_delay);
-    set_contract_address(proposer());
-    governor.vote(id, true);
-    set_contract_address(voter1());
-    governor.vote(id, true);
-
     set_contract_address(proposer());
     governor.cancel(id);
-
+    advance_time(config.voting_start_delay);
     advance_time(config.voting_period);
-
     set_contract_address(anyone());
-
     governor
         .execute(
             id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()

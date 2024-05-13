@@ -321,9 +321,17 @@ pub mod Governor {
         fn cancel(ref self: ContractState, id: felt252) {
             let mut proposal = self.proposals.read(id);
 
+            assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
             assert(proposal.proposer == get_caller_address(), 'PROPOSER_ONLY');
             assert(proposal.execution_state.canceled.is_zero(), 'ALREADY_CANCELED');
-            assert(proposal.execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
+
+            // This is prevented so that proposers cannot grief voters by creating proposals that they plan to cancel after the result is known
+            let config = self.config.read();
+            assert(
+                get_block_timestamp() < (proposal.execution_state.created
+                    + config.voting_start_delay),
+                'VOTING_STARTED'
+            );
 
             proposal
                 .execution_state =
