@@ -364,10 +364,8 @@ pub mod Governor {
                 'VOTING_ENDED'
             );
 
-            // iff the proposer is not calling this we need to check the voting weight
-
-            // if at the given timestamp (during the voting period),
-            // the average voting weight is below the proposal_creation_threshold for the proposer, it can be canceled
+            // check that at the given timestamp, during the voting period and after the proposal was created, the proposer's delegation
+            // fell below the proposal creation threshold
             assert(
                 self
                     .get_staker()
