@@ -53,8 +53,8 @@ pub trait IGovernor<TContractState> {
     fn cancel(ref self: TContractState, id: felt252);
 
     // Report a breach in the proposer's voting weight below the proposal creation threshold, canceling the proposal.
-    // Anyone can call this method if the voting weight of the proposer falls below the proposal_creation_threshold 
-    // at any time before the proposal is executed.
+    // The breach timestamp must be between when the proposal was created and the end of the voting period for the proposal.
+    // This method can be called by anyone at any time before the proposal is executed.
     fn report_breach(ref self: TContractState, id: felt252, breach_timestamp: u64);
 
     // Execute the given proposal.
