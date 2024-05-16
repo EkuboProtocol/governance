@@ -47,7 +47,7 @@ pub(crate) fn anyone() -> ContractAddress {
     'anyone'.try_into().unwrap()
 }
 
-fn advance_time(by: u64) -> u64 {
+pub(crate) fn advance_time(by: u64) -> u64 {
     let next = get_block_timestamp() + by;
     set_block_timestamp(next);
     next

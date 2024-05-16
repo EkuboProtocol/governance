@@ -13,7 +13,7 @@ pub trait IFungibleStakedToken<TContractState> {
 
     // The number of seconds (while total staked > 0) that have passed per total tokens staked
     // Can be used to compute the share of total staked tokens that a user has had over a period, by collecting two snapshots of the value
-    fn get_seconds_per_total_staked(self: @TContractState) -> u256;
+    fn get_seconds_per_total_staked(self: @TContractState, timestamp: u64) -> u256;
 
     // Delegates any staked tokens from the caller to the owner
     fn delegate(ref self: TContractState, to: ContractAddress);
@@ -175,6 +175,46 @@ pub mod FungibleStakedToken {
             }
             total_staked
         }
+
+        fn find_seconds_per_total_staked(
+            self: @ContractState, min_index: u64, max_index_exclusive: u64, timestamp: u64
+        ) -> u256 {
+            if (min_index == (max_index_exclusive - 1)) {
+                let snapshot = self.snapshots_by_index.read(min_index);
+                return if (snapshot.timestamp > timestamp) {
+                    0
+                } else {
+                    let difference = timestamp - snapshot.timestamp;
+                    let next = self.snapshots_by_index.read(min_index + 1);
+                    let staked_amount = if (next.timestamp.is_zero()) {
+                        self.total_staked.read()
+                    } else {
+                        // todo: this is wrong because it increments by seconds / total_staked, not total_staked * seconds
+                        (u256 { high: (next.timestamp - snapshot.timestamp).into(), low: 0 }
+                            / (next.seconds_per_total_staked - snapshot.seconds_per_total_staked))
+                            .try_into()
+                            .unwrap()
+                    };
+
+                    // todo: is rounding safe here?
+                    snapshot.seconds_per_total_staked + (difference.into() / staked_amount).into()
+                };
+            }
+            let mid = (min_index + max_index_exclusive) / 2;
+
+            let snapshot = self.snapshots_by_index.read(mid);
+
+            if (timestamp == snapshot.timestamp) {
+                return snapshot.seconds_per_total_staked;
+            }
+
+            // timestamp we are looking for is before snapshot
+            if (timestamp < snapshot.timestamp) {
+                self.find_seconds_per_total_staked(min_index, mid, timestamp)
+            } else {
+                self.find_seconds_per_total_staked(mid, max_index_exclusive, timestamp)
+            }
+        }
     }
 
     #[abi(embed_v0)]
@@ -249,23 +289,18 @@ pub mod FungibleStakedToken {
             self.total_staked.read()
         }
 
-        fn get_seconds_per_total_staked(self: @ContractState) -> u256 {
-            let (_, snapshot) = self.last_staked_snapshot();
-            let time_since_last = get_block_timestamp() - snapshot.timestamp;
-            if time_since_last.is_zero() {
-                snapshot.seconds_per_total_staked
+        fn get_seconds_per_total_staked(self: @ContractState, timestamp: u64) -> u256 {
+            assert(timestamp <= get_block_timestamp(), 'FUTURE');
+
+            let num_snapshots = self.num_snapshots.read();
+            return if (num_snapshots.is_zero()) {
+                0
             } else {
-                let current_staked = self.total_staked.read();
-                let last_cumulative = snapshot.seconds_per_total_staked;
-                if current_staked.is_zero() {
-                    last_cumulative
-                } else {
-                    last_cumulative
-                        + (u256 { high: time_since_last.into(), low: 0 } / current_staked.into())
-                            .try_into()
-                            .unwrap()
-                }
-            }
+                self
+                    .find_seconds_per_total_staked(
+                        min_index: 0, max_index_exclusive: num_snapshots, timestamp: timestamp
+                    )
+            };
         }
 
         fn delegate(ref self: ContractState, to: ContractAddress) {

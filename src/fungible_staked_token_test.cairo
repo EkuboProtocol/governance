@@ -12,6 +12,7 @@ use governance::fungible_staked_token::{
     IFungibleStakedToken, IFungibleStakedTokenDispatcher, IFungibleStakedTokenDispatcherTrait,
     FungibleStakedToken
 };
+use governance::governor_test::{advance_time};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::staker::{IStakerDispatcher, IStakerDispatcherTrait};
 use governance::staker_test::{setup as setup_staker};
@@ -105,4 +106,28 @@ fn test_withdraw() {
     fst.withdraw();
     assert_eq!(staker.get_delegated(delegatee), 0);
     assert_eq!(staker.get_delegated(Zero::zero()), 0);
+}
+
+#[test]
+fn test_get_seconds_per_total_staked() {
+    let (_, token, fst) = setup();
+    token.approve(fst.contract_address, 100);
+    let start_time = get_block_timestamp();
+    fst.deposit();
+    advance_time(100);
+    fst.withdraw_amount(20);
+    advance_time(100);
+    fst.withdraw_amount(80);
+    assert_eq!(fst.get_seconds_per_total_staked(timestamp: start_time), 0);
+    assert_eq!(
+        fst.get_seconds_per_total_staked(timestamp: start_time + 50),
+        u256 { high: 50, low: 0 } / 100
+    );
+    assert_eq!(
+        fst.get_seconds_per_total_staked(timestamp: start_time + 100), u256 { high: 1, low: 0 }
+    );
+    assert_eq!(
+        fst.get_seconds_per_total_staked(timestamp: start_time + 150),
+        u256 { high: 1, low: 0 } + (u256 { high: 50, low: 0 } / 80)
+    );
 }
