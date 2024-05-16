@@ -24,9 +24,11 @@ use starknet::{
 };
 
 
-fn deploy(staker: IStakerDispatcher) -> IFungibleStakedTokenDispatcher {
+fn deploy(
+    staker: IStakerDispatcher, name: felt252, symbol: felt252
+) -> IFungibleStakedTokenDispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
-    Serde::serialize(@(staker), ref constructor_args);
+    Serde::serialize(@(staker, name, symbol), ref constructor_args);
 
     let (address, _) = deploy_syscall(
         FungibleStakedToken::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true
@@ -37,7 +39,7 @@ fn deploy(staker: IStakerDispatcher) -> IFungibleStakedTokenDispatcher {
 
 fn setup() -> (IStakerDispatcher, IERC20Dispatcher, IFungibleStakedTokenDispatcher) {
     let (staker, token) = setup_staker(1000000);
-    let fungible_staked_token = deploy(staker);
+    let fungible_staked_token = deploy(staker, 'Staked Token', 'vSTT');
 
     (staker, token, fungible_staked_token)
 }

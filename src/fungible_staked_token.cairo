@@ -29,7 +29,10 @@ pub mod FungibleStakedToken {
     use core::num::traits::zero::{Zero};
     use core::option::{OptionTrait};
     use core::traits::{Into, TryInto};
-    use governance::interfaces::erc20::{IERC20, IERC20Dispatcher, IERC20DispatcherTrait};
+    use governance::interfaces::erc20::{
+        IERC20, IERC20Metadata, IERC20MetadataDispatcher, IERC20MetadataDispatcherTrait,
+        IERC20Dispatcher, IERC20DispatcherTrait
+    };
     use governance::staker::{IStakerDispatcher, IStakerDispatcherTrait};
     use starknet::{
         get_caller_address, get_contract_address, get_block_timestamp,
@@ -43,11 +46,18 @@ pub mod FungibleStakedToken {
         delegated_to: LegacyMap<ContractAddress, ContractAddress>,
         balances: LegacyMap<ContractAddress, u128>,
         allowances: LegacyMap<(ContractAddress, ContractAddress), u128>,
+        total_supply: u128,
+        name: felt252,
+        symbol: felt252,
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, staker: IStakerDispatcher) {
+    fn constructor(
+        ref self: ContractState, staker: IStakerDispatcher, name: felt252, symbol: felt252
+    ) {
         self.staker.write(staker);
+        self.name.write(name);
+        self.symbol.write(symbol);
     }
 
     #[derive(starknet::Event, PartialEq, Debug, Drop)]
@@ -107,7 +117,27 @@ pub mod FungibleStakedToken {
     }
 
     #[abi(embed_v0)]
+    impl FungibleStakedTokenERC20Metadata of IERC20Metadata<ContractState> {
+        fn name(self: @ContractState) -> felt252 {
+            self.name.read()
+        }
+        fn symbol(self: @ContractState) -> felt252 {
+            self.symbol.read()
+        }
+        fn decimals(self: @ContractState) -> u8 {
+            IERC20MetadataDispatcher {
+                contract_address: IStakerDispatcher { contract_address: self.get_staker() }
+                    .get_token()
+            }
+                .decimals()
+        }
+    }
+
+    #[abi(embed_v0)]
     impl FungibleStakedTokenERC20 of IERC20<ContractState> {
+        fn totalSupply(self: @ContractState) -> u256 {
+            self.total_supply.read().into()
+        }
         fn balanceOf(self: @ContractState, account: ContractAddress) -> u256 {
             self.balances.read(account).into()
         }
@@ -198,6 +228,7 @@ pub mod FungibleStakedToken {
             staker.stake(self.delegated_to.read(caller));
 
             self.balances.write(caller, self.balances.read(caller) + amount);
+            self.total_supply.write(self.total_supply.read() + amount);
         }
 
         fn deposit(ref self: ContractState) {
@@ -214,6 +245,7 @@ pub mod FungibleStakedToken {
             let caller = get_caller_address();
 
             self.balances.write(caller, self.balances.read(caller) - amount);
+            self.total_supply.write(self.total_supply.read() - amount);
 
             self.staker.read().withdraw_amount(self.delegated_to.read(caller), caller, amount);
         }
