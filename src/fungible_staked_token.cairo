@@ -81,7 +81,8 @@ pub mod FungibleStakedToken {
         staker: IStakerDispatcher,
         delegated_to: LegacyMap<ContractAddress, ContractAddress>,
         total_staked: u128,
-        last_staked_snapshot: StakedSnapshot,
+        num_snapshots: u64,
+        snapshots_by_index: LegacyMap<u64, StakedSnapshot>,
         balances: LegacyMap<ContractAddress, u128>,
         allowances: LegacyMap<(ContractAddress, ContractAddress), u128>,
     }
@@ -146,15 +147,23 @@ pub mod FungibleStakedToken {
             staker.stake(to);
         }
 
+        fn last_staked_snapshot(self: @ContractState) -> (u64, StakedSnapshot) {
+            let index = self.num_snapshots.read();
+            (index, self.snapshots_by_index.read(index))
+        }
+
         fn snapshot_total_staked_last(ref self: ContractState) -> u128 {
             let total_staked = self.total_staked.read();
             let current_time = get_block_timestamp();
-            let last_snapshot = self.last_staked_snapshot.read();
+            let (index, last_snapshot) = self.last_staked_snapshot();
             let time_elapsed = current_time - last_snapshot.timestamp;
             if time_elapsed.is_non_zero() {
+                let next = index + 1;
+                self.num_snapshots.write(next);
                 self
-                    .last_staked_snapshot
+                    .snapshots_by_index
                     .write(
+                        next,
                         StakedSnapshot {
                             seconds_per_total_staked: last_snapshot.seconds_per_total_staked
                                 + (u256 { high: time_elapsed.into(), low: 0 } / total_staked.into())
@@ -241,7 +250,7 @@ pub mod FungibleStakedToken {
         }
 
         fn get_seconds_per_total_staked(self: @ContractState) -> u256 {
-            let snapshot = self.last_staked_snapshot.read();
+            let (_, snapshot) = self.last_staked_snapshot();
             let time_since_last = get_block_timestamp() - snapshot.timestamp;
             if time_since_last.is_zero() {
                 snapshot.seconds_per_total_staked
