@@ -8,13 +8,6 @@ pub trait IFungibleStakedToken<TContractState> {
     // Get the address to whom the owner is delegated to
     fn get_delegated_to(self: @TContractState, owner: ContractAddress) -> ContractAddress;
 
-    // Returns the total number of tokens currently staked
-    fn get_total_staked(self: @TContractState) -> u128;
-
-    // The number of seconds (while total staked > 0) that have passed per total tokens staked
-    // Can be used to compute the share of total staked tokens that a user has had over a period, by collecting two snapshots of the value
-    fn get_seconds_per_total_staked(self: @TContractState, timestamp: u64) -> u256;
-
     // Delegates any staked tokens from the caller to the owner
     fn delegate(ref self: TContractState, to: ContractAddress);
 
@@ -44,45 +37,10 @@ pub mod FungibleStakedToken {
     };
     use super::{IFungibleStakedToken, ContractAddress};
 
-
-    #[derive(Copy, Drop, PartialEq, Debug)]
-    pub struct StakedSnapshot {
-        pub timestamp: u64,
-        pub seconds_per_total_staked: u256,
-    }
-
-    const TWO_POW_64: u128 = 0x10000000000000000;
-    const TWO_POW_192: u256 = 0x1000000000000000000000000000000000000000000000000;
-    const TWO_POW_192_DIVISOR: NonZero<u256> = 0x1000000000000000000000000000000000000000000000000;
-
-    // todo: refactor to reuse the code from the delegated snapshot
-    pub(crate) impl StakedSnapshotStorePacking of StorePacking<StakedSnapshot, felt252> {
-        fn pack(value: StakedSnapshot) -> felt252 {
-            assert(value.seconds_per_total_staked < TWO_POW_192, 'MAX_SECONDS_PER_TOTAL_STAKED');
-            (value.seconds_per_total_staked
-                + u256 { high: value.timestamp.into() * TWO_POW_64, low: 0 })
-                .try_into()
-                .unwrap()
-        }
-
-        fn unpack(value: felt252) -> StakedSnapshot {
-            let (timestamp, seconds_per_total_staked) = DivRem::div_rem(
-                value.into(), TWO_POW_192_DIVISOR
-            );
-            StakedSnapshot {
-                timestamp: timestamp.low.try_into().unwrap(), seconds_per_total_staked
-            }
-        }
-    }
-
-
     #[storage]
     struct Storage {
         staker: IStakerDispatcher,
         delegated_to: LegacyMap<ContractAddress, ContractAddress>,
-        total_staked: u128,
-        num_snapshots: u64,
-        snapshots_by_index: LegacyMap<u64, StakedSnapshot>,
         balances: LegacyMap<ContractAddress, u128>,
         allowances: LegacyMap<(ContractAddress, ContractAddress), u128>,
     }
@@ -145,75 +103,6 @@ pub mod FungibleStakedToken {
             staker.withdraw_amount(from, get_contract_address(), amount);
             assert(token.approve(staker.contract_address, amount.into()), 'APPROVE_FAILED');
             staker.stake(to);
-        }
-
-        fn last_staked_snapshot(self: @ContractState) -> (u64, StakedSnapshot) {
-            let index = self.num_snapshots.read();
-            (index, self.snapshots_by_index.read(index))
-        }
-
-        fn snapshot_total_staked_last(ref self: ContractState) -> u128 {
-            let total_staked = self.total_staked.read();
-            let current_time = get_block_timestamp();
-            let (index, last_snapshot) = self.last_staked_snapshot();
-            let time_elapsed = current_time - last_snapshot.timestamp;
-            if time_elapsed.is_non_zero() {
-                let next = index + 1;
-                self.num_snapshots.write(next);
-                self
-                    .snapshots_by_index
-                    .write(
-                        next,
-                        StakedSnapshot {
-                            seconds_per_total_staked: last_snapshot.seconds_per_total_staked
-                                + (u256 { high: time_elapsed.into(), low: 0 } / total_staked.into())
-                                    .try_into()
-                                    .unwrap(),
-                            timestamp: current_time,
-                        }
-                    );
-            }
-            total_staked
-        }
-
-        fn find_seconds_per_total_staked(
-            self: @ContractState, min_index: u64, max_index_exclusive: u64, timestamp: u64
-        ) -> u256 {
-            if (min_index == (max_index_exclusive - 1)) {
-                let snapshot = self.snapshots_by_index.read(min_index);
-                return if (snapshot.timestamp > timestamp) {
-                    0
-                } else {
-                    let difference = timestamp - snapshot.timestamp;
-                    let next = self.snapshots_by_index.read(min_index + 1);
-                    let staked_amount = if (next.timestamp.is_zero()) {
-                        self.total_staked.read()
-                    } else {
-                        // todo: this is wrong because it increments by seconds / total_staked, not total_staked * seconds
-                        (u256 { high: (next.timestamp - snapshot.timestamp).into(), low: 0 }
-                            / (next.seconds_per_total_staked - snapshot.seconds_per_total_staked))
-                            .try_into()
-                            .unwrap()
-                    };
-
-                    // todo: is rounding safe here?
-                    snapshot.seconds_per_total_staked + (difference.into() / staked_amount).into()
-                };
-            }
-            let mid = (min_index + max_index_exclusive) / 2;
-
-            let snapshot = self.snapshots_by_index.read(mid);
-
-            if (timestamp == snapshot.timestamp) {
-                return snapshot.seconds_per_total_staked;
-            }
-
-            // timestamp we are looking for is before snapshot
-            if (timestamp < snapshot.timestamp) {
-                self.find_seconds_per_total_staked(min_index, mid, timestamp)
-            } else {
-                self.find_seconds_per_total_staked(mid, max_index_exclusive, timestamp)
-            }
         }
     }
 
@@ -285,23 +174,6 @@ pub mod FungibleStakedToken {
             self.delegated_to.read(owner)
         }
 
-        fn get_total_staked(self: @ContractState) -> u128 {
-            self.total_staked.read()
-        }
-
-        fn get_seconds_per_total_staked(self: @ContractState, timestamp: u64) -> u256 {
-            assert(timestamp <= get_block_timestamp(), 'FUTURE');
-
-            let num_snapshots = self.num_snapshots.read();
-            return if (num_snapshots.is_zero()) {
-                0
-            } else {
-                self
-                    .find_seconds_per_total_staked(
-                        min_index: 0, max_index_exclusive: num_snapshots, timestamp: timestamp
-                    )
-            };
-        }
 
         fn delegate(ref self: ContractState, to: ContractAddress) {
             let caller = get_caller_address();
@@ -326,7 +198,6 @@ pub mod FungibleStakedToken {
             staker.stake(self.delegated_to.read(caller));
 
             self.balances.write(caller, self.balances.read(caller) + amount);
-            self.total_staked.write(self.snapshot_total_staked_last() + amount);
         }
 
         fn deposit(ref self: ContractState) {
@@ -340,11 +211,11 @@ pub mod FungibleStakedToken {
         }
 
         fn withdraw_amount(ref self: ContractState, amount: u128) {
-            let staker = self.staker.read();
             let caller = get_caller_address();
-            staker.withdraw_amount(self.delegated_to.read(caller), caller, amount);
+
             self.balances.write(caller, self.balances.read(caller) - amount);
-            self.total_staked.write(self.snapshot_total_staked_last() - amount);
+
+            self.staker.read().withdraw_amount(self.delegated_to.read(caller), caller, amount);
         }
 
         fn withdraw(ref self: ContractState) {

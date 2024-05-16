@@ -107,27 +107,3 @@ fn test_withdraw() {
     assert_eq!(staker.get_delegated(delegatee), 0);
     assert_eq!(staker.get_delegated(Zero::zero()), 0);
 }
-
-#[test]
-fn test_get_seconds_per_total_staked() {
-    let (_, token, fst) = setup();
-    token.approve(fst.contract_address, 100);
-    let start_time = get_block_timestamp();
-    fst.deposit();
-    advance_time(100);
-    fst.withdraw_amount(20);
-    advance_time(100);
-    fst.withdraw_amount(80);
-    assert_eq!(fst.get_seconds_per_total_staked(timestamp: start_time), 0);
-    assert_eq!(
-        fst.get_seconds_per_total_staked(timestamp: start_time + 50),
-        u256 { high: 50, low: 0 } / 100
-    );
-    assert_eq!(
-        fst.get_seconds_per_total_staked(timestamp: start_time + 100), u256 { high: 1, low: 0 }
-    );
-    assert_eq!(
-        fst.get_seconds_per_total_staked(timestamp: start_time + 150),
-        u256 { high: 1, low: 0 } + (u256 { high: 50, low: 0 } / 80)
-    );
-}
