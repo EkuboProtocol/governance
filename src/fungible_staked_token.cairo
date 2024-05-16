@@ -5,9 +5,6 @@ pub trait IFungibleStakedToken<TContractState> {
     // Returns the address of the staker that this staked token wrapper uses
     fn get_staker(self: @TContractState) -> ContractAddress;
 
-    // Returns the address of the token that this fungible staked wrapper stakes
-    fn get_token(self: @TContractState) -> ContractAddress;
-
     // Get the address to whom the owner is delegated to
     fn get_delegated_to(self: @TContractState, owner: ContractAddress) -> ContractAddress;
 
@@ -26,12 +23,11 @@ pub trait IFungibleStakedToken<TContractState> {
 
     // Same as above but with a specified amount
     fn deposit_amount(ref self: TContractState, amount: u128);
+// // Withdraws the entire staked balance from the contract from the caller
+// fn withdraw(ref self: TContractState);
 
-    // Withdraws the entire staked balance from the contract from the caller
-    fn withdraw(ref self: TContractState);
-
-    // Withdraws the specified amount of token from the contract from the caller
-    fn withdraw_amount(ref self: TContractState, amount: u128);
+// // Withdraws the specified amount of token from the contract from the caller
+// fn withdraw_amount(ref self: TContractState, amount: u128);
 }
 
 #[starknet::contract]
@@ -51,6 +47,8 @@ pub mod FungibleStakedToken {
         total_staked: u128,
         last_seconds_per_total_staked_time: u64,
         seconds_per_total_staked: felt252,
+        balances: LegacyMap<ContractAddress, u128>,
+        allowances: LegacyMap<(ContractAddress, ContractAddress), u128>,
     }
 
     #[constructor]
@@ -77,12 +75,27 @@ pub mod FungibleStakedToken {
         pub to: ContractAddress,
     }
 
+    #[derive(starknet::Event, PartialEq, Debug, Drop)]
+    pub struct Transfer {
+        pub from: ContractAddress,
+        pub to: ContractAddress,
+        pub amount: u256,
+    }
+    #[derive(starknet::Event, PartialEq, Debug, Drop)]
+    pub struct Approval {
+        pub owner: ContractAddress,
+        pub spender: ContractAddress,
+        pub amount: u256,
+    }
+
     #[derive(starknet::Event, Drop)]
     #[event]
     enum Event {
         Deposit: Deposit,
         Withdrawal: Withdrawal,
         Delegation: Delegation,
+        Transfer: Transfer,
+        Approval: Approval,
     }
 
     #[generate_trait]
@@ -100,16 +113,61 @@ pub mod FungibleStakedToken {
     }
 
     #[abi(embed_v0)]
-    impl FungibleStakedTokenERC20 of IERC20<ContractState> {}
+    impl FungibleStakedTokenERC20 of IERC20<ContractState> {
+        fn balanceOf(self: @ContractState, account: ContractAddress) -> u256 {
+            self.balances.read(account).into()
+        }
+        fn allowance(
+            self: @ContractState, owner: ContractAddress, spender: ContractAddress
+        ) -> u256 {
+            self.allowances.read((owner, spender)).into()
+        }
+        fn transfer(ref self: ContractState, recipient: ContractAddress, amount: u256) -> bool {
+            let from = get_caller_address();
+            let balance = self.balances.read(from);
+            assert(balance.into() >= amount, 'INSUFFICIENT_BALANCE');
+            let small_amount: u128 = amount.try_into().unwrap();
+            self.balances.write(from, balance - small_amount);
+            self.balances.write(recipient, self.balances.read(recipient) + small_amount);
+            self.emit(Transfer { from, to: recipient, amount: amount });
+            self.move_delegates(from, recipient, small_amount);
+            true
+        }
+        fn transferFrom(
+            ref self: ContractState,
+            sender: ContractAddress,
+            recipient: ContractAddress,
+            amount: u256
+        ) -> bool {
+            let spender = get_caller_address();
+            let allowance = self.allowances.read((sender, spender));
+            assert(allowance.into() >= amount, 'INSUFFICIENT_ALLOWANCE');
+            let small_amount: u128 = amount.try_into().unwrap();
+            self.allowances.write((sender, spender), allowance - small_amount);
+
+            let balance = self.balances.read(sender);
+
+            self.balances.write(sender, balance - small_amount);
+            self.balances.write(recipient, self.balances.read(recipient) + small_amount);
+            self.emit(Transfer { from: sender, to: recipient, amount: amount });
+
+            self.move_delegates(sender, recipient, small_amount);
+
+            true
+        }
+        fn approve(ref self: ContractState, spender: ContractAddress, amount: u256) -> bool {
+            let owner = get_caller_address();
+            let small_amount: u128 = amount.try_into().expect('AMOUNT_EXCEEDS_U128');
+            self.allowances.write((owner, spender), small_amount);
+            self.emit(Approval { owner, spender, amount });
+            true
+        }
+    }
 
     #[abi(embed_v0)]
     impl FungibleStakedTokenImpl of IFungibleStakedToken<ContractState> {
         fn get_staker(self: @ContractState) -> ContractAddress {
             self.staker.read().contract_address
-        }
-
-        fn get_token(self: @ContractState) -> ContractAddress {
-            self.staker.read().get_token()
         }
 
         fn get_delegated_to(self: @ContractState, owner: ContractAddress) -> ContractAddress {
