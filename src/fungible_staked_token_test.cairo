@@ -51,3 +51,58 @@ fn test_setup() {
         IStakerDispatcher { contract_address: fst.get_staker() }.get_token(), token.contract_address
     );
 }
+
+
+#[test]
+fn test_deposit() {
+    let (staker, token, fst) = setup();
+    token.approve(fst.contract_address, 100);
+    let delegatee = contract_address_const::<'delegate'>();
+    fst.delegate(delegatee);
+    fst.deposit();
+    assert_eq!(staker.get_delegated(delegatee), 100);
+    assert_eq!(
+        IERC20Dispatcher { contract_address: fst.contract_address }
+            .balanceOf(get_contract_address()),
+        100
+    );
+}
+
+#[test]
+fn test_deposit_then_transfer() {
+    let (staker, token, fst) = setup();
+    token.approve(fst.contract_address, 100);
+    let delegatee = contract_address_const::<'delegate'>();
+    let recipient = contract_address_const::<'recipient'>();
+    fst.delegate(delegatee);
+    fst.deposit();
+    IERC20Dispatcher { contract_address: fst.contract_address }.transfer(recipient, 75);
+    assert_eq!(staker.get_delegated(delegatee), 25);
+    assert_eq!(staker.get_delegated(Zero::zero()), 75);
+}
+
+#[test]
+fn test_deposit_then_delegate() {
+    let (staker, token, fst) = setup();
+    token.approve(fst.contract_address, 100);
+    let delegatee = contract_address_const::<'delegate'>();
+    fst.deposit();
+    assert_eq!(staker.get_delegated(Zero::zero()), 100);
+    assert_eq!(staker.get_delegated(delegatee), 0);
+
+    fst.delegate(delegatee);
+    assert_eq!(staker.get_delegated(Zero::zero()), 0);
+    assert_eq!(staker.get_delegated(delegatee), 100);
+}
+
+#[test]
+fn test_withdraw() {
+    let (staker, token, fst) = setup();
+    token.approve(fst.contract_address, 100);
+    let delegatee = contract_address_const::<'delegate'>();
+    fst.delegate(delegatee);
+    fst.deposit();
+    fst.withdraw();
+    assert_eq!(staker.get_delegated(delegatee), 0);
+    assert_eq!(staker.get_delegated(Zero::zero()), 0);
+}

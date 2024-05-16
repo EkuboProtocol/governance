@@ -23,11 +23,12 @@ pub trait IFungibleStakedToken<TContractState> {
 
     // Same as above but with a specified amount
     fn deposit_amount(ref self: TContractState, amount: u128);
-// // Withdraws the entire staked balance from the contract from the caller
-// fn withdraw(ref self: TContractState);
 
-// // Withdraws the specified amount of token from the contract from the caller
-// fn withdraw_amount(ref self: TContractState, amount: u128);
+    // Withdraws the entire staked balance from the contract from the caller
+    fn withdraw(ref self: TContractState);
+
+    // Withdraws the specified amount of token from the contract from the caller
+    fn withdraw_amount(ref self: TContractState, amount: u128);
 }
 
 #[starknet::contract]
@@ -110,6 +111,24 @@ pub mod FungibleStakedToken {
             assert(token.approve(staker.contract_address, amount.into()), 'APPROVE_FAILED');
             staker.stake(to);
         }
+
+        fn snapshot_total_staked_last(ref self: ContractState) -> u128 {
+            let total_staked = self.total_staked.read();
+            let current_time = get_block_timestamp();
+            let time_elapsed = current_time - self.last_seconds_per_total_staked_time.read();
+            if time_elapsed.is_non_zero() {
+                self
+                    .seconds_per_total_staked
+                    .write(
+                        self.seconds_per_total_staked.read()
+                            + (u256 { high: time_elapsed.into(), low: 0 } / total_staked.into())
+                                .try_into()
+                                .unwrap()
+                    );
+                self.last_seconds_per_total_staked_time.write(current_time);
+            }
+            total_staked
+        }
     }
 
     #[abi(embed_v0)]
@@ -130,7 +149,10 @@ pub mod FungibleStakedToken {
             self.balances.write(from, balance - small_amount);
             self.balances.write(recipient, self.balances.read(recipient) + small_amount);
             self.emit(Transfer { from, to: recipient, amount: amount });
-            self.move_delegates(from, recipient, small_amount);
+            self
+                .move_delegates(
+                    self.get_delegated_to(from), self.get_delegated_to(recipient), small_amount
+                );
             true
         }
         fn transferFrom(
@@ -151,7 +173,10 @@ pub mod FungibleStakedToken {
             self.balances.write(recipient, self.balances.read(recipient) + small_amount);
             self.emit(Transfer { from: sender, to: recipient, amount: amount });
 
-            self.move_delegates(sender, recipient, small_amount);
+            self
+                .move_delegates(
+                    self.get_delegated_to(sender), self.get_delegated_to(recipient), small_amount
+                );
 
             true
         }
@@ -217,24 +242,10 @@ pub mod FungibleStakedToken {
                 'TRANSFER_FROM_FAILED'
             );
             assert(token.approve(staker.contract_address, amount.into()), 'APPROVE_FAILED');
-            let delegated_to = self.delegated_to.read(caller);
-            staker.stake(delegated_to);
+            staker.stake(self.delegated_to.read(caller));
 
-            let total_staked = self.total_staked.read();
-            let current_time = get_block_timestamp();
-            let time_elapsed = current_time - self.last_seconds_per_total_staked_time.read();
-            if time_elapsed.is_non_zero() {
-                self
-                    .seconds_per_total_staked
-                    .write(
-                        self.seconds_per_total_staked.read()
-                            + (u256 { high: time_elapsed.into(), low: 0 } / total_staked.into())
-                                .try_into()
-                                .unwrap()
-                    );
-                self.last_seconds_per_total_staked_time.write(current_time);
-            }
-            self.total_staked.write(total_staked + amount);
+            self.balances.write(caller, self.balances.read(caller) + amount);
+            self.total_staked.write(self.snapshot_total_staked_last() + amount);
         }
 
         fn deposit(ref self: ContractState) {
@@ -245,6 +256,18 @@ pub mod FungibleStakedToken {
                         .try_into()
                         .unwrap()
                 );
+        }
+
+        fn withdraw_amount(ref self: ContractState, amount: u128) {
+            let staker = self.staker.read();
+            let caller = get_caller_address();
+            staker.withdraw_amount(self.delegated_to.read(caller), caller, amount);
+            self.balances.write(caller, self.balances.read(caller) - amount);
+            self.total_staked.write(self.snapshot_total_staked_last() - amount);
+        }
+
+        fn withdraw(ref self: ContractState) {
+            self.withdraw_amount(self.balanceOf(get_caller_address()).try_into().unwrap());
         }
     }
 }
