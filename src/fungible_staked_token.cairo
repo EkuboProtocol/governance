@@ -13,7 +13,7 @@ pub trait IFungibleStakedToken<TContractState> {
 
     // The number of seconds (while total staked > 0) that have passed per total tokens staked
     // Can be used to compute the share of total staked tokens that a user has had over a period, by collecting two snapshots of the value
-    fn get_seconds_per_total_staked(self: @TContractState) -> felt252;
+    fn get_seconds_per_total_staked(self: @TContractState) -> u256;
 
     // Delegates any staked tokens from the caller to the owner
     fn delegate(ref self: TContractState, to: ContractAddress);
@@ -38,16 +38,50 @@ pub mod FungibleStakedToken {
     use core::traits::{Into, TryInto};
     use governance::interfaces::erc20::{IERC20, IERC20Dispatcher, IERC20DispatcherTrait};
     use governance::staker::{IStakerDispatcher, IStakerDispatcherTrait};
-    use starknet::{get_caller_address, get_contract_address, get_block_timestamp};
+    use starknet::{
+        get_caller_address, get_contract_address, get_block_timestamp,
+        storage_access::{StorePacking}
+    };
     use super::{IFungibleStakedToken, ContractAddress};
+
+
+    #[derive(Copy, Drop, PartialEq, Debug)]
+    pub struct StakedSnapshot {
+        pub timestamp: u64,
+        pub seconds_per_total_staked: u256,
+    }
+
+    const TWO_POW_64: u128 = 0x10000000000000000;
+    const TWO_POW_192: u256 = 0x1000000000000000000000000000000000000000000000000;
+    const TWO_POW_192_DIVISOR: NonZero<u256> = 0x1000000000000000000000000000000000000000000000000;
+
+    // todo: refactor to reuse the code from the delegated snapshot
+    pub(crate) impl StakedSnapshotStorePacking of StorePacking<StakedSnapshot, felt252> {
+        fn pack(value: StakedSnapshot) -> felt252 {
+            assert(value.seconds_per_total_staked < TWO_POW_192, 'MAX_SECONDS_PER_TOTAL_STAKED');
+            (value.seconds_per_total_staked
+                + u256 { high: value.timestamp.into() * TWO_POW_64, low: 0 })
+                .try_into()
+                .unwrap()
+        }
+
+        fn unpack(value: felt252) -> StakedSnapshot {
+            let (timestamp, seconds_per_total_staked) = DivRem::div_rem(
+                value.into(), TWO_POW_192_DIVISOR
+            );
+            StakedSnapshot {
+                timestamp: timestamp.low.try_into().unwrap(), seconds_per_total_staked
+            }
+        }
+    }
+
 
     #[storage]
     struct Storage {
         staker: IStakerDispatcher,
         delegated_to: LegacyMap<ContractAddress, ContractAddress>,
         total_staked: u128,
-        last_seconds_per_total_staked_time: u64,
-        seconds_per_total_staked: felt252,
+        last_staked_snapshot: StakedSnapshot,
         balances: LegacyMap<ContractAddress, u128>,
         allowances: LegacyMap<(ContractAddress, ContractAddress), u128>,
     }
@@ -115,17 +149,20 @@ pub mod FungibleStakedToken {
         fn snapshot_total_staked_last(ref self: ContractState) -> u128 {
             let total_staked = self.total_staked.read();
             let current_time = get_block_timestamp();
-            let time_elapsed = current_time - self.last_seconds_per_total_staked_time.read();
+            let last_snapshot = self.last_staked_snapshot.read();
+            let time_elapsed = current_time - last_snapshot.timestamp;
             if time_elapsed.is_non_zero() {
                 self
-                    .seconds_per_total_staked
+                    .last_staked_snapshot
                     .write(
-                        self.seconds_per_total_staked.read()
-                            + (u256 { high: time_elapsed.into(), low: 0 } / total_staked.into())
-                                .try_into()
-                                .unwrap()
+                        StakedSnapshot {
+                            seconds_per_total_staked: last_snapshot.seconds_per_total_staked
+                                + (u256 { high: time_elapsed.into(), low: 0 } / total_staked.into())
+                                    .try_into()
+                                    .unwrap(),
+                            timestamp: current_time,
+                        }
                     );
-                self.last_seconds_per_total_staked_time.write(current_time);
             }
             total_staked
         }
@@ -203,14 +240,14 @@ pub mod FungibleStakedToken {
             self.total_staked.read()
         }
 
-        fn get_seconds_per_total_staked(self: @ContractState) -> felt252 {
-            let time_since_last = get_block_timestamp()
-                - self.last_seconds_per_total_staked_time.read();
+        fn get_seconds_per_total_staked(self: @ContractState) -> u256 {
+            let snapshot = self.last_staked_snapshot.read();
+            let time_since_last = get_block_timestamp() - snapshot.timestamp;
             if time_since_last.is_zero() {
-                self.seconds_per_total_staked.read()
+                snapshot.seconds_per_total_staked
             } else {
                 let current_staked = self.total_staked.read();
-                let last_cumulative = self.seconds_per_total_staked.read();
+                let last_cumulative = snapshot.seconds_per_total_staked;
                 if current_staked.is_zero() {
                     last_cumulative
                 } else {
