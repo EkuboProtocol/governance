@@ -1,7 +1,7 @@
 use starknet::{ContractAddress};
 
 #[starknet::interface]
-pub trait IFungibleStakedToken<TContractState> {
+pub trait IDelegatedToken<TContractState> {
     // Returns the address of the staker that this staked token wrapper uses
     fn get_staker(self: @TContractState) -> ContractAddress;
 
@@ -25,7 +25,7 @@ pub trait IFungibleStakedToken<TContractState> {
 }
 
 #[starknet::contract]
-pub mod FungibleStakedToken {
+pub mod DelegatedToken {
     use core::num::traits::zero::{Zero};
     use core::option::{OptionTrait};
     use core::traits::{Into, TryInto};
@@ -38,7 +38,7 @@ pub mod FungibleStakedToken {
         get_caller_address, get_contract_address, get_block_timestamp,
         storage_access::{StorePacking}
     };
-    use super::{IFungibleStakedToken, ContractAddress};
+    use super::{IDelegatedToken, ContractAddress};
 
     #[storage]
     struct Storage {
@@ -117,7 +117,7 @@ pub mod FungibleStakedToken {
     }
 
     #[abi(embed_v0)]
-    impl FungibleStakedTokenERC20Metadata of IERC20Metadata<ContractState> {
+    impl DelegatedTokenERC20Metadata of IERC20Metadata<ContractState> {
         fn name(self: @ContractState) -> felt252 {
             self.name.read()
         }
@@ -134,7 +134,7 @@ pub mod FungibleStakedToken {
     }
 
     #[abi(embed_v0)]
-    impl FungibleStakedTokenERC20 of IERC20<ContractState> {
+    impl DelegatedTokenERC20 of IERC20<ContractState> {
         fn totalSupply(self: @ContractState) -> u256 {
             self.total_supply.read().into()
         }
@@ -195,7 +195,7 @@ pub mod FungibleStakedToken {
     }
 
     #[abi(embed_v0)]
-    impl FungibleStakedTokenImpl of IFungibleStakedToken<ContractState> {
+    impl DelegatedTokenImpl of IDelegatedToken<ContractState> {
         fn get_staker(self: @ContractState) -> ContractAddress {
             self.staker.read().contract_address
         }

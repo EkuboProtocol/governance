@@ -6,12 +6,12 @@ pub(crate) mod airdrop_test;
 pub mod call_trait;
 #[cfg(test)]
 pub(crate) mod call_trait_test;
+pub mod delegated_token;
+#[cfg(test)]
+pub mod delegated_token_test;
 pub mod execution_state;
 #[cfg(test)]
 pub(crate) mod execution_state_test;
-pub mod fungible_staked_token;
-#[cfg(test)]
-pub mod fungible_staked_token_test;
 pub mod governor;
 #[cfg(test)]
 pub(crate) mod governor_test;
