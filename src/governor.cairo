@@ -86,6 +86,12 @@ pub trait IGovernor<TContractState> {
     // Gets the proposal and the config version with which it was created
     fn get_proposal_with_config(self: @TContractState, id: felt252) -> (ProposalInfo, Config);
 
+    // Returns the vote cast by the given voter on the given proposal ID.
+    // - 0 means not voted, or proposal does not exist
+    // - 3 means voted in favor
+    // - 1 means voted against
+    fn get_vote(self: @TContractState, id: felt252, voter: ContractAddress) -> u8;
+
     // Change the configuration of the governor. Only affects proposals created after the configuration change. Must be called by self, e.g. via a proposal.
     fn reconfigure(ref self: TContractState, config: Config) -> u64;
 
@@ -173,7 +179,7 @@ pub mod Governor {
         config: Config,
         nonce: u64,
         proposals: LegacyMap<felt252, ProposalInfo>,
-        has_voted: LegacyMap<(ContractAddress, felt252), bool>,
+        vote: LegacyMap<(felt252, ContractAddress), u8>,
         latest_proposal_by_proposer: LegacyMap<ContractAddress, felt252>,
         latest_config_version: u64,
         config_versions: LegacyMap<u64, Config>,
@@ -295,11 +301,11 @@ pub mod Governor {
             let timestamp_current = get_block_timestamp();
             let voting_start_time = (proposal.execution_state.created + config.voting_start_delay);
             let voter = get_caller_address();
-            let has_voted = self.has_voted.read((voter, id));
+            let past_vote = self.vote.read((id, voter));
 
             assert(timestamp_current >= voting_start_time, 'VOTING_NOT_STARTED');
             assert(timestamp_current < (voting_start_time + config.voting_period), 'VOTING_ENDED');
-            assert(!has_voted, 'ALREADY_VOTED');
+            assert(past_vote.is_zero(), 'ALREADY_VOTED');
 
             let weight = self
                 .get_staker()
@@ -315,7 +321,11 @@ pub mod Governor {
                 proposal.nay = proposal.nay + weight;
             }
             self.proposals.write(id, proposal);
-            self.has_voted.write((voter, id), true);
+            self.vote.write((id, voter), if yea {
+                3
+            } else {
+                1
+            });
 
             self.emit(Voted { id, voter, weight, yea });
         }
@@ -475,6 +485,10 @@ pub mod Governor {
             let proposal = self.get_proposal(id);
             let config = self.get_config_version(proposal.config_version);
             (proposal, config)
+        }
+
+        fn get_vote(self: @ContractState, id: felt252, voter: ContractAddress) -> u8 {
+            self.vote.read((id, voter))
         }
 
         fn reconfigure(ref self: ContractState, config: Config) -> u64 {

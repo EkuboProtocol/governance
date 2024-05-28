@@ -450,6 +450,7 @@ fn test_vote_already_voted_should_fail() {
 
     set_contract_address(voter1());
     governor.vote(id, true);
+    assert_eq!(governor.get_vote(id, voter1()), 3);
 
     // Trying to vote twice on the same proposal should fail
     governor.vote(id, true);
@@ -738,6 +739,7 @@ fn test_execute_no_majority_should_fail() {
 
     set_contract_address(voter2());
     governor.vote(id, false);
+    assert_eq!(governor.get_vote(id, voter2()), 1);
     let proposal = governor.get_proposal(id);
     assert_eq!(proposal.yea, config.quorum);
     assert_eq!(proposal.nay, config.quorum + 1);
