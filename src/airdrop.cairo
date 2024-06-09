@@ -118,7 +118,7 @@ pub mod Airdrop {
     pub fn compute_root_of_group(mut claims: Span<Claim>) -> felt252 {
         assert(!claims.is_empty(), 'NO_CLAIMS');
 
-        let mut claim_hashes: Array<felt252> = ArrayTrait::new();
+        let mut claim_hashes: Array<felt252> = array![];
 
         let mut last_claim_id: Option<u64> = Option::None;
 
@@ -138,7 +138,7 @@ pub mod Airdrop {
         while current_layer
             .len()
             .is_non_one() {
-                let mut next_layer: Array<felt252> = ArrayTrait::new();
+                let mut next_layer: Array<felt252> = array![];
 
                 while let Option::Some(hash) = current_layer
                     .pop_front() {
@@ -209,7 +209,7 @@ pub mod Airdrop {
             let mut bitmap = self.claimed_bitmap.read(word);
 
             let mut index: u8 = 0;
-            let mut unclaimed: Array<Claim> = ArrayTrait::new();
+            let mut unclaimed: Array<Claim> = array![];
 
             while let Option::Some(claim) = claims
                 .pop_front() {

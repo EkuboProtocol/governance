@@ -46,7 +46,7 @@ fn advance_time(by: u64) -> u64 {
 }
 
 fn transfer_call(token: IERC20Dispatcher, recipient: ContractAddress, amount: u256) -> Call {
-    let mut calldata: Array<felt252> = ArrayTrait::new();
+    let mut calldata: Array<felt252> = array![];
     Serde::serialize(@(recipient, amount), ref calldata);
 
     Call {
@@ -58,7 +58,7 @@ fn transfer_call(token: IERC20Dispatcher, recipient: ContractAddress, amount: u2
 }
 
 fn deploy(staker: IStakerDispatcher, config: Config) -> IGovernorDispatcher {
-    let mut constructor_args: Array<felt252> = ArrayTrait::new();
+    let mut constructor_args: Array<felt252> = array![];
     Serde::serialize(@(staker, config), ref constructor_args);
 
     let (address, _) = deploy_syscall(
