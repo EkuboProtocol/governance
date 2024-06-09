@@ -1,10 +1,6 @@
-use core::array::{Array};
-use core::byte_array::{ByteArray};
-use core::option::{Option, OptionTrait};
-use core::traits::{Into, TryInto};
-use governance::execution_state::{ExecutionState};
-use governance::staker::{IStakerDispatcher};
-use starknet::account::{Call};
+use governance::execution_state::ExecutionState;
+use governance::staker::IStakerDispatcher;
+use starknet::account::Call;
 use starknet::{ContractAddress, storage_access::{StorePacking}, ClassHash};
 
 #[derive(Copy, Drop, Serde, starknet::Store, PartialEq, Debug)]
@@ -43,47 +39,47 @@ pub struct Config {
 
 #[starknet::interface]
 pub trait IGovernor<TContractState> {
-    // Propose executing the given call from this contract.
+    // Proposes executing the given call from this contract.
     fn propose(ref self: TContractState, calls: Span<Call>) -> felt252;
 
-    // Vote on the given proposal.
+    // Votes on the given proposal.
     fn vote(ref self: TContractState, id: felt252, yea: bool);
 
-    // Cancel the proposal with the given ID. Only callable by the proposer.
+    // Cancels the proposal with the given ID. Only callable by the proposer.
     fn cancel(ref self: TContractState, id: felt252);
 
-    // Report a breach in the proposer's voting weight below the proposal creation threshold, canceling the proposal.
+    // Reports a breach in the proposer's voting weight below the proposal creation threshold, canceling the proposal.
     // The breach timestamp must be between when the proposal was created and the end of the voting period for the proposal.
     // This method can be called by anyone at any time before the proposal is executed.
     fn report_breach(ref self: TContractState, id: felt252, breach_timestamp: u64);
 
-    // Execute the given proposal.
+    // Executes the given proposal.
     fn execute(ref self: TContractState, id: felt252, calls: Span<Call>) -> Span<Span<felt252>>;
 
     // Attaches the given text to the proposal. Simply emits an event containing the proposal description.
     fn describe(ref self: TContractState, id: felt252, description: ByteArray);
 
-    // Combined propose and describe methods
+    // Combines propose and describe methods.
     fn propose_and_describe(
         ref self: TContractState, calls: Span<Call>, description: ByteArray
     ) -> felt252;
 
-    // Get the staker that is used by this governor contract.
+    // Gets the staker that is used by this governor contract.
     fn get_staker(self: @TContractState) -> IStakerDispatcher;
 
-    // Get the latest configuration for this governor contract.
+    // Gets the latest configuration for this governor contract.
     fn get_config(self: @TContractState) -> Config;
 
-    // Get the latest configuration for this governor contract and its config version ID
+    // Gets the latest configuration for this governor contract and its config version ID.
     fn get_config_with_version(self: @TContractState) -> (Config, u64);
 
-    // Get the configuration with the given version ID.
+    // Gets the configuration with the given version ID.
     fn get_config_version(self: @TContractState, version: u64) -> Config;
 
-    // Get the proposal info for the given proposal id.
+    // Gets the proposal info for the given proposal id.
     fn get_proposal(self: @TContractState, id: felt252) -> ProposalInfo;
 
-    // Gets the proposal and the config version with which it was created
+    // Gets the proposal and the config version with which it was created.
     fn get_proposal_with_config(self: @TContractState, id: felt252) -> (ProposalInfo, Config);
 
     // Returns the vote cast by the given voter on the given proposal ID.
@@ -92,29 +88,28 @@ pub trait IGovernor<TContractState> {
     // - 1 means voted against
     fn get_vote(self: @TContractState, id: felt252, voter: ContractAddress) -> u8;
 
-    // Change the configuration of the governor. Only affects proposals created after the configuration change. Must be called by self, e.g. via a proposal.
+    // Changes the configuration of the governor. Only affects proposals created after the configuration change. Must be called by self, e.g. via a proposal.
     fn reconfigure(ref self: TContractState, config: Config) -> u64;
 
-    // Replace the code at this address. This must be self-called via a proposal.
+    // Replaces the code at this address. This must be self-called via a proposal.
     fn upgrade(ref self: TContractState, class_hash: ClassHash);
 }
 
 #[starknet::contract]
 pub mod Governor {
     use core::hash::{HashStateTrait, HashStateExTrait};
-    use core::num::traits::zero::{Zero};
-    use core::poseidon::{PoseidonTrait};
+    use core::num::traits::zero::Zero;
+    use core::poseidon::PoseidonTrait;
     use governance::call_trait::{HashSerializable, CallTrait};
     use governance::staker::{IStakerDispatcherTrait};
     use starknet::{
-        get_block_timestamp, get_caller_address, contract_address_const, get_contract_address,
+        get_block_timestamp, get_caller_address, get_contract_address,
         syscalls::{replace_class_syscall}
     };
     use super::{
-        IStakerDispatcher, ContractAddress, Array, IGovernor, Config, ProposalInfo, Call,
-        ExecutionState, ByteArray, ClassHash
+        IStakerDispatcher, ContractAddress, IGovernor, Config, ProposalInfo, Call, ExecutionState,
+        ClassHash
     };
-
 
     #[derive(starknet::Event, Drop)]
     pub struct Proposed {
@@ -177,12 +172,12 @@ pub mod Governor {
     struct Storage {
         staker: IStakerDispatcher,
         config: Config,
+        config_versions: LegacyMap<u64, Config>,
+        latest_config_version: u64,
         nonce: u64,
         proposals: LegacyMap<felt252, ProposalInfo>,
-        vote: LegacyMap<(felt252, ContractAddress), u8>,
         latest_proposal_by_proposer: LegacyMap<ContractAddress, felt252>,
-        latest_config_version: u64,
-        config_versions: LegacyMap<u64, Config>,
+        vote: LegacyMap<(felt252, ContractAddress), u8>,
     }
 
     #[constructor]
@@ -205,7 +200,6 @@ pub mod Governor {
             .update_with(call)
             .finalize()
     }
-
 
     #[generate_trait]
     impl GovernorInternal of GovernorInternalTrait {
@@ -289,6 +283,7 @@ pub mod Governor {
         ) -> felt252 {
             let id = self.propose(calls);
             self.describe(id, description);
+
             id
         }
 
@@ -337,7 +332,7 @@ pub mod Governor {
             assert(proposal.proposer == get_caller_address(), 'PROPOSER_ONLY');
             assert(proposal.execution_state.canceled.is_zero(), 'ALREADY_CANCELED');
 
-            // This is prevented so that proposers cannot grief voters by creating proposals that they plan to cancel after the result is known
+            // this is prevented so that proposers cannot grief voters by creating proposals that they plan to cancel after the result is known
             assert(
                 get_block_timestamp() < (proposal.execution_state.created
                     + config.voting_start_delay),
@@ -484,6 +479,7 @@ pub mod Governor {
         fn get_proposal_with_config(self: @ContractState, id: felt252) -> (ProposalInfo, Config) {
             let proposal = self.get_proposal(id);
             let config = self.get_config_version(proposal.config_version);
+
             (proposal, config)
         }
 
@@ -498,6 +494,7 @@ pub mod Governor {
             self.config_versions.write(version, config);
             self.latest_config_version.write(version);
             self.emit(Reconfigured { new_config: config, version, });
+
             version
         }
 

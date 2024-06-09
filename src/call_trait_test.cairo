@@ -1,7 +1,5 @@
-use core::array::{Array, ArrayTrait};
 use core::hash::{LegacyHash, HashStateExTrait, HashStateTrait};
-use core::poseidon::{PoseidonTrait};
-use core::serde::{Serde};
+use core::poseidon::PoseidonTrait;
 use governance::call_trait::{CallTrait, HashSerializable};
 use governance::test::test_token::{deploy as deploy_token};
 use starknet::{contract_address_const, get_contract_address, account::{Call}};
@@ -71,7 +69,6 @@ fn test_execute_contract_not_deployed() {
     call.execute();
 }
 
-
 #[test]
 #[should_panic(expected: ('ENTRYPOINT_NOT_FOUND',))]
 fn test_execute_invalid_entry_point() {
@@ -81,7 +78,6 @@ fn test_execute_invalid_entry_point() {
 
     call.execute();
 }
-
 
 #[test]
 #[should_panic(expected: ('Failed to deserialize param #1', 'ENTRYPOINT_FAILED'))]

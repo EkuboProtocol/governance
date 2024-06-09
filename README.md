@@ -39,7 +39,7 @@ Contracts in this repository are designed so that they may be used together _or_
 - A delegate may create a proposal to make a batch of `calls` if their voting weight exceeds the proposal creation threshold
 - After the `voting_start_delay`, users may choose to vote `yea` or `nay` on the created proposal for the duration of the `voting_period`
   - A voter's voting weight is computed based on their average delegation over the period `voting_weight_smoothing_duration` from before the start time of the proposal
-- If a proposal receives at least `quorum` in voting weight, and the simple majority of total votes is yea, and the voting period is over, the proposal may be executed exactly once
+- If a proposal receives at least `quorum` in voting weight, and the simple majority of total votes is `yea`, and the voting period is over, the proposal may be executed exactly once
   - Must happen after the voting has ended and the execution delay has passed
   - If any of the calls fails, the transaction will revert, and anyone may attempt to execute the proposal again, up until the end of the execution window
 - Proposals can be canceled at any time by _anyone_ iff the voting weight of the proposer falls below the proposal creation threshold, up until it is executed
@@ -49,7 +49,7 @@ Contracts in this repository are designed so that they may be used together _or_
 
 ## Testing
 
-Make sure you have [Scarb with asdf](https://docs.swmansion.com/scarb/download#install-via-asdf) installed.
+Make sure you have [Scarb with asdf](https://docs.swmansion.com/scarb/download#install-via-asdf) installed. You can look at the _.tool-versions_ file to know which version of Scarb is currently used.
 
 To run unit tests:
 

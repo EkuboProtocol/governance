@@ -1,10 +1,5 @@
-use core::array::{ArrayTrait, SpanTrait};
-use core::hash::{LegacyHash};
-use core::num::traits::zero::{Zero};
-use core::option::{OptionTrait};
-
-use core::result::{Result, ResultTrait};
-use core::traits::{TryInto, Into};
+use core::hash::LegacyHash;
+use core::num::traits::zero::Zero;
 use governance::airdrop::{
     IAirdropDispatcher, IAirdropDispatcherTrait, Airdrop, Config,
     Airdrop::{compute_pedersen_root, hash_function, hash_claim, compute_root_of_group}, Claim
@@ -13,14 +8,14 @@ use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::test::test_token::{TestToken, deploy as deploy_token};
 use starknet::testing::{pop_log, set_block_timestamp};
 use starknet::{
-    get_contract_address, syscalls::{deploy_syscall}, ClassHash, contract_address_const,
-    ContractAddress
+    ClassHash, ContractAddress, contract_address_const, get_contract_address,
+    syscalls::{deploy_syscall}
 };
 
 fn deploy_with_refundee(
     token: ContractAddress, root: felt252, refundable_timestamp: u64, refund_to: ContractAddress
 ) -> IAirdropDispatcher {
-    let mut constructor_args: Array<felt252> = ArrayTrait::new();
+    let mut constructor_args: Array<felt252> = array![];
     Serde::serialize(
         @(token, Config { root, refundable_timestamp, refund_to }), ref constructor_args
     );
@@ -241,7 +236,6 @@ fn test_compute_root_of_group() {
     );
 }
 
-
 #[test]
 fn test_compute_root_of_group_large() {
     let mut arr: Array<Claim> = array![];
@@ -279,7 +273,6 @@ fn test_compute_root_of_group_large_odd() {
         0x360de0739531ee0f159a2d940ff6b83066a4269da0ce1e2ecad27feebf81d4
     );
 }
-
 
 #[test]
 fn test_claim_two_claims() {
@@ -711,7 +704,6 @@ fn test_multiple_claims_from_generated_tree() {
     assert_eq!(log.claim, claim_0);
 }
 
-
 #[test]
 #[should_panic(expected: ('FIRST_CLAIM_MUST_BE_MULT_128', 'ENTRYPOINT_FAILED'))]
 fn test_claim_128_fails_if_not_id_aligned() {
@@ -729,7 +721,6 @@ fn test_claim_128_fails_if_not_id_aligned() {
 
     airdrop.claim_128(array![claim_b, claim_a].span(), array![].span());
 }
-
 
 #[test]
 #[should_panic(expected: ('CLAIMS_EMPTY', 'ENTRYPOINT_FAILED'))]
@@ -825,7 +816,6 @@ fn test_claim_128_double_claim() {
     assert_eq!(airdrop.claim_128(claims.span().slice(0, 128), array![s2, rr].span()), 0);
     assert_eq!(pop_log::<Airdrop::Claimed>(airdrop.contract_address).is_none(), true);
 }
-
 
 mod refundable {
     use super::{

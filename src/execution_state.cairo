@@ -1,4 +1,4 @@
-use starknet::storage_access::{StorePacking};
+use starknet::storage_access::StorePacking;
 
 const TWO_POW_64: u128 = 0x10000000000000000;
 const TWO_POW_64_DIVISOR: NonZero<u128> = 0x10000000000000000;
@@ -22,7 +22,7 @@ pub struct ExecutionState {
     pub canceled: u64
 }
 
-pub(crate) impl ExecutionStateStorePacking of StorePacking<ExecutionState, felt252> {
+impl ExecutionStateStorePacking of StorePacking<ExecutionState, felt252> {
     fn pack(value: ExecutionState) -> felt252 {
         u256 {
             low: TwoU64TupleStorePacking::pack((value.created, value.executed)),

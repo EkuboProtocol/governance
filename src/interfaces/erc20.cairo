@@ -1,4 +1,4 @@
-use starknet::{ContractAddress};
+use starknet::ContractAddress;
 
 #[starknet::interface]
 pub(crate) trait IERC20<TContractState> {

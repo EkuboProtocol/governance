@@ -1,17 +1,12 @@
-use core::array::{ArrayTrait};
-use core::num::traits::zero::{Zero};
-use core::option::{OptionTrait};
-use core::result::{Result, ResultTrait};
-use core::traits::{TryInto};
+use core::num::traits::zero::Zero;
 use governance::execution_state_test::{assert_pack_unpack};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
-
 use governance::staker::{
     IStakerDispatcher, IStakerDispatcherTrait, Staker,
     Staker::{DelegatedSnapshotStorePacking, DelegatedSnapshot},
 };
 use governance::test::test_token::{TestToken, deploy as deploy_token};
-use starknet::testing::{set_contract_address, set_block_timestamp, pop_log};
+use starknet::testing::{set_block_timestamp, pop_log};
 use starknet::{
     get_contract_address, syscalls::deploy_syscall, ClassHash, contract_address_const,
     ContractAddress,
@@ -116,7 +111,6 @@ fn test_staker_delegated_snapshot_store_pack() {
         ),
         0x1000000000000000000000000000000000000000000000001
     );
-
     assert_eq!(
         DelegatedSnapshotStorePacking::pack(
             DelegatedSnapshot {
@@ -146,7 +140,6 @@ fn test_staker_delegated_snapshot_store_unpack() {
         DelegatedSnapshotStorePacking::unpack(0x1000000000000000000000000000000000000000000000001),
         DelegatedSnapshot { timestamp: 1, delegated_cumulative: 1 }
     );
-
     assert_eq!(
         DelegatedSnapshotStorePacking::unpack(
             3618502788666131113263695016908177884250476444008934042335404944711319814143
@@ -156,7 +149,6 @@ fn test_staker_delegated_snapshot_store_unpack() {
             delegated_cumulative: 6277101735386680763835789423207666416102355444464034512895 // 2**192 - 1
         }
     );
-
     assert_eq!(
         DelegatedSnapshotStorePacking::unpack(
             // max felt252
@@ -258,7 +250,6 @@ fn test_approve_sets_allowance() {
     assert(erc20.allowance(get_contract_address(), spender) == 5151, 'allowance');
 }
 
-
 #[test]
 fn test_delegate_count_lags() {
     let (staker, token) = setup(12345);
@@ -279,7 +270,6 @@ fn test_delegate_count_lags() {
     assert(staker.get_delegated_at(delegatee, 3) == 12345, 'a second after');
     assert(staker.get_delegated_at(delegatee, 4) == 12345, 'a 2 seconds after');
 }
-
 
 #[test]
 fn test_get_delegated_cumulative() {
@@ -369,7 +359,6 @@ fn test_get_average_delegated() {
     assert(staker.get_average_delegated(delegatee, 4, 10) == 8230, 'average (4 sec * 12345)/6');
 }
 
-
 #[test]
 fn test_transfer_delegates_moved() {
     let (staker, token) = setup(12345);
@@ -384,7 +373,6 @@ fn test_transfer_delegates_moved() {
     assert_eq!(staker.get_delegated(delegatee), (12345 - 500));
     assert_eq!(staker.get_average_delegated(delegatee, 0, 5), ((3 * (12345 - 500)) / 5));
 }
-
 
 #[test]
 fn test_delegate_undelegate() {

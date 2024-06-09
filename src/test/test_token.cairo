@@ -1,10 +1,10 @@
-use governance::interfaces::erc20::{IERC20Dispatcher};
-
+use governance::interfaces::erc20::IERC20Dispatcher;
 use starknet::{ContractAddress, syscalls::{deploy_syscall}};
+
 #[starknet::contract]
 pub(crate) mod TestToken {
-    use core::num::traits::zero::{Zero};
-    use governance::interfaces::erc20::{IERC20};
+    use core::num::traits::zero::Zero;
+    use governance::interfaces::erc20::IERC20;
     use starknet::{ContractAddress, get_caller_address};
 
     #[storage]
@@ -37,11 +37,13 @@ pub(crate) mod TestToken {
         fn balanceOf(self: @ContractState, account: ContractAddress) -> u256 {
             self.balances.read(account).into()
         }
+
         fn allowance(
             self: @ContractState, owner: ContractAddress, spender: ContractAddress
         ) -> u256 {
             self.allowances.read((owner, spender)).into()
         }
+
         fn transfer(ref self: ContractState, recipient: ContractAddress, amount: u256) -> bool {
             let balance = self.balances.read(get_caller_address());
             assert(balance >= amount, 'INSUFFICIENT_TRANSFER_BALANCE');
@@ -50,6 +52,7 @@ pub(crate) mod TestToken {
             self.emit(Transfer { from: get_caller_address(), to: recipient, value: amount });
             true
         }
+
         fn transferFrom(
             ref self: ContractState,
             sender: ContractAddress,
@@ -66,6 +69,7 @@ pub(crate) mod TestToken {
             self.emit(Transfer { from: sender, to: recipient, value: amount });
             true
         }
+
         fn approve(ref self: ContractState, spender: ContractAddress, amount: u256) -> bool {
             self.allowances.write((get_caller_address(), spender), amount.try_into().unwrap());
             true
