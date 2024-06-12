@@ -28,8 +28,7 @@ use starknet::{
 impl GovernorExecuteImpl of GovernorExecuteTrait {
     fn validate(self: IGovernorDispatcher, id: felt252, calls: Array<Call>) -> felt252 {
         set_signature(array![id].span());
-        AccountContractDispatcher { contract_address: self.contract_address }
-            .__validate__(calls)
+        AccountContractDispatcher { contract_address: self.contract_address }.__validate__(calls)
     }
     fn execute(self: IGovernorDispatcher, id: felt252, calls: Array<Call>) -> Span<Span<felt252>> {
         set_signature(array![id].span());
