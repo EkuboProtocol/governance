@@ -5,6 +5,7 @@ use core::option::{OptionTrait};
 
 use core::result::{Result, ResultTrait};
 use core::serde::Serde;
+use core::starknet::account::AccountContractDispatcherTrait;
 use core::traits::{TryInto};
 
 use governance::execution_state::{ExecutionState};
@@ -19,8 +20,24 @@ use starknet::account::{Call};
 use starknet::{
     get_contract_address, syscalls::deploy_syscall, ClassHash, contract_address_const,
     ContractAddress, get_block_timestamp,
-    testing::{set_block_timestamp, set_contract_address, pop_log}
+    testing::{set_block_timestamp, set_contract_address, pop_log, set_signature},
+    account::{AccountContractDispatcher}
 };
+
+#[generate_trait]
+impl GovernorExecuteImpl of GovernorExecuteTrait {
+    fn validate(self: IGovernorDispatcher, id: felt252, calls: Array<Call>) -> felt252 {
+        set_signature(array![id].span());
+        AccountContractDispatcher { contract_address: self.contract_address }
+            .__validate__(calls)
+    }
+    fn execute(self: IGovernorDispatcher, id: felt252, calls: Array<Call>) -> Span<Span<felt252>> {
+        set_signature(array![id].span());
+        AccountContractDispatcher { contract_address: self.contract_address }
+            .__execute__(calls)
+            .span()
+    }
+}
 
 
 pub(crate) fn recipient() -> ContractAddress {
@@ -381,7 +398,7 @@ fn test_describe_proposal_fails_if_executed() {
     governor.vote(id, true);
     advance_time(config.voting_period + config.execution_delay);
     set_contract_address(anyone());
-    governor.execute(id, array![transfer_call(token, anyone(), amount: 0)].span());
+    governor.execute(id, array![transfer_call(token, anyone(), amount: 0)]);
 
     set_contract_address(proposer());
     governor.describe(id, "This proposal is already executed");
@@ -653,10 +670,7 @@ fn test_execute_valid_proposal() {
 
     set_contract_address(anyone());
 
-    governor
-        .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
-        );
+    governor.execute(id, array![transfer_call(token: token, recipient: recipient(), amount: 100)]);
 
     let proposal = governor.get_proposal(id);
     assert(proposal.execution_state.executed.is_non_zero(), 'execute failed');
@@ -673,10 +687,7 @@ fn test_canceled_proposal_cannot_be_executed() {
     advance_time(config.voting_start_delay);
     advance_time(config.voting_period);
     set_contract_address(anyone());
-    governor
-        .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
-        );
+    governor.validate(id, array![transfer_call(token: token, recipient: recipient(), amount: 100)]);
 }
 
 #[test]
@@ -688,10 +699,7 @@ fn test_execute_before_voting_ends_should_fail() {
     advance_time(config.voting_start_delay);
 
     // Execute the proposal. The vote is still active, this should fail.
-    governor
-        .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
-        );
+    governor.validate(id, array![transfer_call(token: token, recipient: recipient(), amount: 100)]);
 }
 
 
@@ -705,10 +713,7 @@ fn test_execute_quorum_not_met_should_fail() {
     set_contract_address(proposer());
 
     // Execute the proposal. The quorum was not met, this should fail.
-    governor
-        .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
-        );
+    governor.validate(id, array![transfer_call(token: token, recipient: recipient(), amount: 100)]);
 }
 
 #[test]
@@ -747,10 +752,7 @@ fn test_execute_no_majority_should_fail() {
     advance_time(config.voting_period + config.execution_delay);
 
     // Execute the proposal. The majority of votes are no, this should fail.
-    governor
-        .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
-        );
+    governor.validate(id, array![transfer_call(token: token, recipient: recipient(), amount: 100)]);
 }
 
 #[test]
@@ -771,10 +773,7 @@ fn test_execute_before_execution_window_begins() {
     governor.vote(id, true);
 
     advance_time(config.voting_period);
-    governor
-        .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
-        );
+    governor.validate(id, array![transfer_call(token: token, recipient: recipient(), amount: 100)]);
 }
 
 
@@ -796,10 +795,7 @@ fn test_execute_after_execution_window_ends() {
     governor.vote(id, true);
 
     advance_time(config.voting_period + config.execution_delay + config.execution_window);
-    governor
-        .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
-        );
+    governor.validate(id, array![transfer_call(token: token, recipient: recipient(), amount: 100)]);
 }
 
 #[test]
@@ -849,10 +845,7 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
     advance_time(config.voting_period + config.execution_delay);
 
     // Execute the proposal. The quorum was not met, this should fail.
-    governor
-        .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
-        );
+    governor.validate(id, array![transfer_call(token: token, recipient: recipient(), amount: 100)]);
 }
 
 #[test]
@@ -879,10 +872,7 @@ fn test_quorum_counts_only_yes_votes_not_met() {
 
     advance_time(config.voting_period + config.execution_delay);
 
-    governor
-        .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
-        );
+    governor.validate(id, array![transfer_call(token: token, recipient: recipient(), amount: 100)]);
 }
 
 #[test]
@@ -891,8 +881,7 @@ fn test_quorum_counts_only_yes_votes_exactly_met() {
     let calls = array![
         transfer_call(token: token, recipient: recipient(), amount: 150),
         transfer_call(token: token, recipient: recipient(), amount: 50)
-    ]
-        .span();
+    ];
     // so execution can succeed
     token.transfer(governor.contract_address, 200);
 
@@ -904,7 +893,7 @@ fn test_quorum_counts_only_yes_votes_exactly_met() {
     advance_time(config.voting_weight_smoothing_duration);
 
     set_contract_address(voter1());
-    let id = governor.propose(calls);
+    let id = governor.propose(calls.span());
 
     advance_time(config.voting_start_delay);
     governor.vote(id, true);
@@ -923,8 +912,7 @@ fn test_execute_emits_logs_from_data() {
     let calls = array![
         transfer_call(token: token, recipient: recipient(), amount: 150),
         transfer_call(token: token, recipient: recipient(), amount: 50)
-    ]
-        .span();
+    ];
     // so execution can succeed
     token.transfer(governor.contract_address, 200);
 
@@ -936,7 +924,7 @@ fn test_execute_emits_logs_from_data() {
     advance_time(config.voting_weight_smoothing_duration);
 
     set_contract_address(voter1());
-    let id = governor.propose(calls);
+    let id = governor.propose(calls.span());
 
     advance_time(config.voting_start_delay);
     governor.vote(id, true);
@@ -976,13 +964,10 @@ fn test_execute_already_executed_should_fail() {
     advance_time(config.voting_period + config.execution_delay);
 
     set_contract_address(anyone());
+    governor.execute(id, array![transfer_call(token: token, recipient: recipient(), amount: 100)]);
     governor
-        .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
-        );
-    governor
-        .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+        .validate(
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)]
         ); // Try to execute again
 }
 
@@ -1003,10 +988,7 @@ fn test_execute_invalid_call_id() {
     advance_time(config.voting_period);
 
     set_contract_address(anyone());
-    governor
-        .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 101)].span()
-        );
+    governor.validate(id, array![transfer_call(token: token, recipient: recipient(), amount: 101)]);
 }
 
 #[test]
@@ -1052,7 +1034,6 @@ fn test_upgrade_succeeds_self_call() {
                     calldata: array![Governor::TEST_CLASS_HASH].span()
                 }
             ]
-                .span()
         );
 }
 
@@ -1121,7 +1102,6 @@ fn test_reconfigure_succeeds_self_call() {
                     calldata: args.span()
                 }
             ]
-                .span()
         );
 
     pop_log::<Governor::Proposed>(governor.contract_address).unwrap();
