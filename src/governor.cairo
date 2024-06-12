@@ -502,7 +502,7 @@ pub mod Governor {
             let id = get_proposal_id_from_signature();
             let mut calls_span = calls.span();
 
-            let (mut proposal, _) = self.get_proposal_with_config(id);
+            let mut proposal = self.get_proposal(id);
 
             proposal
                 .execution_state =
