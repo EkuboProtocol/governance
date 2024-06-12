@@ -57,9 +57,6 @@ pub trait IGovernor<TContractState> {
     // This method can be called by anyone at any time before the proposal is executed.
     fn report_breach(ref self: TContractState, id: felt252, breach_timestamp: u64);
 
-    // Execute the given proposal.
-    fn execute(ref self: TContractState, id: felt252, calls: Span<Call>) -> Span<Span<felt252>>;
-
     // Attaches the given text to the proposal. Simply emits an event containing the proposal description.
     fn describe(ref self: TContractState, id: felt252, description: ByteArray);
 
@@ -108,13 +105,13 @@ pub mod Governor {
     use governance::staker::{IStakerDispatcherTrait};
     use starknet::{
         get_block_timestamp, get_caller_address, contract_address_const, get_contract_address,
-        syscalls::{replace_class_syscall}
+        syscalls::{replace_class_syscall}, account::{AccountContract}, get_tx_info, VALIDATED
     };
+
     use super::{
         IStakerDispatcher, ContractAddress, Array, IGovernor, Config, ProposalInfo, Call,
         ExecutionState, ByteArray, ClassHash
     };
-
 
     #[derive(starknet::Event, Drop)]
     pub struct Proposed {
@@ -402,60 +399,6 @@ pub mod Governor {
             self.emit(CreationThresholdBreached { id, breach_timestamp });
         }
 
-        fn execute(
-            ref self: ContractState, id: felt252, mut calls: Span<Call>
-        ) -> Span<Span<felt252>> {
-            let calls_hash = hash_calls(@calls);
-
-            let (mut proposal, config) = self.get_proposal_with_config(id);
-
-            assert(proposal.calls_hash == calls_hash, 'CALLS_HASH_MISMATCH');
-            assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
-            assert(proposal.execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
-            assert(proposal.execution_state.canceled.is_zero(), 'PROPOSAL_CANCELED');
-
-            let timestamp_current = get_block_timestamp();
-            // we cannot tell if a proposal is executed if it is executed at timestamp 0
-            // this can only happen in testing, but it makes this method locally correct
-            assert(timestamp_current.is_non_zero(), 'TIMESTAMP_ZERO');
-
-            let voting_end = proposal.execution_state.created
-                + config.voting_start_delay
-                + config.voting_period;
-            assert(timestamp_current >= voting_end, 'VOTING_NOT_ENDED');
-
-            let window_start = voting_end + config.execution_delay;
-            assert(timestamp_current >= window_start, 'EXECUTION_WINDOW_NOT_STARTED');
-
-            let window_end = window_start + config.execution_window;
-            assert(timestamp_current < window_end, 'EXECUTION_WINDOW_OVER');
-
-            assert(proposal.yea >= config.quorum, 'QUORUM_NOT_MET');
-            assert(proposal.yea >= proposal.nay, 'NO_MAJORITY');
-
-            proposal
-                .execution_state =
-                    ExecutionState {
-                        created: proposal.execution_state.created,
-                        executed: timestamp_current,
-                        canceled: Zero::zero()
-                    };
-
-            self.proposals.write(id, proposal);
-
-            let mut results: Array<Span<felt252>> = array![];
-
-            while let Option::Some(call) = calls.pop_front() {
-                results.append(call.execute());
-            };
-
-            let result_span = results.span();
-
-            self.emit(Executed { id, result_data: result_span });
-
-            result_span
-        }
-
         fn get_config(self: @ContractState) -> Config {
             self.get_config_version(self.latest_config_version.read())
         }
@@ -505,6 +448,82 @@ pub mod Governor {
             self.check_self_call();
 
             replace_class_syscall(class_hash).unwrap();
+        }
+    }
+
+    fn get_proposal_id_from_signature() -> felt252 {
+        let mut tx_info = get_tx_info().unbox();
+        *tx_info.signature.pop_front().expect('PROPOSAL_ID_IN_SIGNATURE')
+    }
+
+    #[abi(embed_v0)]
+    impl GovernorAccountContract of AccountContract<ContractState> {
+        fn __validate_declare__(self: @ContractState, class_hash: felt252) -> felt252 {
+            panic!("Declare not supported");
+            0
+        }
+
+        fn __validate__(ref self: ContractState, calls: Array<Call>) -> felt252 {
+            let id = get_proposal_id_from_signature();
+
+            let mut calls_span = calls.span();
+            let calls_hash = hash_calls(@calls_span);
+
+            let (proposal, config) = self.get_proposal_with_config(id);
+
+            assert(proposal.calls_hash == calls_hash, 'CALLS_HASH_MISMATCH');
+            assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
+            assert(proposal.execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
+            assert(proposal.execution_state.canceled.is_zero(), 'PROPOSAL_CANCELED');
+
+            let timestamp_current = get_block_timestamp();
+            // we cannot tell if a proposal is executed if it is executed at timestamp 0
+            // this can only happen in testing, but it makes this method locally correct
+            assert(timestamp_current.is_non_zero(), 'TIMESTAMP_ZERO');
+
+            let voting_end = proposal.execution_state.created
+                + config.voting_start_delay
+                + config.voting_period;
+            assert(timestamp_current >= voting_end, 'VOTING_NOT_ENDED');
+
+            let window_start = voting_end + config.execution_delay;
+            assert(timestamp_current >= window_start, 'EXECUTION_WINDOW_NOT_STARTED');
+
+            let window_end = window_start + config.execution_window;
+            assert(timestamp_current < window_end, 'EXECUTION_WINDOW_OVER');
+
+            assert(proposal.yea >= config.quorum, 'QUORUM_NOT_MET');
+            assert(proposal.yea >= proposal.nay, 'NO_MAJORITY');
+
+            VALIDATED
+        }
+
+        fn __execute__(ref self: ContractState, calls: Array<Call>) -> Array<Span<felt252>> {
+            let id = get_proposal_id_from_signature();
+            let mut calls_span = calls.span();
+
+            let (mut proposal, _) = self.get_proposal_with_config(id);
+
+            proposal
+                .execution_state =
+                    ExecutionState {
+                        created: proposal.execution_state.created,
+                        executed: get_block_timestamp(),
+                        canceled: Zero::zero()
+                    };
+
+            self.proposals.write(id, proposal);
+
+            let mut results: Array<Span<felt252>> = array![];
+
+            while let Option::Some(call) = calls_span
+                .pop_front() {
+                    results.append(call.execute());
+                };
+
+            self.emit(Executed { id, result_data: results.span() });
+
+            results
         }
     }
 }
