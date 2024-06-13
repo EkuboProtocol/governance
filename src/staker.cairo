@@ -1,4 +1,4 @@
-use starknet::ContractAddress;
+use starknet::{ContractAddress};
 
 #[starknet::interface]
 pub trait IStaker<TContractState> {
@@ -51,7 +51,7 @@ pub trait IStaker<TContractState> {
 
 #[starknet::contract]
 pub mod Staker {
-    use core::num::traits::zero::Zero;
+    use core::num::traits::zero::{Zero};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::{
         get_caller_address, get_contract_address, get_block_timestamp,

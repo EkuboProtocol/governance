@@ -1,5 +1,5 @@
-use governance::interfaces::erc20::IERC20Dispatcher;
-use starknet::ContractAddress;
+use governance::interfaces::erc20::{IERC20Dispatcher};
+use starknet::{ContractAddress};
 
 #[derive(Copy, Drop, Serde, Hash, PartialEq, Debug)]
 pub struct Claim {
@@ -52,11 +52,11 @@ pub trait IAirdrop<TContractState> {
 
 #[starknet::contract]
 pub mod Airdrop {
-    use core::hash::LegacyHash;
-    use core::num::traits::one::One;
-    use core::num::traits::zero::Zero;
-    use governance::interfaces::erc20::IERC20DispatcherTrait;
-    use governance::utils::exp2::exp2;
+    use core::hash::{LegacyHash};
+    use core::num::traits::one::{One};
+    use core::num::traits::zero::{Zero};
+    use governance::interfaces::erc20::{IERC20DispatcherTrait};
+    use governance::utils::exp2::{exp2};
     use starknet::{get_block_timestamp, get_contract_address};
     use super::{Config, IAirdrop, ContractAddress, Claim, IERC20Dispatcher};
 
@@ -107,7 +107,6 @@ pub mod Airdrop {
 
     fn claim_id_to_bitmap_index(claim_id: u64) -> (u64, u8) {
         let (word, index) = DivRem::div_rem(claim_id, BITMAP_SIZE);
-
         (word, index.try_into().unwrap())
     }
 

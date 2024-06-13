@@ -1,4 +1,4 @@
-use core::num::traits::zero::Zero;
+use core::num::traits::zero::{Zero};
 use governance::execution_state_test::{assert_pack_unpack};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::staker::{

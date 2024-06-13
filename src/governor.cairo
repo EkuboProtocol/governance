@@ -1,6 +1,6 @@
-use governance::execution_state::ExecutionState;
-use governance::staker::IStakerDispatcher;
-use starknet::account::Call;
+use governance::execution_state::{ExecutionState};
+use governance::staker::{IStakerDispatcher};
+use starknet::account::{Call};
 use starknet::{ContractAddress, storage_access::{StorePacking}, ClassHash};
 
 #[derive(Copy, Drop, Serde, starknet::Store, PartialEq, Debug)]
@@ -98,8 +98,8 @@ pub trait IGovernor<TContractState> {
 #[starknet::contract]
 pub mod Governor {
     use core::hash::{HashStateTrait, HashStateExTrait};
-    use core::num::traits::zero::Zero;
-    use core::poseidon::PoseidonTrait;
+    use core::num::traits::zero::{Zero};
+    use core::poseidon::{PoseidonTrait};
     use governance::call_trait::{HashSerializable, CallTrait};
     use governance::staker::{IStakerDispatcherTrait};
     use starknet::{

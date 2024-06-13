@@ -1,5 +1,5 @@
-use governance::execution_state::ExecutionState;
-use starknet::storage_access::StorePacking;
+use governance::execution_state::{ExecutionState};
+use starknet::storage_access::{StorePacking};
 
 pub(crate) fn assert_pack_unpack<
     T, U, +StorePacking<T, U>, +PartialEq<T>, +core::fmt::Debug<T>, +Drop<T>, +Copy<T>

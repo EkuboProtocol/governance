@@ -1,5 +1,5 @@
-use core::hash::LegacyHash;
-use core::num::traits::zero::Zero;
+use core::hash::{LegacyHash};
+use core::num::traits::zero::{Zero};
 use governance::airdrop::{
     IAirdropDispatcher, IAirdropDispatcherTrait, Airdrop, Config,
     Airdrop::{compute_pedersen_root, hash_function, hash_claim, compute_root_of_group}, Claim

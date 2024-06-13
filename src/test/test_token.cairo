@@ -1,10 +1,10 @@
-use governance::interfaces::erc20::IERC20Dispatcher;
+use governance::interfaces::erc20::{IERC20Dispatcher};
 use starknet::{ContractAddress, syscalls::{deploy_syscall}};
 
 #[starknet::contract]
 pub(crate) mod TestToken {
-    use core::num::traits::zero::Zero;
-    use governance::interfaces::erc20::IERC20;
+    use core::num::traits::zero::{Zero};
+    use governance::interfaces::erc20::{IERC20};
     use starknet::{ContractAddress, get_caller_address};
 
     #[storage]

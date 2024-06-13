@@ -1,5 +1,5 @@
 use core::hash::{LegacyHash, HashStateExTrait, HashStateTrait};
-use core::poseidon::PoseidonTrait;
+use core::poseidon::{PoseidonTrait};
 use governance::call_trait::{CallTrait, HashSerializable};
 use governance::test::test_token::{deploy as deploy_token};
 use starknet::{contract_address_const, get_contract_address, account::{Call}};

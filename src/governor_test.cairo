@@ -1,4 +1,4 @@
-use core::num::traits::zero::Zero;
+use core::num::traits::zero::{Zero};
 use governance::execution_state::{ExecutionState};
 use governance::governor::{
     IGovernorDispatcher, IGovernorDispatcherTrait, Governor, Config, ProposalInfo,
@@ -677,8 +677,7 @@ fn test_execute_before_voting_ends_should_fail() {
 
     advance_time(config.voting_start_delay);
 
-    // execute the proposal
-    // if the vote is still active, this should fail
+    // Execute the proposal. If the vote is still active, this should fail.
     governor
         .execute(
             id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
@@ -694,8 +693,7 @@ fn test_execute_quorum_not_met_should_fail() {
     advance_time(config.voting_start_delay + config.voting_period + config.execution_delay);
     set_contract_address(proposer());
 
-    // execute the proposal
-    // if the quorum was not met, this should fail
+    // Execute the proposal. If the quorum was not met, this should fail.
     governor
         .execute(
             id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
@@ -737,8 +735,7 @@ fn test_execute_no_majority_should_fail() {
 
     advance_time(config.voting_period + config.execution_delay);
 
-    // execute the proposal
-    // if the majority of votes are no, this should fail
+    // Execute the proposal. If the majority of votes are no, this should fail.
     governor
         .execute(
             id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()

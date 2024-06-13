@@ -1,4 +1,4 @@
-use starknet::storage_access::StorePacking;
+use starknet::storage_access::{StorePacking};
 
 const TWO_POW_64: u128 = 0x10000000000000000;
 const TWO_POW_64_DIVISOR: NonZero<u128> = 0x10000000000000000;
