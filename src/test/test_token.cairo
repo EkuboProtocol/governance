@@ -11,6 +11,7 @@ pub(crate) mod TestToken {
     struct Storage {
         balances: LegacyMap<ContractAddress, u256>,
         allowances: LegacyMap<(ContractAddress, ContractAddress), u256>,
+        total_supply: u256,
     }
 
     #[derive(starknet::Event, PartialEq, Debug, Drop)]
@@ -29,11 +30,15 @@ pub(crate) mod TestToken {
     #[constructor]
     fn constructor(ref self: ContractState, recipient: ContractAddress, amount: u256) {
         self.balances.write(recipient, amount);
-        self.emit(Transfer { from: Zero::zero(), to: recipient, value: amount })
+        self.emit(Transfer { from: Zero::zero(), to: recipient, value: amount });
+        self.total_supply.write(amount);
     }
 
     #[abi(embed_v0)]
     impl IERC20Impl of IERC20<ContractState> {
+        fn totalSupply(self: @ContractState) -> u256 {
+            self.total_supply.read()
+        }
         fn balanceOf(self: @ContractState, account: ContractAddress) -> u256 {
             self.balances.read(account).into()
         }
