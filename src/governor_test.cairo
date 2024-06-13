@@ -96,7 +96,7 @@ fn create_proposal(
 fn create_proposal_with_call(
     governor: IGovernorDispatcher, token: IERC20Dispatcher, staker: IStakerDispatcher, call: Call
 ) -> felt252 {
-    // delegates token to the proposer so that he reaches threshold
+    // delegate token to the proposer so that he reaches threshold
     token
         .approve(staker.contract_address, governor.get_config().proposal_creation_threshold.into());
     staker.stake(proposer());
