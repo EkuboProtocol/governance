@@ -48,12 +48,7 @@ pub trait IGovernor<TContractState> {
     // Cancels the proposal with the given ID. Only callable by the proposer.
     fn cancel(ref self: TContractState, id: felt252);
 
-    // Reports a breach in the proposer's voting weight below the proposal creation threshold, canceling the proposal.
-    // The breach timestamp must be between when the proposal was created and the end of the voting period for the proposal.
-    // This method can be called by anyone at any time before the proposal is executed.
-    fn report_breach(ref self: TContractState, id: felt252, breach_timestamp: u64);
-
-    // Executes the given proposal.
+    // Execute the given proposal.
     fn execute(ref self: TContractState, id: felt252, calls: Span<Call>) -> Span<Span<felt252>>;
 
     // Attaches the given text to the proposal. Simply emits an event containing the proposal description.
@@ -138,12 +133,6 @@ pub mod Governor {
         pub id: felt252,
     }
 
-    #[derive(starknet::Event, Drop)]
-    pub struct CreationThresholdBreached {
-        pub id: felt252,
-        pub breach_timestamp: u64,
-    }
-
     #[derive(starknet::Event, Drop, PartialEq, Debug)]
     pub struct Executed {
         pub id: felt252,
@@ -163,7 +152,6 @@ pub mod Governor {
         Described: Described,
         Voted: Voted,
         Canceled: Canceled,
-        CreationThresholdBreached: CreationThresholdBreached,
         Executed: Executed,
         Reconfigured: Reconfigured,
     }
@@ -351,50 +339,6 @@ pub mod Governor {
             self.proposals.write(id, proposal);
 
             self.emit(Canceled { id });
-        }
-
-        fn report_breach(ref self: ContractState, id: felt252, breach_timestamp: u64) {
-            let (mut proposal, config) = self.get_proposal_with_config(id);
-
-            assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
-
-            assert(proposal.execution_state.canceled.is_zero(), 'ALREADY_CANCELED');
-            assert(proposal.execution_state.executed.is_zero(), 'ALREADY_EXECUTED');
-            assert(breach_timestamp >= proposal.execution_state.created, 'PROPOSAL_NOT_CREATED');
-
-            assert(
-                breach_timestamp < (proposal.execution_state.created
-                    + config.voting_start_delay
-                    + config.voting_period),
-                'VOTING_ENDED'
-            );
-
-            // check that at the given timestamp, during the voting period and after the proposal was created, the proposer's delegation
-            // fell below the proposal creation threshold
-            assert(
-                self
-                    .get_staker()
-                    .get_average_delegated(
-                        delegate: proposal.proposer,
-                        start: breach_timestamp - config.voting_weight_smoothing_duration,
-                        end: breach_timestamp
-                    ) < config
-                    .proposal_creation_threshold,
-                'THRESHOLD_NOT_BREACHED'
-            );
-
-            proposal
-                .execution_state =
-                    ExecutionState {
-                        created: proposal.execution_state.created,
-                        // we asserted that it is not already executed
-                        executed: 0,
-                        canceled: get_block_timestamp()
-                    };
-
-            self.proposals.write(id, proposal);
-
-            self.emit(CreationThresholdBreached { id, breach_timestamp });
         }
 
         fn execute(

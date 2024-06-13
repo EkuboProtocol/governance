@@ -561,54 +561,6 @@ fn test_cancel_by_non_proposer() {
 }
 
 #[test]
-fn test_report_breach_by_non_proposer() {
-    let (staker, token, governor, config) = setup();
-
-    let id = create_proposal(governor, token, staker);
-    staker.withdraw_amount(proposer(), recipient: Zero::zero(), amount: 25);
-
-    // fast forward one smoothing duration
-    advance_time(config.voting_weight_smoothing_duration);
-
-    // a random user can now cancel the proposal
-    set_contract_address(anyone());
-    governor.report_breach(id, get_block_timestamp());
-
-    // expect that proposal is no longer available
-    let proposal = governor.get_proposal(id);
-    assert_eq!(
-        proposal,
-        ProposalInfo {
-            calls_hash: hash_calls(
-                @array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
-            ),
-            proposer: proposer(),
-            execution_state: ExecutionState {
-                created: config.voting_weight_smoothing_duration,
-                executed: 0,
-                canceled: config.voting_weight_smoothing_duration * 2
-            },
-            yea: 0,
-            nay: 0,
-            config_version: 0,
-        }
-    );
-}
-
-#[test]
-#[should_panic(expected: ('THRESHOLD_NOT_BREACHED', 'ENTRYPOINT_FAILED'))]
-fn test_cancel_by_non_proposer_threshold_not_breached_should_fail() {
-    let (staker, token, governor, _config) = setup();
-
-    let id = create_proposal(governor, token, staker);
-
-    // a random user can't now cancel the proposal because
-    // the proposer's voting power is still above threshold
-    set_contract_address(anyone());
-    governor.report_breach(id, get_block_timestamp());
-}
-
-#[test]
 #[should_panic(expected: ('VOTING_STARTED', 'ENTRYPOINT_FAILED'))]
 fn test_cancel_after_voting_end_should_fail() {
     let (staker, token, governor, config) = setup();
