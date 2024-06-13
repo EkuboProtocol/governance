@@ -836,8 +836,7 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
 
     advance_time(config.voting_period + config.execution_delay);
 
-    // execute the proposal
-    // if the quorum was not met, this should fail
+    // Execute the proposal. If the quorum was not met, this should fail.
     governor
         .execute(
             id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
