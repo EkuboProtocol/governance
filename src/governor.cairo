@@ -450,6 +450,7 @@ pub mod Governor {
     }
 
     // This implementation exists solely for the purpose of allowing simulation of calls from the governor with the flag to skip validation
+    #[abi(embed_v0)]
     impl GovernorAccountContractForSimulation of AccountContract<ContractState> {
         fn __validate_declare__(self: @ContractState, class_hash: felt252) -> felt252 {
             panic!("Not allowed");
