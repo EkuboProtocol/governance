@@ -1,11 +1,6 @@
-use core::array::{ArrayTrait, SpanTrait};
 use core::hash::{HashStateTrait, HashStateExTrait, Hash};
-use core::result::{ResultTrait};
-use core::serde::{Serde};
-use core::traits::{Into};
 use starknet::account::{Call};
-use starknet::{ContractAddress};
-use starknet::{SyscallResult, syscalls::call_contract_syscall};
+use starknet::syscalls::{call_contract_syscall};
 
 // Care must be taken when using this implementation: Serde of the type T must be safe for hashing.
 // This means that no two values of type T have the same serialization.
@@ -17,6 +12,7 @@ pub(crate) impl HashSerializable<T, S, +Serde<T>, +HashStateTrait<S>, +Drop<S>> 
         while let Option::Some(word) = arr.pop_front() {
             state = state.update(word)
         };
+
         state
     }
 }

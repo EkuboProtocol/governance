@@ -21,8 +21,6 @@ trait IAirdropClaimCheck<TContractState> {
 
 #[starknet::contract]
 mod AirdropClaimCheck {
-    use core::array::{SpanTrait};
-    use core::option::{OptionTrait};
     use governance::airdrop::{IAirdropDispatcherTrait};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use super::{IAirdropClaimCheck, IAirdropDispatcher, CheckParams, CheckResult};
