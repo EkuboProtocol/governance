@@ -103,7 +103,7 @@ pub mod Governor {
     use governance::staker::{IStakerDispatcherTrait};
     use starknet::{
         get_block_timestamp, get_caller_address, contract_address_const, get_contract_address,
-        syscalls::{replace_class_syscall}
+        syscalls::{replace_class_syscall}, AccountContract
     };
     use super::{
         IStakerDispatcher, ContractAddress, Array, IGovernor, Config, ProposalInfo, Call,
@@ -449,6 +449,25 @@ pub mod Governor {
             self.check_self_call();
 
             replace_class_syscall(class_hash).unwrap();
+        }
+    }
+
+    // This implementation exists solely for the purpose of allowing simulation of calls from the governor with the flag to skip validation
+    impl GovernorAccountContractForSimulation of AccountContract<ContractState> {
+        fn __validate_declare__(self: @ContractState, class_hash: felt252) -> felt252 {
+            panic!("Not allowed");
+            0
+        }
+        fn __validate__(ref self: ContractState, calls: Array<Call>) -> felt252 {
+            panic!("Not allowed");
+            0
+        }
+        fn __execute__(ref self: ContractState, mut calls: Array<Call>) -> Array<Span<felt252>> {
+            let mut results: Array<Span<felt252>> = array![];
+            while let Option::Some(call) = calls.pop_front() {
+                results.append(call.execute());
+            };
+            results
         }
     }
 }
