@@ -2,24 +2,24 @@ use starknet::{ContractAddress};
 
 #[starknet::interface]
 pub trait IStaker<TContractState> {
-    // Returns the token this staker references
+    // Returns the token this staker references.
     fn get_token(self: @TContractState) -> ContractAddress;
 
-    // Returns the amount staked from the staker to the delegate
+    // Returns the amount staked from the staker to the delegate.
     fn get_staked(
         self: @TContractState, staker: ContractAddress, delegate: ContractAddress
     ) -> u128;
 
-    // Transfer the approved amount of token from the caller into this contract and delegates it to the given address
+    // Transfers the approved amount of token from the caller into this contract and delegates it to the given address.
     fn stake(ref self: TContractState, delegate: ContractAddress);
 
-    // Transfer the specified amount of token from the caller into this contract and delegates the voting weight to the specified delegate
+    // Transfers the specified amount of token from the caller into this contract and delegates the voting weight to the specified delegate.
     fn stake_amount(ref self: TContractState, delegate: ContractAddress, amount: u128);
 
-    // Unstakes and withdraws all of the tokens delegated by the sender to the delegate from the contract to the given recipient address
+    // Unstakes and withdraws all of the tokens delegated by the sender to the delegate from the contract to the given recipient address.
     fn withdraw(ref self: TContractState, delegate: ContractAddress, recipient: ContractAddress);
 
-    // Unstakes and withdraws the specified amount of tokens delegated by the sender to the delegate from the contract to the given recipient address
+    // Unstakes and withdraws the specified amount of tokens delegated by the sender to the delegate from the contract to the given recipient address.
     fn withdraw_amount(
         ref self: TContractState,
         delegate: ContractAddress,
@@ -27,23 +27,23 @@ pub trait IStaker<TContractState> {
         amount: u128
     );
 
-    // Get the currently delegated amount of token. Note this is not flash-loan resistant.
+    // Gets the currently delegated amount of token. Note this is not flash-loan resistant.
     fn get_delegated(self: @TContractState, delegate: ContractAddress) -> u128;
 
-    // Get how much delegated tokens an address has at a certain timestamp.
+    // Gets how much delegated tokens an address has at a certain timestamp.
     fn get_delegated_at(self: @TContractState, delegate: ContractAddress, timestamp: u64) -> u128;
 
-    // Get the cumulative delegated amount * seconds for an address at a certain timestamp.
+    // Gets the cumulative delegated amount * seconds for an address at a certain timestamp.
     fn get_delegated_cumulative(
         self: @TContractState, delegate: ContractAddress, timestamp: u64
     ) -> u256;
 
-    // Get the average amount delegated over the given period, where end > start and end <= current time
+    // Gets the average amount delegated over the given period, where end > start and end <= current time.
     fn get_average_delegated(
         self: @TContractState, delegate: ContractAddress, start: u64, end: u64
     ) -> u128;
 
-    // Get the average amount delegated over the last period seconds
+    // Gets the average amount delegated over the last period seconds.
     fn get_average_delegated_over_last(
         self: @TContractState, delegate: ContractAddress, period: u64
     ) -> u128;
@@ -52,8 +52,6 @@ pub trait IStaker<TContractState> {
 #[starknet::contract]
 pub mod Staker {
     use core::num::traits::zero::{Zero};
-    use core::option::{OptionTrait};
-    use core::traits::{Into, TryInto};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::{
         get_caller_address, get_contract_address, get_block_timestamp,

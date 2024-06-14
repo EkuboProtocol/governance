@@ -1,12 +1,4 @@
-use core::array::SpanTrait;
-use core::array::{ArrayTrait};
 use core::num::traits::zero::{Zero};
-use core::option::{OptionTrait};
-
-use core::result::{Result, ResultTrait};
-use core::serde::Serde;
-use core::traits::{TryInto};
-
 use governance::execution_state::{ExecutionState};
 use governance::governor::{
     IGovernorDispatcher, IGovernorDispatcherTrait, Governor, Config, ProposalInfo,
@@ -22,39 +14,39 @@ use starknet::{
     testing::{set_block_timestamp, set_contract_address, pop_log}
 };
 
-
-pub(crate) fn recipient() -> ContractAddress {
+fn recipient() -> ContractAddress {
     'recipient'.try_into().unwrap()
 }
 
-pub(crate) fn proposer() -> ContractAddress {
+fn proposer() -> ContractAddress {
     'proposer'.try_into().unwrap()
 }
 
-pub(crate) fn delegate() -> ContractAddress {
+fn delegate() -> ContractAddress {
     'delegate'.try_into().unwrap()
 }
 
-pub(crate) fn voter1() -> ContractAddress {
+fn voter1() -> ContractAddress {
     'voter1'.try_into().unwrap()
 }
 
-pub(crate) fn voter2() -> ContractAddress {
+fn voter2() -> ContractAddress {
     'voter2'.try_into().unwrap()
 }
 
-pub(crate) fn anyone() -> ContractAddress {
+fn anyone() -> ContractAddress {
     'anyone'.try_into().unwrap()
 }
 
 fn advance_time(by: u64) -> u64 {
     let next = get_block_timestamp() + by;
     set_block_timestamp(next);
+
     next
 }
 
 fn transfer_call(token: IERC20Dispatcher, recipient: ContractAddress, amount: u256) -> Call {
-    let mut calldata: Array<felt252> = ArrayTrait::new();
+    let mut calldata: Array<felt252> = array![];
     Serde::serialize(@(recipient, amount), ref calldata);
 
     Call {
@@ -66,7 +58,7 @@ fn transfer_call(token: IERC20Dispatcher, recipient: ContractAddress, amount: u2
 }
 
 fn deploy(staker: IStakerDispatcher, config: Config) -> IGovernorDispatcher {
-    let mut constructor_args: Array<felt252> = ArrayTrait::new();
+    let mut constructor_args: Array<felt252> = array![];
     Serde::serialize(@(staker, config), ref constructor_args);
 
     let (address, _) = deploy_syscall(
@@ -104,7 +96,7 @@ fn create_proposal(
 fn create_proposal_with_call(
     governor: IGovernorDispatcher, token: IERC20Dispatcher, staker: IStakerDispatcher, call: Call
 ) -> felt252 {
-    // Delegate token to the proposer so that he reaches threshold.
+    // delegate token to the proposer so that he reaches threshold
     token
         .approve(staker.contract_address, governor.get_config().proposal_creation_threshold.into());
     staker.stake(proposer());
@@ -115,6 +107,7 @@ fn create_proposal_with_call(
     set_contract_address(proposer());
     let id = governor.propose(array![call].span());
     set_contract_address(address_before);
+
     id
 }
 
@@ -143,7 +136,6 @@ fn test_setup() {
     assert_eq!(governor.get_staker().contract_address, staker.contract_address);
     assert_eq!(governor.get_config(), config);
 }
-
 
 #[test]
 fn test_propose() {
@@ -310,7 +302,6 @@ fn test_describe_proposal_successful() {
     );
 }
 
-
 #[test]
 fn test_propose_and_describe_successful() {
     let (staker, token, governor, config) = setup();
@@ -394,7 +385,7 @@ fn test_vote_no_staking_after_period_starts() {
 
     advance_time(config.voting_start_delay);
 
-    // Delegate token to the voter to give him voting power.
+    // delegate token to the voter to give him voting power
     token.approve(staker.contract_address, 900);
     staker.stake(voter1());
 
@@ -405,7 +396,6 @@ fn test_vote_no_staking_after_period_starts() {
     assert_eq!(proposal.nay, 0);
     assert_eq!(proposal.yea, 0);
 }
-
 
 #[test]
 #[should_panic(expected: ('DOES_NOT_EXIST', 'ENTRYPOINT_FAILED'))]
@@ -452,7 +442,7 @@ fn test_vote_already_voted_should_fail() {
     governor.vote(id, true);
     assert_eq!(governor.get_vote(id, voter1()), 3);
 
-    // Trying to vote twice on the same proposal should fail
+    // trying to vote twice on the same proposal should fail
     governor.vote(id, true);
 }
 
@@ -462,13 +452,13 @@ fn test_vote_already_voted_different_vote_should_fail() {
     let (staker, token, governor, config) = setup();
     let id = create_proposal(governor, token, staker);
 
-    // Fast forward to voting period
+    // fast forward to voting period
     advance_time(config.voting_start_delay);
 
     set_contract_address(voter1());
     governor.vote(id, true);
 
-    // Different vote should still fail
+    // different vote should still fail
     governor.vote(id, false);
 }
 
@@ -581,7 +571,7 @@ fn test_cancel_after_voting_end_should_fail() {
     advance_time(config.voting_start_delay);
     set_contract_address(proposer);
 
-    governor.cancel(id); // Try to cancel the proposal after voting completed
+    governor.cancel(id); // try to cancel the proposal after voting completed
 }
 
 #[test]
@@ -639,13 +629,12 @@ fn test_execute_before_voting_ends_should_fail() {
 
     advance_time(config.voting_start_delay);
 
-    // Execute the proposal. The vote is still active, this should fail.
+    // Execute the proposal. If the vote is still active, this should fail.
     governor
         .execute(
             id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
         );
 }
-
 
 #[test]
 #[should_panic(expected: ('QUORUM_NOT_MET', 'ENTRYPOINT_FAILED'))]
@@ -656,7 +645,7 @@ fn test_execute_quorum_not_met_should_fail() {
     advance_time(config.voting_start_delay + config.voting_period + config.execution_delay);
     set_contract_address(proposer());
 
-    // Execute the proposal. The quorum was not met, this should fail.
+    // Execute the proposal. If the quorum was not met, this should fail.
     governor
         .execute(
             id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
@@ -698,7 +687,7 @@ fn test_execute_no_majority_should_fail() {
 
     advance_time(config.voting_period + config.execution_delay);
 
-    // Execute the proposal. The majority of votes are no, this should fail.
+    // Execute the proposal. If the majority of votes are no, this should fail.
     governor
         .execute(
             id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
@@ -728,7 +717,6 @@ fn test_execute_before_execution_window_begins() {
             id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
         );
 }
-
 
 #[test]
 #[should_panic(expected: ('EXECUTION_WINDOW_OVER', 'ENTRYPOINT_FAILED'))]
@@ -800,7 +788,7 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
 
     advance_time(config.voting_period + config.execution_delay);
 
-    // Execute the proposal. The quorum was not met, this should fail.
+    // Execute the proposal. If the quorum was not met, this should fail.
     governor
         .execute(
             id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
@@ -935,7 +923,7 @@ fn test_execute_already_executed_should_fail() {
     governor
         .execute(
             id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
-        ); // Try to execute again
+        ); // try to execute again
 }
 
 #[test]
@@ -1025,7 +1013,6 @@ fn test_reconfigure_fails_if_not_self_call() {
             }
         );
 }
-
 
 #[test]
 fn test_reconfigure_succeeds_self_call() {

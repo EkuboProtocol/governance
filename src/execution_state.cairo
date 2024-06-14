@@ -22,7 +22,7 @@ pub struct ExecutionState {
     pub canceled: u64
 }
 
-pub(crate) impl ExecutionStateStorePacking of StorePacking<ExecutionState, felt252> {
+impl ExecutionStateStorePacking of StorePacking<ExecutionState, felt252> {
     fn pack(value: ExecutionState) -> felt252 {
         u256 {
             low: TwoU64TupleStorePacking::pack((value.created, value.executed)),
