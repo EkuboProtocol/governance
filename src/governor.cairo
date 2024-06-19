@@ -90,7 +90,7 @@ pub trait IGovernor<TContractState> {
     fn upgrade(ref self: TContractState, class_hash: ClassHash);
 }
 
-#[starknet::contract]
+#[starknet::contract(account)]
 pub mod Governor {
     use core::hash::{HashStateTrait, HashStateExTrait};
     use core::num::traits::zero::{Zero};
@@ -461,6 +461,7 @@ pub mod Governor {
             0
         }
         fn __execute__(ref self: ContractState, mut calls: Array<Call>) -> Array<Span<felt252>> {
+            assert(get_caller_address().is_zero(), 'Invalid caller');
             let mut results: Array<Span<felt252>> = array![];
             while let Option::Some(call) = calls.pop_front() {
                 results.append(call.execute());
