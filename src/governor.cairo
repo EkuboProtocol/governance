@@ -461,6 +461,7 @@ pub mod Governor {
             0
         }
         fn __execute__(ref self: ContractState, mut calls: Array<Call>) -> Array<Span<felt252>> {
+            assert(get_caller_address().is_zero(), 'caller is not Starknet OS');
             let mut results: Array<Span<felt252>> = array![];
             while let Option::Some(call) = calls.pop_front() {
                 results.append(call.execute());
