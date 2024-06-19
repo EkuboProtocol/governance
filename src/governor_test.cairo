@@ -11,7 +11,8 @@ use starknet::account::{Call};
 use starknet::{
     get_contract_address, syscalls::deploy_syscall, ClassHash, contract_address_const,
     ContractAddress, get_block_timestamp,
-    testing::{set_block_timestamp, set_contract_address, pop_log, set_version}
+    testing::{set_block_timestamp, set_contract_address, pop_log, set_version},
+    account::{AccountContractDispatcher, AccountContractDispatcherTrait}
 };
 
 fn recipient() -> ContractAddress {
@@ -1015,18 +1016,37 @@ fn test_reconfigure_fails_if_not_self_call() {
 }
 
 #[test]
-#[should_panic(expected: ('Simulation only', 'ENTRYPOINT_FAILED'))]
-fn test_governor_simulate_fails_tx_version() {
+#[should_panic(expected: ("Not allowed", 'ENTRYPOINT_FAILED'))]
+fn test_governor_validate_fails() {
     let (_staker, _token, governor, _config) = setup();
-    governor.simulate(array![].span());
+    AccountContractDispatcher { contract_address: governor.contract_address }
+        .__validate__(array![]);
 }
 
 #[test]
+#[should_panic(expected: ("Not allowed", 'ENTRYPOINT_FAILED'))]
+fn test_governor_validate_declare_fails() {
+    let (_staker, _token, governor, _config) = setup();
+    AccountContractDispatcher { contract_address: governor.contract_address }
+        .__validate_declare__(123);
+}
+
+#[test]
+#[should_panic(expected: ('Invalid caller', 'ENTRYPOINT_FAILED'))]
+fn test_governor_execute_fails_from_non_zero() {
+    let (_staker, _token, governor, _config) = setup();
+    set_contract_address(contract_address_const::<1>());
+    AccountContractDispatcher { contract_address: governor.contract_address }.__execute__(array![]);
+}
+
+#[test]
+#[should_panic(expected: ('Invalid TX version', 'ENTRYPOINT_FAILED'))]
 fn test_governor_execute_fails_invalid_tx_version() {
     let (_staker, _token, governor, _config) = setup();
-    set_version(0x100000000000000000000000000000001);
-    governor.simulate(array![].span());
+    set_version(0);
+    AccountContractDispatcher { contract_address: governor.contract_address }.__execute__(array![]);
 }
+
 
 #[test]
 fn test_reconfigure_succeeds_self_call() {

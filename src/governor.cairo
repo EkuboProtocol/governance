@@ -88,12 +88,9 @@ pub trait IGovernor<TContractState> {
 
     // Replaces the code at this address. This must be self-called via a proposal.
     fn upgrade(ref self: TContractState, class_hash: ClassHash);
-
-    // Can be called only via simulateTransaction to determine the effect of the governor making a set of calls
-    fn simulate(ref self: TContractState, calls: Span<Call>) -> Span<Span<felt252>>;
 }
 
-#[starknet::contract]
+#[starknet::contract(account)]
 pub mod Governor {
     use core::hash::{HashStateTrait, HashStateExTrait};
     use core::num::traits::zero::{Zero};
@@ -102,7 +99,7 @@ pub mod Governor {
     use governance::staker::{IStakerDispatcherTrait};
     use starknet::{
         get_block_timestamp, get_caller_address, get_contract_address,
-        syscalls::{replace_class_syscall}, get_tx_info
+        syscalls::{replace_class_syscall}, AccountContract, get_tx_info
     };
     use super::{
         IStakerDispatcher, ContractAddress, IGovernor, Config, ProposalInfo, Call, ExecutionState,
@@ -450,19 +447,28 @@ pub mod Governor {
 
             replace_class_syscall(class_hash).unwrap();
         }
+    }
 
-        fn simulate(ref self: ContractState, mut calls: Span<Call>) -> Span<Span<felt252>> {
-            let tx_version = get_tx_info().unbox().version;
-            assert(
-                tx_version == 0x100000000000000000000000000000001
-                    || tx_version == 0x100000000000000000000000000000003,
-                'Simulation only'
-            );
+    // This implementation exists solely for the purpose of allowing simulation of calls from the governor with the flag to skip validation
+    #[abi(embed_v0)]
+    impl GovernorAccountContractForSimulation of AccountContract<ContractState> {
+        fn __validate_declare__(self: @ContractState, class_hash: felt252) -> felt252 {
+            panic!("Not allowed");
+            0
+        }
+        fn __validate__(ref self: ContractState, calls: Array<Call>) -> felt252 {
+            panic!("Not allowed");
+            0
+        }
+        fn __execute__(ref self: ContractState, mut calls: Array<Call>) -> Array<Span<felt252>> {
+            assert(get_caller_address().is_zero(), 'Invalid caller');
+            let tx_version = get_tx_info().unbox().version.into();
+            assert(tx_version == 1 || tx_version == 3, 'Invalid TX version');
             let mut results: Array<Span<felt252>> = array![];
             while let Option::Some(call) = calls.pop_front() {
                 results.append(call.execute());
             };
-            results.span()
+            results
         }
     }
 }
