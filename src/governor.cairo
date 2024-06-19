@@ -99,7 +99,7 @@ pub mod Governor {
     use governance::staker::{IStakerDispatcherTrait};
     use starknet::{
         get_block_timestamp, get_caller_address, get_contract_address,
-        syscalls::{replace_class_syscall}, AccountContract
+        syscalls::{replace_class_syscall}, AccountContract, get_tx_info
     };
     use super::{
         IStakerDispatcher, ContractAddress, IGovernor, Config, ProposalInfo, Call, ExecutionState,
@@ -462,6 +462,8 @@ pub mod Governor {
         }
         fn __execute__(ref self: ContractState, mut calls: Array<Call>) -> Array<Span<felt252>> {
             assert(get_caller_address().is_zero(), 'Invalid caller');
+            let tx_version = get_tx_info().unbox().version.into();
+            assert(tx_version == 1 || tx_version == 3, 'Invalid TX version');
             let mut results: Array<Span<felt252>> = array![];
             while let Option::Some(call) = calls.pop_front() {
                 results.append(call.execute());
