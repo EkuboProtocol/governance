@@ -11,7 +11,7 @@ use starknet::account::{Call};
 use starknet::{
     get_contract_address, syscalls::deploy_syscall, ClassHash, contract_address_const,
     ContractAddress, get_block_timestamp,
-    testing::{set_block_timestamp, set_contract_address, pop_log},
+    testing::{set_block_timestamp, set_contract_address, pop_log, set_version},
     account::{AccountContractDispatcher, AccountContractDispatcherTrait}
 };
 
@@ -1038,6 +1038,15 @@ fn test_governor_execute_fails_from_non_zero() {
     set_contract_address(contract_address_const::<1>());
     AccountContractDispatcher { contract_address: governor.contract_address }.__execute__(array![]);
 }
+
+#[test]
+#[should_panic(expected: ('Invalid TX version', 'ENTRYPOINT_FAILED'))]
+fn test_governor_execute_fails_invalid_tx_version() {
+    let (_staker, _token, governor, _config) = setup();
+    set_version(0);
+    AccountContractDispatcher { contract_address: governor.contract_address }.__execute__(array![]);
+}
+
 
 #[test]
 fn test_reconfigure_succeeds_self_call() {
