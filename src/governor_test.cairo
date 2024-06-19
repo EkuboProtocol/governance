@@ -1041,12 +1041,26 @@ fn test_governor_execute_fails_from_non_zero() {
 
 #[test]
 #[should_panic(expected: ('Invalid TX version', 'ENTRYPOINT_FAILED'))]
-fn test_governor_execute_fails_invalid_tx_version() {
+fn test_governor_execute_fails_tx_version_0() {
     let (_staker, _token, governor, _config) = setup();
     set_version(0);
     AccountContractDispatcher { contract_address: governor.contract_address }.__execute__(array![]);
 }
 
+#[test]
+#[should_panic(expected: ('Invalid TX version', 'ENTRYPOINT_FAILED'))]
+fn test_governor_execute_fails_tx_version_1() {
+    let (_staker, _token, governor, _config) = setup();
+    set_version(1);
+    AccountContractDispatcher { contract_address: governor.contract_address }.__execute__(array![]);
+}
+
+#[test]
+fn test_governor_execute_succeeds_version_simulate() {
+    let (_staker, _token, governor, _config) = setup();
+    set_version(0x100000000000000000000000000000001);
+    AccountContractDispatcher { contract_address: governor.contract_address }.__execute__(array![]);
+}
 
 #[test]
 fn test_reconfigure_succeeds_self_call() {

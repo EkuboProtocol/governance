@@ -463,7 +463,11 @@ pub mod Governor {
         fn __execute__(ref self: ContractState, mut calls: Array<Call>) -> Array<Span<felt252>> {
             assert(get_caller_address().is_zero(), 'Invalid caller');
             let tx_version = get_tx_info().unbox().version.into();
-            assert(tx_version == 1 || tx_version == 3, 'Invalid TX version');
+            assert(
+                tx_version == 0x100000000000000000000000000000001
+                    || tx_version == 0x100000000000000000000000000000003,
+                'Invalid TX version'
+            );
             let mut results: Array<Span<felt252>> = array![];
             while let Option::Some(call) = calls.pop_front() {
                 results.append(call.execute());
