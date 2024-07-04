@@ -88,6 +88,9 @@ pub trait IGovernor<TContractState> {
 
     // Replaces the code at this address. This must be self-called via a proposal.
     fn upgrade(ref self: TContractState, class_hash: ClassHash);
+
+    // Migrates to the fixed storage layout, i.e. the storage layout from before v2.1.0
+    fn _migrate_old_config_storage(ref self: TContractState);
 }
 
 #[starknet::contract(account)]
@@ -97,6 +100,7 @@ pub mod Governor {
     use core::poseidon::{PoseidonTrait};
     use governance::call_trait::{HashSerializable, CallTrait};
     use governance::staker::{IStakerDispatcherTrait};
+    use starknet::storage_access::{Store, storage_base_address_from_felt252};
     use starknet::{
         get_block_timestamp, get_caller_address, get_contract_address,
         syscalls::{replace_class_syscall}, AccountContract, get_tx_info
@@ -159,7 +163,6 @@ pub mod Governor {
     #[storage]
     struct Storage {
         staker: IStakerDispatcher,
-        config: Config,
         config_versions: LegacyMap<u64, Config>,
         latest_config_version: u64,
         nonce: u64,
@@ -171,7 +174,9 @@ pub mod Governor {
     #[constructor]
     fn constructor(ref self: ContractState, staker: IStakerDispatcher, config: Config) {
         self.staker.write(staker);
-        self.config.write(config);
+
+        self.config_versions.write(0, config);
+        self.emit(Reconfigured { new_config: config, version: 0 });
     }
 
     pub fn get_proposal_id(address: ContractAddress, nonce: u64) -> felt252 {
@@ -405,11 +410,7 @@ pub mod Governor {
         }
 
         fn get_config_version(self: @ContractState, version: u64) -> Config {
-            if version.is_zero() {
-                self.config.read()
-            } else {
-                self.config_versions.read(version)
-            }
+            self.config_versions.read(version)
         }
 
         fn get_staker(self: @ContractState) -> IStakerDispatcher {
@@ -446,6 +447,29 @@ pub mod Governor {
             self.check_self_call();
 
             replace_class_syscall(class_hash).unwrap();
+        }
+
+        fn _migrate_old_config_storage(ref self: ContractState) {
+            let old_config_storage_address = storage_base_address_from_felt252(selector!("config"));
+            let old_config: Config = Store::read(0, old_config_storage_address).unwrap();
+            // voting period of 0 is assumed to be invalid
+            assert(old_config.voting_period.is_non_zero(), 'NO_OLD_CONFIG');
+            self.config_versions.write(0, old_config);
+            self.emit(Reconfigured { version: 0, new_config: old_config });
+            Store::write(
+                0,
+                old_config_storage_address,
+                Config {
+                    voting_start_delay: 0,
+                    voting_period: 0,
+                    voting_weight_smoothing_duration: 0,
+                    quorum: 0,
+                    proposal_creation_threshold: 0,
+                    execution_delay: 0,
+                    execution_window: 0
+                }
+            )
+                .expect('FAILED_TO_DELETE');
         }
     }
 
