@@ -89,7 +89,7 @@ pub trait IGovernor<TContractState> {
     // Replaces the code at this address. This must be self-called via a proposal.
     fn upgrade(ref self: TContractState, class_hash: ClassHash);
 
-    // Migrates to the fixed storage layout, i.e. the storage layout from before v2.1.0
+    // Migrates to the latest version of storage layout, from the version of storage before v2.1.0
     fn _migrate_old_config_storage(ref self: TContractState);
 }
 
