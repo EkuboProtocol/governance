@@ -293,6 +293,7 @@ fn test_describe_proposal_successful() {
             id,
             "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
         );
+    pop_log::<Governor::Reconfigured>(governor.contract_address).unwrap();
     pop_log::<Governor::Proposed>(governor.contract_address).unwrap();
     assert_eq!(
         pop_log::<Governor::Described>(governor.contract_address).unwrap(),
@@ -320,6 +321,7 @@ fn test_propose_and_describe_successful() {
         );
     set_contract_address(address_before);
 
+    pop_log::<Governor::Reconfigured>(governor.contract_address).unwrap();
     pop_log::<Governor::Proposed>(governor.contract_address).unwrap();
     assert_eq!(
         pop_log::<Governor::Described>(governor.contract_address).unwrap(),
@@ -892,6 +894,7 @@ fn test_execute_emits_logs_from_data() {
     // both transfers suceeded
     assert_eq!(result, expected);
 
+    pop_log::<Governor::Reconfigured>(governor.contract_address).unwrap();
     pop_log::<Governor::Proposed>(governor.contract_address).unwrap();
     pop_log::<Governor::Voted>(governor.contract_address).unwrap();
     pop_log::<Governor::Voted>(governor.contract_address).unwrap();
@@ -1111,6 +1114,8 @@ fn test_reconfigure_succeeds_self_call() {
                 .span()
         );
 
+    // the first one is from constructor
+    pop_log::<Governor::Reconfigured>(governor.contract_address).unwrap();
     pop_log::<Governor::Proposed>(governor.contract_address).unwrap();
     pop_log::<Governor::Voted>(governor.contract_address).unwrap();
     let reconfigured = pop_log::<Governor::Reconfigured>(governor.contract_address).unwrap();
