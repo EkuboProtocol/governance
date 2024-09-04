@@ -1,7 +1,7 @@
 use governance::execution_state::{ExecutionState};
 use governance::staker::{IStakerDispatcher};
 use starknet::account::{Call};
-use starknet::{ContractAddress, storage_access::{StorePacking}, ClassHash};
+use starknet::{ContractAddress, ClassHash};
 
 #[derive(Copy, Drop, Serde, starknet::Store, PartialEq, Debug)]
 pub struct ProposalInfo {
@@ -25,7 +25,8 @@ pub struct Config {
     pub voting_start_delay: u64,
     // The period during which votes are collected
     pub voting_period: u64,
-    // Over how many seconds the voting weight is averaged for proposal voting as well as creation/cancellation
+    // Over how many seconds the voting weight is averaged for proposal voting as well as
+    // creation/cancellation
     pub voting_weight_smoothing_duration: u64,
     // How many total votes must be collected for the proposal
     pub quorum: u128,
@@ -51,7 +52,8 @@ pub trait IGovernor<TContractState> {
     // Execute the given proposal.
     fn execute(ref self: TContractState, id: felt252, calls: Span<Call>) -> Span<Span<felt252>>;
 
-    // Attaches the given text to the proposal. Simply emits an event containing the proposal description.
+    // Attaches the given text to the proposal. Simply emits an event containing the proposal
+    // description.
     fn describe(ref self: TContractState, id: felt252, description: ByteArray);
 
     // Combines propose and describe methods.
@@ -83,7 +85,8 @@ pub trait IGovernor<TContractState> {
     // - 1 means voted against
     fn get_vote(self: @TContractState, id: felt252, voter: ContractAddress) -> u8;
 
-    // Changes the configuration of the governor. Only affects proposals created after the configuration change. Must be called by self, e.g. via a proposal.
+    // Changes the configuration of the governor. Only affects proposals created after the
+    // configuration change. Must be called by self, e.g. via a proposal.
     fn reconfigure(ref self: TContractState, config: Config) -> u64;
 
     // Replaces the code at this address. This must be self-called via a proposal.
@@ -100,6 +103,10 @@ pub mod Governor {
     use core::poseidon::{PoseidonTrait};
     use governance::call_trait::{HashSerializable, CallTrait};
     use governance::staker::{IStakerDispatcherTrait};
+    use starknet::storage::{
+        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess,
+        StoragePointerWriteAccess
+    };
     use starknet::storage_access::{Store, storage_base_address_from_felt252};
     use starknet::{
         get_block_timestamp, get_caller_address, get_contract_address,
@@ -109,6 +116,7 @@ pub mod Governor {
         IStakerDispatcher, ContractAddress, IGovernor, Config, ProposalInfo, Call, ExecutionState,
         ClassHash
     };
+
 
     #[derive(starknet::Event, Drop)]
     pub struct Proposed {
@@ -163,12 +171,12 @@ pub mod Governor {
     #[storage]
     struct Storage {
         staker: IStakerDispatcher,
-        config_versions: LegacyMap<u64, Config>,
+        config_versions: Map<u64, Config>,
         latest_config_version: u64,
         nonce: u64,
-        proposals: LegacyMap<felt252, ProposalInfo>,
-        latest_proposal_by_proposer: LegacyMap<ContractAddress, felt252>,
-        vote: LegacyMap<(felt252, ContractAddress), u8>,
+        proposals: Map<felt252, ProposalInfo>,
+        latest_proposal_by_proposer: Map<ContractAddress, felt252>,
+        vote: Map<(felt252, ContractAddress), u8>,
     }
 
     #[constructor]
@@ -216,7 +224,8 @@ pub mod Governor {
             if latest_proposal_id.is_non_zero() {
                 let latest_proposal_state = self.get_proposal(latest_proposal_id).execution_state;
 
-                // if the proposal is not canceled, check that the voting for that proposal has ended
+                // if the proposal is not canceled, check that the voting for that proposal has
+                // ended
                 if latest_proposal_state.canceled.is_zero() {
                     assert(
                         latest_proposal_state.created
@@ -325,7 +334,8 @@ pub mod Governor {
             assert(proposal.proposer == get_caller_address(), 'PROPOSER_ONLY');
             assert(proposal.execution_state.canceled.is_zero(), 'ALREADY_CANCELED');
 
-            // this is prevented so that proposers cannot grief voters by creating proposals that they plan to cancel after the result is known
+            // this is prevented so that proposers cannot grief voters by creating proposals that
+            // they plan to cancel after the result is known
             assert(
                 get_block_timestamp() < (proposal.execution_state.created
                     + config.voting_start_delay),
@@ -473,7 +483,8 @@ pub mod Governor {
         }
     }
 
-    // This implementation exists solely for the purpose of allowing simulation of calls from the governor with the flag to skip validation
+    // This implementation exists solely for the purpose of allowing simulation of calls from the
+    // governor with the flag to skip validation
     #[abi(embed_v0)]
     impl GovernorAccountContractForSimulation of AccountContract<ContractState> {
         fn __validate_declare__(self: @ContractState, class_hash: felt252) -> felt252 {

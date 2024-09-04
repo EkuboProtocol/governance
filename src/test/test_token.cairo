@@ -5,12 +5,13 @@ use starknet::{ContractAddress, syscalls::{deploy_syscall}};
 pub(crate) mod TestToken {
     use core::num::traits::zero::{Zero};
     use governance::interfaces::erc20::{IERC20};
+    use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess};
     use starknet::{ContractAddress, get_caller_address};
 
     #[storage]
     struct Storage {
-        balances: LegacyMap<ContractAddress, u256>,
-        allowances: LegacyMap<(ContractAddress, ContractAddress), u256>,
+        balances: Map<ContractAddress, u256>,
+        allowances: Map<(ContractAddress, ContractAddress), u256>,
     }
 
     #[derive(starknet::Event, PartialEq, Debug, Drop)]

@@ -1,5 +1,4 @@
 use governance::airdrop::{IAirdropDispatcher};
-use starknet::{ContractAddress};
 
 #[derive(Serde, Copy, Drop)]
 struct CheckParams {
@@ -23,7 +22,7 @@ trait IAirdropClaimCheck<TContractState> {
 mod AirdropClaimCheck {
     use governance::airdrop::{IAirdropDispatcherTrait};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
-    use super::{IAirdropClaimCheck, IAirdropDispatcher, CheckParams, CheckResult};
+    use super::{IAirdropClaimCheck, CheckParams, CheckResult};
 
     #[storage]
     struct Storage {}
@@ -33,18 +32,17 @@ mod AirdropClaimCheck {
         fn check(self: @ContractState, mut claims: Span<CheckParams>) -> Span<CheckResult> {
             let mut result: Array<CheckResult> = array![];
 
-            while let Option::Some(claim_check) = claims
-                .pop_front() {
-                    let token = IERC20Dispatcher {
-                        contract_address: (*claim_check.airdrop).get_token()
-                    };
-                    let claimed = (*claim_check.airdrop).is_claimed(*claim_check.claim_id);
-                    let funded = token
-                        .balanceOf(
-                            *claim_check.airdrop.contract_address
-                        ) >= ((*claim_check.amount).into());
-                    result.append(CheckResult { claimed, funded });
+            while let Option::Some(claim_check) = claims.pop_front() {
+                let token = IERC20Dispatcher {
+                    contract_address: (*claim_check.airdrop).get_token()
                 };
+                let claimed = (*claim_check.airdrop).is_claimed(*claim_check.claim_id);
+                let funded = token
+                    .balanceOf(
+                        *claim_check.airdrop.contract_address
+                    ) >= ((*claim_check.amount).into());
+                result.append(CheckResult { claimed, funded });
+            };
 
             result.span()
         }

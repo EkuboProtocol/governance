@@ -28,7 +28,7 @@ Contracts in this repository are designed so that they may be used together _or_
 
 - Users call `Token#approve(staker, stake_amount)`, then `Staker#stake_amount(delegate, stake_amount)` to stake and delegate their tokens to other addresses
 - Users call `Staker#withdraw_amount(delegate, recipient, amount)` to remove part or all of their delegation
-- The average delegation weight is computable over *any* historical period
+- The average delegation weight is computable over _any_ historical period
 - The contract has no owner, and cannot be updated nor configured
 
 #### Governor

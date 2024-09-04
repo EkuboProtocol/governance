@@ -1,4 +1,4 @@
-use core::hash::{HashStateTrait, HashStateExTrait, Hash};
+use core::hash::{HashStateTrait, Hash};
 use starknet::account::{Call};
 use starknet::syscalls::{call_contract_syscall};
 

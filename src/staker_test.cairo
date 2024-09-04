@@ -7,10 +7,7 @@ use governance::staker::{
 };
 use governance::test::test_token::{TestToken, deploy as deploy_token};
 use starknet::testing::{set_block_timestamp, pop_log};
-use starknet::{
-    get_contract_address, syscalls::deploy_syscall, ClassHash, contract_address_const,
-    ContractAddress,
-};
+use starknet::{get_contract_address, syscalls::deploy_syscall, contract_address_const};
 
 pub(crate) fn setup(amount: u256) -> (IStakerDispatcher, IERC20Dispatcher) {
     let token = deploy_token(get_contract_address(), amount);
@@ -26,8 +23,8 @@ pub(crate) fn setup(amount: u256) -> (IStakerDispatcher, IERC20Dispatcher) {
 
 mod stake_withdraw {
     use super::{
-        setup, Staker, IStakerDispatcherTrait, IERC20Dispatcher, IERC20DispatcherTrait, pop_log,
-        get_contract_address, Zero, TestToken, contract_address_const
+        setup, Staker, IStakerDispatcherTrait, IERC20DispatcherTrait, pop_log, get_contract_address,
+        Zero, TestToken, contract_address_const
     };
 
     #[test]

@@ -9,9 +9,8 @@ use governance::staker::{IStakerDispatcher, IStakerDispatcherTrait};
 use governance::staker_test::{setup as setup_staker};
 use starknet::account::{Call};
 use starknet::{
-    get_contract_address, syscalls::deploy_syscall, ClassHash, contract_address_const,
-    ContractAddress, get_block_timestamp,
-    testing::{set_block_timestamp, set_contract_address, pop_log, set_version},
+    get_contract_address, syscalls::deploy_syscall, contract_address_const, ContractAddress,
+    get_block_timestamp, testing::{set_block_timestamp, set_contract_address, pop_log, set_version},
     account::{AccountContractDispatcher, AccountContractDispatcherTrait}
 };
 
@@ -240,7 +239,8 @@ fn test_propose_below_threshold_should_fail() {
     let (_staker, token, governor, config) = setup();
 
     set_contract_address(proposer());
-    // since time starts at 0, we have to advance time by the duration just so the staker doesn't revert on time - voting_weight_smoothing_duration
+    // since time starts at 0, we have to advance time by the duration just so the staker doesn't
+    // revert on time - voting_weight_smoothing_duration
     advance_time(config.voting_weight_smoothing_duration);
     // no tokens delegated to the proposer
     governor.propose(array![transfer_call(token, recipient(), amount: 100)].span());
@@ -523,7 +523,7 @@ fn test_cancel_by_proposer() {
         proposal,
         ProposalInfo {
             calls_hash: hash_calls(@array![transfer_call(token, recipient(), amount: 100)].span()),
-            proposer: proposer(),
+            proposer: proposer,
             execution_state: ExecutionState {
                 created: config.voting_weight_smoothing_duration,
                 executed: 0,
@@ -770,7 +770,8 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
         .propose(array![transfer_call(token: token, recipient: recipient(), amount: 100)].span());
 
     advance_time(config.voting_start_delay - (config.voting_weight_smoothing_duration / 3));
-    // undelegate 1/3rd of a duration before voting starts, so only a third of voting power is counted for voter1
+    // undelegate 1/3rd of a duration before voting starts, so only a third of voting power is
+    // counted for voter1
     set_contract_address(voter1);
     staker.withdraw_amount(voter1, recipient: Zero::zero(), amount: 49);
 

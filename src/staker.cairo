@@ -10,16 +10,20 @@ pub trait IStaker<TContractState> {
         self: @TContractState, staker: ContractAddress, delegate: ContractAddress
     ) -> u128;
 
-    // Transfers the approved amount of token from the caller into this contract and delegates it to the given address.
+    // Transfers the approved amount of token from the caller into this contract and delegates it to
+    // the given address.
     fn stake(ref self: TContractState, delegate: ContractAddress);
 
-    // Transfers the specified amount of token from the caller into this contract and delegates the voting weight to the specified delegate.
+    // Transfers the specified amount of token from the caller into this contract and delegates the
+    // voting weight to the specified delegate.
     fn stake_amount(ref self: TContractState, delegate: ContractAddress, amount: u128);
 
-    // Unstakes and withdraws all of the tokens delegated by the sender to the delegate from the contract to the given recipient address.
+    // Unstakes and withdraws all of the tokens delegated by the sender to the delegate from the
+    // contract to the given recipient address.
     fn withdraw(ref self: TContractState, delegate: ContractAddress, recipient: ContractAddress);
 
-    // Unstakes and withdraws the specified amount of tokens delegated by the sender to the delegate from the contract to the given recipient address.
+    // Unstakes and withdraws the specified amount of tokens delegated by the sender to the delegate
+    // from the contract to the given recipient address.
     fn withdraw_amount(
         ref self: TContractState,
         delegate: ContractAddress,
@@ -38,7 +42,8 @@ pub trait IStaker<TContractState> {
         self: @TContractState, delegate: ContractAddress, timestamp: u64
     ) -> u256;
 
-    // Gets the average amount delegated over the given period, where end > start and end <= current time.
+    // Gets the average amount delegated over the given period, where end > start and end <= current
+    // time.
     fn get_average_delegated(
         self: @TContractState, delegate: ContractAddress, start: u64, end: u64
     ) -> u128;
@@ -53,11 +58,16 @@ pub trait IStaker<TContractState> {
 pub mod Staker {
     use core::num::traits::zero::{Zero};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+    use starknet::storage::{
+        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess,
+        StoragePointerWriteAccess, StoragePathEntry
+    };
     use starknet::{
         get_caller_address, get_contract_address, get_block_timestamp,
         storage_access::{StorePacking}
     };
     use super::{IStaker, ContractAddress};
+
 
     #[derive(Copy, Drop, PartialEq, Debug)]
     pub struct DelegatedSnapshot {
@@ -90,10 +100,10 @@ pub mod Staker {
     struct Storage {
         token: IERC20Dispatcher,
         // owner, delegate => amount
-        staked: LegacyMap<(ContractAddress, ContractAddress), u128>,
-        amount_delegated: LegacyMap<ContractAddress, u128>,
-        delegated_cumulative_num_snapshots: LegacyMap<ContractAddress, u64>,
-        delegated_cumulative_snapshot: LegacyMap<(ContractAddress, u64), DelegatedSnapshot>,
+        staked: Map<(ContractAddress, ContractAddress), u128>,
+        amount_delegated: Map<ContractAddress, u128>,
+        delegated_cumulative_num_snapshots: Map<ContractAddress, u64>,
+        delegated_cumulative_snapshot: Map<ContractAddress, Map<u64, DelegatedSnapshot>>,
     }
 
     #[constructor]
@@ -131,17 +141,15 @@ pub mod Staker {
             let amount_delegated = self.amount_delegated.read(address);
             let mut num_snapshots = self.delegated_cumulative_num_snapshots.read(address);
 
+            let delegate_snapshots_entry = self.delegated_cumulative_snapshot.entry(address);
             if num_snapshots.is_non_zero() {
-                let last_snapshot = self
-                    .delegated_cumulative_snapshot
-                    .read((address, num_snapshots - 1));
+                let last_snapshot = delegate_snapshots_entry.read(num_snapshots - 1);
 
                 // if we haven't just snapshotted this address
                 if (last_snapshot.timestamp != timestamp) {
-                    self
-                        .delegated_cumulative_snapshot
+                    delegate_snapshots_entry
                         .write(
-                            (address, num_snapshots),
+                            num_snapshots,
                             DelegatedSnapshot {
                                 timestamp,
                                 delegated_cumulative: last_snapshot.delegated_cumulative
@@ -154,12 +162,8 @@ pub mod Staker {
                 }
             } else {
                 // record this timestamp as the first snapshot
-                self
-                    .delegated_cumulative_snapshot
-                    .write(
-                        (address, num_snapshots),
-                        DelegatedSnapshot { timestamp, delegated_cumulative: 0 }
-                    );
+                delegate_snapshots_entry
+                    .write(num_snapshots, DelegatedSnapshot { timestamp, delegated_cumulative: 0 });
                 self.delegated_cumulative_num_snapshots.write(address, 1);
             };
 
@@ -173,13 +177,14 @@ pub mod Staker {
             max_index_exclusive: u64,
             timestamp: u64
         ) -> u256 {
+            let snapshots_path = self.delegated_cumulative_snapshot.entry(delegate);
             if (min_index == (max_index_exclusive - 1)) {
-                let snapshot = self.delegated_cumulative_snapshot.read((delegate, min_index));
+                let snapshot = snapshots_path.read(min_index);
                 return if (snapshot.timestamp > timestamp) {
                     0
                 } else {
                     let difference = timestamp - snapshot.timestamp;
-                    let next = self.delegated_cumulative_snapshot.read((delegate, min_index + 1));
+                    let next = snapshots_path.read(min_index + 1);
                     let delegated_amount = if (next.timestamp.is_zero()) {
                         self.amount_delegated.read(delegate)
                     } else {
@@ -194,7 +199,7 @@ pub mod Staker {
             }
             let mid = (min_index + max_index_exclusive) / 2;
 
-            let snapshot = self.delegated_cumulative_snapshot.read((delegate, mid));
+            let snapshot = snapshots_path.read(mid);
 
             if (timestamp == snapshot.timestamp) {
                 return snapshot.delegated_cumulative;

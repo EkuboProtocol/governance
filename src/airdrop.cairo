@@ -30,14 +30,16 @@ pub trait IAirdrop<TContractState> {
     fn get_config(self: @TContractState) -> Config;
 
     // Claims the given allotment of tokens.
-    // Because this method is idempotent, it does not revert in case of a second submission of the same claim. 
+    // Because this method is idempotent, it does not revert in case of a second submission of the
+    // same claim.
     // This makes it simpler to batch many claims together in a single transaction.
     // Returns true if the claim was processed. Returns false if the claim was already claimed.
     // Panics if the proof is invalid.
     fn claim(ref self: TContractState, claim: Claim, proof: Span<felt252>) -> bool;
 
-    // Claims the batch of up to 128 claims that must be aligned with a single bitmap, i.e. the id of the first must be a multiple of 128
-    // and the claims should be sequentially in order. The proof verification is optimized in this method.
+    // Claims the batch of up to 128 claims that must be aligned with a single bitmap, i.e. the id
+    // of the first must be a multiple of 128 and the claims should be sequentially in order. The
+    // proof verification is optimized in this method.
     // Returns the number of claims that were executed.
     fn claim_128(
         ref self: TContractState, claims: Span<Claim>, remaining_proof: Span<felt252>
@@ -57,7 +59,12 @@ pub mod Airdrop {
     use core::num::traits::zero::{Zero};
     use governance::interfaces::erc20::{IERC20DispatcherTrait};
     use governance::utils::exp2::{exp2};
+    use starknet::storage::{
+        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerWriteAccess,
+        StoragePointerReadAccess
+    };
     use starknet::{get_block_timestamp, get_contract_address};
+
     use super::{Config, IAirdrop, ContractAddress, Claim, IERC20Dispatcher};
 
     pub fn hash_function(a: felt252, b: felt252) -> felt252 {
@@ -69,7 +76,8 @@ pub mod Airdrop {
         }
     }
 
-    // computes the pedersen root of a merkle tree by combining the current node with each sibling up the tree
+    // computes the pedersen root of a merkle tree by combining the current node with each sibling
+    // up the tree
     pub fn compute_pedersen_root(current: felt252, mut proof: Span<felt252>) -> felt252 {
         match proof.pop_front() {
             Option::Some(proof_element) => {
@@ -83,7 +91,7 @@ pub mod Airdrop {
     struct Storage {
         token: IERC20Dispatcher,
         config: Config,
-        claimed_bitmap: LegacyMap<u64, u128>,
+        claimed_bitmap: Map<u64, u128>,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -121,34 +129,27 @@ pub mod Airdrop {
 
         let mut last_claim_id: Option<u64> = Option::None;
 
-        while let Option::Some(claim) = claims
-            .pop_front() {
-                if let Option::Some(last_id) = last_claim_id {
-                    assert(last_id == (*claim.id - 1), 'SEQUENTIAL');
-                };
-
-                claim_hashes.append(hash_claim(*claim));
-                last_claim_id = Option::Some(*claim.id);
+        while let Option::Some(claim) = claims.pop_front() {
+            if let Option::Some(last_id) = last_claim_id {
+                assert(last_id == (*claim.id - 1), 'SEQUENTIAL');
             };
+
+            claim_hashes.append(hash_claim(*claim));
+            last_claim_id = Option::Some(*claim.id);
+        };
 
         // will eventually contain an array of length 1
         let mut current_layer: Span<felt252> = claim_hashes.span();
 
-        while current_layer
-            .len()
-            .is_non_one() {
-                let mut next_layer: Array<felt252> = array![];
+        while current_layer.len().is_non_one() {
+            let mut next_layer: Array<felt252> = array![];
 
-                while let Option::Some(hash) = current_layer
-                    .pop_front() {
-                        next_layer
-                            .append(
-                                hash_function(*hash, *current_layer.pop_front().unwrap_or(hash))
-                            );
-                    };
-
-                current_layer = next_layer.span();
+            while let Option::Some(hash) = current_layer.pop_front() {
+                next_layer.append(hash_function(*hash, *current_layer.pop_front().unwrap_or(hash)));
             };
+
+            current_layer = next_layer.span();
+        };
 
         *current_layer.pop_front().unwrap()
     }
@@ -192,7 +193,8 @@ pub mod Airdrop {
             assert(!claims.is_empty(), 'CLAIMS_EMPTY');
 
             // groups that cross bitmap boundaries should just make multiple calls
-            // this code already reduces the number of pedersens in the verification by a factor of ~7
+            // this code already reduces the number of pedersens in the verification by a factor of
+            // ~7
             let (word, index_u64) = DivRem::div_rem(*claims.at(0).id, BITMAP_SIZE);
             assert(index_u64 == 0, 'FIRST_CLAIM_MUST_BE_MULT_128');
 
@@ -210,17 +212,16 @@ pub mod Airdrop {
             let mut index: u8 = 0;
             let mut unclaimed: Array<Claim> = array![];
 
-            while let Option::Some(claim) = claims
-                .pop_front() {
-                    let already_claimed = (bitmap & exp2(index)).is_non_zero();
+            while let Option::Some(claim) = claims.pop_front() {
+                let already_claimed = (bitmap & exp2(index)).is_non_zero();
 
-                    if !already_claimed {
-                        bitmap = bitmap | exp2(index);
-                        unclaimed.append(*claim);
-                    }
+                if !already_claimed {
+                    bitmap = bitmap | exp2(index);
+                    unclaimed.append(*claim);
+                }
 
-                    index += 1;
-                };
+                index += 1;
+            };
 
             self.claimed_bitmap.write(word, bitmap);
 
@@ -229,13 +230,13 @@ pub mod Airdrop {
             // the event emittance and transfers are separated from the above to prevent re-entrance
             let token = self.token.read();
 
-            while let Option::Some(claim) = unclaimed
-                .pop_front() {
-                    token.transfer(claim.claimee, claim.amount.into());
-                    self.emit(Claimed { claim });
-                };
+            while let Option::Some(claim) = unclaimed.pop_front() {
+                token.transfer(claim.claimee, claim.amount.into());
+                self.emit(Claimed { claim });
+            };
 
-            // never fails because we assert claims length at the beginning so we know it's less than 128
+            // never fails because we assert claims length at the beginning so we know it's less
+            // than 128
             num_claimed.try_into().unwrap()
         }
 

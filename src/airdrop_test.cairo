@@ -1,15 +1,13 @@
-use core::hash::{LegacyHash};
 use core::num::traits::zero::{Zero};
 use governance::airdrop::{
     IAirdropDispatcher, IAirdropDispatcherTrait, Airdrop, Config,
     Airdrop::{compute_pedersen_root, hash_function, hash_claim, compute_root_of_group}, Claim
 };
-use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+use governance::interfaces::erc20::{IERC20DispatcherTrait};
 use governance::test::test_token::{TestToken, deploy as deploy_token};
 use starknet::testing::{pop_log, set_block_timestamp};
 use starknet::{
-    ClassHash, ContractAddress, contract_address_const, get_contract_address,
-    syscalls::{deploy_syscall}
+    ContractAddress, contract_address_const, get_contract_address, syscalls::{deploy_syscall}
 };
 
 fn deploy_with_refundee(
@@ -802,16 +800,12 @@ fn test_claim_128_double_claim() {
 
     assert_eq!(airdrop.claim_128(claims.span().slice(0, 128), array![s2, rr].span()), 128);
     let mut i: u64 = 0;
-    while let Option::Some(claimed) =
-        pop_log::<
-            Airdrop::Claimed
-        >(airdrop.contract_address) {
-            assert_eq!(
-                claimed.claim,
-                Claim { id: i, amount: 3, claimee: contract_address_const::<0xcdee>() }
-            );
-            i += 1;
-        };
+    while let Option::Some(claimed) = pop_log::<Airdrop::Claimed>(airdrop.contract_address) {
+        assert_eq!(
+            claimed.claim, Claim { id: i, amount: 3, claimee: contract_address_const::<0xcdee>() }
+        );
+        i += 1;
+    };
 
     assert_eq!(airdrop.claim_128(claims.span().slice(0, 128), array![s2, rr].span()), 0);
     assert_eq!(pop_log::<Airdrop::Claimed>(airdrop.contract_address).is_none(), true);
@@ -820,8 +814,7 @@ fn test_claim_128_double_claim() {
 mod refundable {
     use super::{
         deploy_token, deploy_with_refundee, get_contract_address, contract_address_const,
-        set_block_timestamp, IAirdropDispatcherTrait, IERC20DispatcherTrait, TestToken,
-        ContractAddress
+        set_block_timestamp, IAirdropDispatcherTrait, IERC20DispatcherTrait, ContractAddress
     };
 
     fn refund_to() -> ContractAddress {
