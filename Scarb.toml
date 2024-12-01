@@ -3,7 +3,7 @@ name = "governance"
 version = "0.1.0"
 description = "Contracts for governance of Starknet-native protocols"
 homepage = "https://ekubo.org"
-cairo-version = "2.8.0"
+cairo-version = ">=2.7.0"
 edition = '2024_07'
 
 [dependencies]
@@ -17,4 +17,4 @@ casm = true
 sort-module-level-items = true
 
 [dev-dependencies]
-cairo_test = "2.8.0"
+cairo_test = ">=2.7.0"
