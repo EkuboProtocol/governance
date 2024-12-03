@@ -1,17 +1,17 @@
 use core::num::traits::zero::{Zero};
 use governance::execution_state::{ExecutionState};
 use governance::governor::{
-    IGovernorDispatcher, IGovernorDispatcherTrait, Governor, Config, ProposalInfo,
-    Governor::{hash_calls}
+    Config, Governor, Governor::{hash_calls}, IGovernorDispatcher, IGovernorDispatcherTrait,
+    ProposalInfo,
 };
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::staker::{IStakerDispatcher, IStakerDispatcherTrait};
 use governance::staker_test::{setup as setup_staker};
 use starknet::account::{Call};
 use starknet::{
-    get_contract_address, syscalls::deploy_syscall, contract_address_const, ContractAddress,
-    get_block_timestamp, testing::{set_block_timestamp, set_contract_address, pop_log, set_version},
-    account::{AccountContractDispatcher, AccountContractDispatcherTrait}
+    ContractAddress, account::{AccountContractDispatcher, AccountContractDispatcherTrait},
+    contract_address_const, get_block_timestamp, get_contract_address, syscalls::deploy_syscall,
+    testing::{pop_log, set_block_timestamp, set_contract_address, set_version},
 };
 
 fn recipient() -> ContractAddress {
@@ -53,7 +53,7 @@ fn transfer_call(token: IERC20Dispatcher, recipient: ContractAddress, amount: u2
         to: token.contract_address,
         // transfer
         selector: 0x83afd3f4caedc6eebf44246fe54e38c95e3179a5ec9ea81740eca5b482d12e,
-        calldata: calldata.span()
+        calldata: calldata.span(),
     }
 }
 
@@ -62,7 +62,7 @@ fn deploy(staker: IStakerDispatcher, config: Config) -> IGovernorDispatcher {
     Serde::serialize(@(staker, config), ref constructor_args);
 
     let (address, _) = deploy_syscall(
-        Governor::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true
+        Governor::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true,
     )
         .expect('DEPLOY_GV_FAILED');
     return IGovernorDispatcher { contract_address: address };
@@ -86,15 +86,15 @@ fn setup() -> (IStakerDispatcher, IERC20Dispatcher, IGovernorDispatcher, Config)
 
 // goes through the flow to create a proposal based on the governor
 fn create_proposal(
-    governor: IGovernorDispatcher, token: IERC20Dispatcher, staker: IStakerDispatcher
+    governor: IGovernorDispatcher, token: IERC20Dispatcher, staker: IStakerDispatcher,
 ) -> felt252 {
     create_proposal_with_call(
-        governor, token, staker, transfer_call(token, recipient(), amount: 100)
+        governor, token, staker, transfer_call(token, recipient(), amount: 100),
     )
 }
 
 fn create_proposal_with_call(
-    governor: IGovernorDispatcher, token: IERC20Dispatcher, staker: IStakerDispatcher, call: Call
+    governor: IGovernorDispatcher, token: IERC20Dispatcher, staker: IStakerDispatcher, call: Call,
 ) -> felt252 {
     // delegate token to the proposer so that he reaches threshold
     token
@@ -119,12 +119,12 @@ fn test_hash_call() {
                 Call {
                     to: contract_address_const::<'to'>(),
                     selector: 'selector',
-                    calldata: array![1, 2, 3].span()
-                }
+                    calldata: array![1, 2, 3].span(),
+                },
             ]
-                .span()
+                .span(),
         ),
-        207204210864586401596949218336835721921077270974490243136789894626374071116
+        207204210864586401596949218336835721921077270974490243136789894626374071116,
     );
 }
 
@@ -156,12 +156,12 @@ fn test_propose() {
             calls_hash: hash_calls(@array![transfer_call(token, recipient(), amount: 100)].span()),
             proposer: proposer(),
             execution_state: ExecutionState {
-                created: config.voting_weight_smoothing_duration, executed: 0, canceled: 0
+                created: config.voting_weight_smoothing_duration, executed: 0, canceled: 0,
             },
             yea: 0,
             nay: 0,
             config_version: 0,
-        }
+        },
     );
 }
 
@@ -262,7 +262,7 @@ fn test_vote_yes() {
     let proposal = governor.get_proposal(id);
     assert_eq!(
         proposal.yea,
-        staker.get_average_delegated_over_last(voter1(), config.voting_weight_smoothing_duration)
+        staker.get_average_delegated_over_last(voter1(), config.voting_weight_smoothing_duration),
     );
     assert_eq!(proposal.nay, 0);
 }
@@ -291,7 +291,7 @@ fn test_describe_proposal_successful() {
     governor
         .describe(
             id,
-            "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
         );
     pop_log::<Governor::Reconfigured>(governor.contract_address).unwrap();
     pop_log::<Governor::Proposed>(governor.contract_address).unwrap();
@@ -299,8 +299,8 @@ fn test_describe_proposal_successful() {
         pop_log::<Governor::Described>(governor.contract_address).unwrap(),
         Governor::Described {
             id,
-            description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
-        }
+            description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
+        },
     );
 }
 
@@ -317,7 +317,7 @@ fn test_propose_and_describe_successful() {
     let id = governor
         .propose_and_describe(
             array![].span(),
-            "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
         );
     set_contract_address(address_before);
 
@@ -327,8 +327,8 @@ fn test_propose_and_describe_successful() {
         pop_log::<Governor::Described>(governor.contract_address).unwrap(),
         Governor::Described {
             id,
-            description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
-        }
+            description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
+        },
     );
 }
 
@@ -362,7 +362,7 @@ fn test_describe_proposal_fails_if_not_proposer() {
 fn test_describe_proposal_fails_if_executed() {
     let (staker, token, governor, config) = setup();
     let id = create_proposal_with_call(
-        governor, token, staker, transfer_call(token: token, recipient: anyone(), amount: 0)
+        governor, token, staker, transfer_call(token: token, recipient: anyone(), amount: 0),
     );
 
     // make the proposal execute
@@ -527,12 +527,12 @@ fn test_cancel_by_proposer() {
             execution_state: ExecutionState {
                 created: config.voting_weight_smoothing_duration,
                 executed: 0,
-                canceled: config.voting_weight_smoothing_duration + 30
+                canceled: config.voting_weight_smoothing_duration + 30,
             },
             yea: 0,
             nay: 0,
             config_version: 0,
-        }
+        },
     );
 }
 
@@ -600,7 +600,7 @@ fn test_execute_valid_proposal() {
 
     governor
         .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span(),
         );
 
     let proposal = governor.get_proposal(id);
@@ -620,7 +620,7 @@ fn test_canceled_proposal_cannot_be_executed() {
     set_contract_address(anyone());
     governor
         .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span(),
         );
 }
 
@@ -635,7 +635,7 @@ fn test_execute_before_voting_ends_should_fail() {
     // Execute the proposal. If the vote is still active, this should fail.
     governor
         .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span(),
         );
 }
 
@@ -651,7 +651,7 @@ fn test_execute_quorum_not_met_should_fail() {
     // Execute the proposal. If the quorum was not met, this should fail.
     governor
         .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span(),
         );
 }
 
@@ -693,7 +693,7 @@ fn test_execute_no_majority_should_fail() {
     // Execute the proposal. If the majority of votes are no, this should fail.
     governor
         .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span(),
         );
 }
 
@@ -717,7 +717,7 @@ fn test_execute_before_execution_window_begins() {
     advance_time(config.voting_period);
     governor
         .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span(),
         );
 }
 
@@ -741,7 +741,7 @@ fn test_execute_after_execution_window_ends() {
     advance_time(config.voting_period + config.execution_delay + config.execution_window);
     governor
         .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span(),
         );
 }
 
@@ -795,7 +795,7 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
     // Execute the proposal. If the quorum was not met, this should fail.
     governor
         .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span(),
         );
 }
 
@@ -825,7 +825,7 @@ fn test_quorum_counts_only_yes_votes_not_met() {
 
     governor
         .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span(),
         );
 }
 
@@ -834,7 +834,7 @@ fn test_quorum_counts_only_yes_votes_exactly_met() {
     let (staker, token, governor, config) = setup();
     let calls = array![
         transfer_call(token: token, recipient: recipient(), amount: 150),
-        transfer_call(token: token, recipient: recipient(), amount: 50)
+        transfer_call(token: token, recipient: recipient(), amount: 50),
     ]
         .span();
     // so execution can succeed
@@ -866,7 +866,7 @@ fn test_execute_emits_logs_from_data() {
     let (staker, token, governor, config) = setup();
     let calls = array![
         transfer_call(token: token, recipient: recipient(), amount: 150),
-        transfer_call(token: token, recipient: recipient(), amount: 50)
+        transfer_call(token: token, recipient: recipient(), amount: 50),
     ]
         .span();
     // so execution can succeed
@@ -923,11 +923,11 @@ fn test_execute_already_executed_should_fail() {
     set_contract_address(anyone());
     governor
         .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span(),
         );
     governor
         .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span()
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span(),
         ); // try to execute again
 }
 
@@ -950,7 +950,7 @@ fn test_execute_invalid_call_id() {
     set_contract_address(anyone());
     governor
         .execute(
-            id, array![transfer_call(token: token, recipient: recipient(), amount: 101)].span()
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 101)].span(),
         );
 }
 
@@ -976,8 +976,8 @@ fn test_upgrade_succeeds_self_call() {
         Call {
             to: governor.contract_address,
             selector: selector!("upgrade"),
-            calldata: array![Governor::TEST_CLASS_HASH].span()
-        }
+            calldata: array![Governor::TEST_CLASS_HASH].span(),
+        },
     );
 
     advance_time(config.voting_start_delay);
@@ -994,10 +994,10 @@ fn test_upgrade_succeeds_self_call() {
                 Call {
                     to: governor.contract_address,
                     selector: selector!("upgrade"),
-                    calldata: array![Governor::TEST_CLASS_HASH].span()
-                }
+                    calldata: array![Governor::TEST_CLASS_HASH].span(),
+                },
             ]
-                .span()
+                .span(),
         );
 }
 
@@ -1014,8 +1014,8 @@ fn test_reconfigure_fails_if_not_self_call() {
                 quorum: 4,
                 proposal_creation_threshold: 5,
                 execution_delay: 6,
-                execution_window: 7
-            }
+                execution_window: 7,
+            },
         );
 }
 
@@ -1082,7 +1082,7 @@ fn test_reconfigure_succeeds_self_call() {
         quorum: 4,
         proposal_creation_threshold: 5,
         execution_delay: 6,
-        execution_window: 7
+        execution_window: 7,
     };
     Serde::serialize(@new_config, ref args);
 
@@ -1091,8 +1091,10 @@ fn test_reconfigure_succeeds_self_call() {
         token,
         staker,
         Call {
-            to: governor.contract_address, selector: selector!("reconfigure"), calldata: args.span()
-        }
+            to: governor.contract_address,
+            selector: selector!("reconfigure"),
+            calldata: args.span(),
+        },
     );
 
     advance_time(config.voting_start_delay);
@@ -1109,10 +1111,10 @@ fn test_reconfigure_succeeds_self_call() {
                 Call {
                     to: governor.contract_address,
                     selector: selector!("reconfigure"),
-                    calldata: args.span()
-                }
+                    calldata: args.span(),
+                },
             ]
-                .span()
+                .span(),
         );
 
     // the first one is from constructor

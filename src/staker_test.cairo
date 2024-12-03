@@ -3,11 +3,11 @@ use governance::execution_state_test::{assert_pack_unpack};
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::staker::{
     IStakerDispatcher, IStakerDispatcherTrait, Staker,
-    Staker::{DelegatedSnapshotStorePacking, DelegatedSnapshot},
+    Staker::{DelegatedSnapshot, DelegatedSnapshotStorePacking},
 };
 use governance::test::test_token::{TestToken, deploy as deploy_token};
-use starknet::testing::{set_block_timestamp, pop_log};
-use starknet::{get_contract_address, syscalls::deploy_syscall, contract_address_const};
+use starknet::testing::{pop_log, set_block_timestamp};
+use starknet::{contract_address_const, get_contract_address, syscalls::deploy_syscall};
 
 pub(crate) fn setup(amount: u256) -> (IStakerDispatcher, IERC20Dispatcher) {
     let token = deploy_token(get_contract_address(), amount);
@@ -15,7 +15,7 @@ pub(crate) fn setup(amount: u256) -> (IStakerDispatcher, IERC20Dispatcher) {
         Staker::TEST_CLASS_HASH.try_into().unwrap(),
         0,
         array![token.contract_address.into()].span(),
-        true
+        true,
     )
         .expect('DEPLOY_TK_FAILED');
     return (IStakerDispatcher { contract_address: staker_address }, token);
@@ -23,8 +23,8 @@ pub(crate) fn setup(amount: u256) -> (IStakerDispatcher, IERC20Dispatcher) {
 
 mod stake_withdraw {
     use super::{
-        setup, Staker, IStakerDispatcherTrait, IERC20DispatcherTrait, pop_log, get_contract_address,
-        Zero, TestToken, contract_address_const
+        IERC20DispatcherTrait, IStakerDispatcherTrait, Staker, TestToken, Zero,
+        contract_address_const, get_contract_address, pop_log, setup,
     };
 
     #[test]
@@ -35,11 +35,11 @@ mod stake_withdraw {
         staker.stake(contract_address_const::<'delegate'>());
 
         assert_eq!(
-            staker.get_staked(get_contract_address(), contract_address_const::<'delegate'>()), 500
+            staker.get_staked(get_contract_address(), contract_address_const::<'delegate'>()), 500,
         );
         assert_eq!(staker.get_staked(get_contract_address(), Zero::zero()), 0);
         assert_eq!(
-            staker.get_staked(contract_address_const::<'delegate'>(), get_contract_address()), 0
+            staker.get_staked(contract_address_const::<'delegate'>(), get_contract_address()), 0,
         );
         // pop the transfer from 0 to deployer
         pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
@@ -47,9 +47,9 @@ mod stake_withdraw {
             pop_log::<TestToken::Transfer>(token.contract_address),
             Option::Some(
                 TestToken::Transfer {
-                    from: get_contract_address(), to: staker.contract_address, value: 500
-                }
-            )
+                    from: get_contract_address(), to: staker.contract_address, value: 500,
+                },
+            ),
         );
         assert_eq!(
             pop_log::<Staker::Staked>(staker.contract_address),
@@ -57,9 +57,9 @@ mod stake_withdraw {
                 Staker::Staked {
                     from: get_contract_address(),
                     amount: 500,
-                    delegate: contract_address_const::<'delegate'>()
-                }
-            )
+                    delegate: contract_address_const::<'delegate'>(),
+                },
+            ),
         );
     }
 
@@ -86,36 +86,36 @@ mod stake_withdraw {
 fn test_staker_delegated_snapshot_store_pack() {
     assert_eq!(
         DelegatedSnapshotStorePacking::pack(
-            DelegatedSnapshot { timestamp: 0, delegated_cumulative: 0 }
+            DelegatedSnapshot { timestamp: 0, delegated_cumulative: 0 },
         ),
-        0
+        0,
     );
     assert_eq!(
         DelegatedSnapshotStorePacking::pack(
-            DelegatedSnapshot { timestamp: 0, delegated_cumulative: 1 }
+            DelegatedSnapshot { timestamp: 0, delegated_cumulative: 1 },
         ),
-        1
+        1,
     );
     assert_eq!(
         DelegatedSnapshotStorePacking::pack(
-            DelegatedSnapshot { timestamp: 1, delegated_cumulative: 0 }
+            DelegatedSnapshot { timestamp: 1, delegated_cumulative: 0 },
         ),
-        0x1000000000000000000000000000000000000000000000000
+        0x1000000000000000000000000000000000000000000000000,
     );
     assert_eq!(
         DelegatedSnapshotStorePacking::pack(
-            DelegatedSnapshot { timestamp: 1, delegated_cumulative: 1 }
+            DelegatedSnapshot { timestamp: 1, delegated_cumulative: 1 },
         ),
-        0x1000000000000000000000000000000000000000000000001
+        0x1000000000000000000000000000000000000000000000001,
     );
     assert_eq!(
         DelegatedSnapshotStorePacking::pack(
             DelegatedSnapshot {
                 timestamp: 576460752303423488,
-                delegated_cumulative: 6277101735386680763835789423207666416102355444464034512895
-            }
+                delegated_cumulative: 6277101735386680763835789423207666416102355444464034512895,
+            },
         ),
-        3618502788666131113263695016908177884250476444008934042335404944711319814143
+        3618502788666131113263695016908177884250476444008934042335404944711319814143,
     );
 }
 
@@ -123,35 +123,35 @@ fn test_staker_delegated_snapshot_store_pack() {
 fn test_staker_delegated_snapshot_store_unpack() {
     assert_eq!(
         DelegatedSnapshotStorePacking::unpack(0),
-        DelegatedSnapshot { timestamp: 0, delegated_cumulative: 0 }
+        DelegatedSnapshot { timestamp: 0, delegated_cumulative: 0 },
     );
     assert_eq!(
         DelegatedSnapshotStorePacking::unpack(1),
-        DelegatedSnapshot { timestamp: 0, delegated_cumulative: 1 }
+        DelegatedSnapshot { timestamp: 0, delegated_cumulative: 1 },
     );
     assert_eq!(
         DelegatedSnapshotStorePacking::unpack(0x1000000000000000000000000000000000000000000000000),
-        DelegatedSnapshot { timestamp: 1, delegated_cumulative: 0 }
+        DelegatedSnapshot { timestamp: 1, delegated_cumulative: 0 },
     );
     assert_eq!(
         DelegatedSnapshotStorePacking::unpack(0x1000000000000000000000000000000000000000000000001),
-        DelegatedSnapshot { timestamp: 1, delegated_cumulative: 1 }
+        DelegatedSnapshot { timestamp: 1, delegated_cumulative: 1 },
     );
     assert_eq!(
         DelegatedSnapshotStorePacking::unpack(
-            3618502788666131113263695016908177884250476444008934042335404944711319814143
+            3618502788666131113263695016908177884250476444008934042335404944711319814143,
         ),
         DelegatedSnapshot {
             timestamp: 576460752303423488,
             delegated_cumulative: 6277101735386680763835789423207666416102355444464034512895 // 2**192 - 1
-        }
+        },
     );
     assert_eq!(
         DelegatedSnapshotStorePacking::unpack(
             // max felt252
-            3618502788666131213697322783095070105623107215331596699973092056135872020480
+            3618502788666131213697322783095070105623107215331596699973092056135872020480,
         ),
-        DelegatedSnapshot { timestamp: 576460752303423505, delegated_cumulative: 0 }
+        DelegatedSnapshot { timestamp: 576460752303423505, delegated_cumulative: 0 },
     );
 }
 
@@ -164,17 +164,17 @@ fn test_staker_delegated_snapshot_store_pack_unpack() {
     assert_pack_unpack(
         DelegatedSnapshot {
             timestamp: 0,
-            delegated_cumulative: 0x1000000000000000000000000000000000000000000000000 - 1
-        }
+            delegated_cumulative: 0x1000000000000000000000000000000000000000000000000 - 1,
+        },
     );
     assert_pack_unpack(
-        DelegatedSnapshot { timestamp: 576460752303423505, delegated_cumulative: 0 }
+        DelegatedSnapshot { timestamp: 576460752303423505, delegated_cumulative: 0 },
     );
     assert_pack_unpack(
         DelegatedSnapshot {
             timestamp: 576460752303423504,
-            delegated_cumulative: 0x1000000000000000000000000000000000000000000000000 - 1
-        }
+            delegated_cumulative: 0x1000000000000000000000000000000000000000000000000 - 1,
+        },
     );
 }
 
@@ -182,7 +182,7 @@ fn test_staker_delegated_snapshot_store_pack_unpack() {
 #[should_panic(expected: ('Option::unwrap failed.',))]
 fn test_staker_delegated_snapshot_pack_max_timestamp_and_delegated() {
     DelegatedSnapshotStorePacking::pack(
-        DelegatedSnapshot { timestamp: 576460752303423505, delegated_cumulative: 1 }
+        DelegatedSnapshot { timestamp: 576460752303423505, delegated_cumulative: 1 },
     );
 }
 
@@ -190,7 +190,7 @@ fn test_staker_delegated_snapshot_pack_max_timestamp_and_delegated() {
 #[should_panic(expected: ('Option::unwrap failed.',))]
 fn test_staker_delegated_snapshot_pack_max_timestamp_plus_one() {
     DelegatedSnapshotStorePacking::pack(
-        DelegatedSnapshot { timestamp: 576460752303423506, delegated_cumulative: 0 }
+        DelegatedSnapshot { timestamp: 576460752303423506, delegated_cumulative: 0 },
     );
 }
 
@@ -199,8 +199,8 @@ fn test_staker_delegated_snapshot_pack_max_timestamp_plus_one() {
 fn test_staker_delegated_snapshot_pack_max_delegated_cumulative() {
     DelegatedSnapshotStorePacking::pack(
         DelegatedSnapshot {
-            timestamp: 0, delegated_cumulative: 0x1000000000000000000000000000000000000000000000000
-        }
+            timestamp: 0, delegated_cumulative: 0x1000000000000000000000000000000000000000000000000,
+        },
     );
 }
 

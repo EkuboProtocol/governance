@@ -1,7 +1,7 @@
 use governance::execution_state::{ExecutionState};
 use governance::staker::{IStakerDispatcher};
 use starknet::account::{Call};
-use starknet::{ContractAddress, ClassHash};
+use starknet::{ClassHash, ContractAddress};
 
 #[derive(Copy, Drop, Serde, starknet::Store, PartialEq, Debug)]
 pub struct ProposalInfo {
@@ -58,7 +58,7 @@ pub trait IGovernor<TContractState> {
 
     // Combines propose and describe methods.
     fn propose_and_describe(
-        ref self: TContractState, calls: Span<Call>, description: ByteArray
+        ref self: TContractState, calls: Span<Call>, description: ByteArray,
     ) -> felt252;
 
     // Gets the staker that is used by this governor contract.
@@ -98,23 +98,23 @@ pub trait IGovernor<TContractState> {
 
 #[starknet::contract(account)]
 pub mod Governor {
-    use core::hash::{HashStateTrait, HashStateExTrait};
+    use core::hash::{HashStateExTrait, HashStateTrait};
     use core::num::traits::zero::{Zero};
     use core::poseidon::{PoseidonTrait};
-    use governance::call_trait::{HashSerializable, CallTrait};
+    use governance::call_trait::{CallTrait, HashSerializable};
     use governance::staker::{IStakerDispatcherTrait};
     use starknet::storage::{
         Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess,
-        StoragePointerWriteAccess
+        StoragePointerWriteAccess,
     };
     use starknet::storage_access::{Store, storage_base_address_from_felt252};
     use starknet::{
-        get_block_timestamp, get_caller_address, get_contract_address,
-        syscalls::{replace_class_syscall}, AccountContract, get_tx_info
+        AccountContract, get_block_timestamp, get_caller_address, get_contract_address, get_tx_info,
+        syscalls::{replace_class_syscall},
     };
     use super::{
-        IStakerDispatcher, ContractAddress, IGovernor, Config, ProposalInfo, Call, ExecutionState,
-        ClassHash
+        Call, ClassHash, Config, ContractAddress, ExecutionState, IGovernor, IStakerDispatcher,
+        ProposalInfo,
     };
 
 
@@ -231,7 +231,7 @@ pub mod Governor {
                         latest_proposal_state.created
                             + config.voting_start_delay
                             + config.voting_period <= timestamp_current,
-                        'PROPOSER_HAS_ACTIVE_PROPOSAL'
+                        'PROPOSER_HAS_ACTIVE_PROPOSAL',
                     );
                 }
             }
@@ -240,10 +240,10 @@ pub mod Governor {
                 self
                     .get_staker()
                     .get_average_delegated_over_last(
-                        delegate: proposer, period: config.voting_weight_smoothing_duration
+                        delegate: proposer, period: config.voting_weight_smoothing_duration,
                     ) >= config
                     .proposal_creation_threshold,
-                'THRESHOLD'
+                'THRESHOLD',
             );
 
             self
@@ -256,12 +256,12 @@ pub mod Governor {
                         execution_state: ExecutionState {
                             created: timestamp_current,
                             executed: Zero::zero(),
-                            canceled: Zero::zero()
+                            canceled: Zero::zero(),
                         },
                         yea: 0,
                         nay: 0,
                         config_version,
-                    }
+                    },
                 );
 
             self.latest_proposal_by_proposer.write(proposer, id);
@@ -281,7 +281,7 @@ pub mod Governor {
         }
 
         fn propose_and_describe(
-            ref self: ContractState, calls: Span<Call>, description: ByteArray
+            ref self: ContractState, calls: Span<Call>, description: ByteArray,
         ) -> felt252 {
             let id = self.propose(calls);
             self.describe(id, description);
@@ -339,7 +339,7 @@ pub mod Governor {
             assert(
                 get_block_timestamp() < (proposal.execution_state.created
                     + config.voting_start_delay),
-                'VOTING_STARTED'
+                'VOTING_STARTED',
             );
 
             proposal
@@ -348,7 +348,7 @@ pub mod Governor {
                         created: proposal.execution_state.created,
                         // we asserted that executed is zero
                         executed: 0,
-                        canceled: get_block_timestamp()
+                        canceled: get_block_timestamp(),
                     };
 
             self.proposals.write(id, proposal);
@@ -357,7 +357,7 @@ pub mod Governor {
         }
 
         fn execute(
-            ref self: ContractState, id: felt252, mut calls: Span<Call>
+            ref self: ContractState, id: felt252, mut calls: Span<Call>,
         ) -> Span<Span<felt252>> {
             let calls_hash = hash_calls(@calls);
 
@@ -392,7 +392,7 @@ pub mod Governor {
                     ExecutionState {
                         created: proposal.execution_state.created,
                         executed: timestamp_current,
-                        canceled: Zero::zero()
+                        canceled: Zero::zero(),
                     };
 
             self.proposals.write(id, proposal);
@@ -448,7 +448,7 @@ pub mod Governor {
             let version = self.latest_config_version.read() + 1;
             self.config_versions.write(version, config);
             self.latest_config_version.write(version);
-            self.emit(Reconfigured { new_config: config, version, });
+            self.emit(Reconfigured { new_config: config, version });
 
             version
         }
@@ -476,8 +476,8 @@ pub mod Governor {
                     quorum: 0,
                     proposal_creation_threshold: 0,
                     execution_delay: 0,
-                    execution_window: 0
-                }
+                    execution_window: 0,
+                },
             )
                 .expect('FAILED_TO_DELETE');
         }
@@ -501,7 +501,7 @@ pub mod Governor {
             assert(
                 tx_version == 0x100000000000000000000000000000001
                     || tx_version == 0x100000000000000000000000000000003,
-                'Invalid TX version'
+                'Invalid TX version',
             );
             let mut results: Array<Span<felt252>> = array![];
             while let Option::Some(call) = calls.pop_front() {

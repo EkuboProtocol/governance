@@ -1,25 +1,25 @@
 use core::num::traits::zero::{Zero};
 use governance::airdrop::{
-    IAirdropDispatcher, IAirdropDispatcherTrait, Airdrop, Config,
-    Airdrop::{compute_pedersen_root, hash_function, hash_claim, compute_root_of_group}, Claim
+    Airdrop, Airdrop::{compute_pedersen_root, compute_root_of_group, hash_claim, hash_function},
+    Claim, Config, IAirdropDispatcher, IAirdropDispatcherTrait,
 };
 use governance::interfaces::erc20::{IERC20DispatcherTrait};
 use governance::test::test_token::{TestToken, deploy as deploy_token};
 use starknet::testing::{pop_log, set_block_timestamp};
 use starknet::{
-    ContractAddress, contract_address_const, get_contract_address, syscalls::{deploy_syscall}
+    ContractAddress, contract_address_const, get_contract_address, syscalls::{deploy_syscall},
 };
 
 fn deploy_with_refundee(
-    token: ContractAddress, root: felt252, refundable_timestamp: u64, refund_to: ContractAddress
+    token: ContractAddress, root: felt252, refundable_timestamp: u64, refund_to: ContractAddress,
 ) -> IAirdropDispatcher {
     let mut constructor_args: Array<felt252> = array![];
     Serde::serialize(
-        @(token, Config { root, refundable_timestamp, refund_to }), ref constructor_args
+        @(token, Config { root, refundable_timestamp, refund_to }), ref constructor_args,
     );
 
     let (address, _) = deploy_syscall(
-        Airdrop::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true
+        Airdrop::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true,
     )
         .expect('DEPLOY_AD_FAILED');
     IAirdropDispatcher { contract_address: address }
@@ -33,7 +33,7 @@ fn deploy(token: ContractAddress, root: felt252) -> IAirdropDispatcher {
 fn test_selector() {
     assert_eq!(
         selector!("ekubo::governance::airdrop::Claim"),
-        0x01782c4dfd9b809591e597c7a90a503c5db310130ec93790567b00d95ac81da0
+        0x01782c4dfd9b809591e597c7a90a503c5db310130ec93790567b00d95ac81da0,
     );
 }
 
@@ -41,7 +41,7 @@ fn test_selector() {
 fn test_hash() {
     assert_eq!(
         hash_claim(Claim { id: 123, claimee: contract_address_const::<456>(), amount: 789 }),
-        0x0760b337026a91a6f2af99a0654f7fdff5d5c8d4e565277e787b99e17b1742a3
+        0x0760b337026a91a6f2af99a0654f7fdff5d5c8d4e565277e787b99e17b1742a3,
     );
 }
 
@@ -49,7 +49,7 @@ fn test_hash() {
 fn test_compute_pedersen_root_example_lt() {
     assert_eq!(
         compute_pedersen_root(1234, array![1235].span()),
-        0x24e78083d17aa2e76897f44cfdad51a09276dd00a3468adc7e635d76d432a3b
+        0x24e78083d17aa2e76897f44cfdad51a09276dd00a3468adc7e635d76d432a3b,
     );
 }
 
@@ -57,7 +57,7 @@ fn test_compute_pedersen_root_example_lt() {
 fn test_compute_pedersen_root_example_gt() {
     assert_eq!(
         compute_pedersen_root(1234, array![1233].span()),
-        0x2488766c14e4bfd8299750797eeb07b7045398df03ea13cf33f0c0c6645d5f9
+        0x2488766c14e4bfd8299750797eeb07b7045398df03ea13cf33f0c0c6645d5f9,
     );
 }
 
@@ -65,7 +65,7 @@ fn test_compute_pedersen_root_example_gt() {
 fn test_compute_pedersen_root_example_eq() {
     assert_eq!(
         compute_pedersen_root(1234, array![1234].span()),
-        0x7a7148565b76ae90576733160aa3194a41ce528ee1434a64a9da50dcbf6d3ca
+        0x7a7148565b76ae90576733160aa3194a41ce528ee1434a64a9da50dcbf6d3ca,
     );
 }
 
@@ -78,7 +78,7 @@ fn test_compute_pedersen_root_empty() {
 fn test_compute_pedersen_root_recursive() {
     assert_eq!(
         compute_pedersen_root(1234, array![1234, 1234].span()),
-        0xc92a4f7aa8979b0202770b378e46de07bebe0836f8ceece5a47ccf3929c6b0
+        0xc92a4f7aa8979b0202770b378e46de07bebe0836f8ceece5a47ccf3929c6b0,
     );
 }
 
@@ -86,7 +86,7 @@ fn test_compute_pedersen_root_recursive() {
 fn test_claim_single_recipient() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
+    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
 
     let leaf = hash_claim(claim);
 
@@ -111,7 +111,7 @@ fn test_claim_single_recipient() {
 fn test_claim_128_single_recipient_tree() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
+    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
 
     let leaf = hash_claim(claim);
 
@@ -136,7 +136,7 @@ fn test_claim_128_single_recipient_tree() {
 fn test_double_claim() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
+    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
 
     let leaf = hash_claim(claim);
 
@@ -151,7 +151,7 @@ fn test_double_claim() {
 fn test_double_claim_128_single_recipient_tree() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
+    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
 
     let leaf = hash_claim(claim);
 
@@ -167,7 +167,7 @@ fn test_double_claim_128_single_recipient_tree() {
 fn test_invalid_proof_single_entry() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
+    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
 
     let leaf = hash_claim(claim);
 
@@ -182,7 +182,7 @@ fn test_invalid_proof_single_entry() {
 fn test_invalid_proof_fake_entry() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
+    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
 
     let leaf = hash_claim(claim);
 
@@ -192,8 +192,8 @@ fn test_invalid_proof_fake_entry() {
 
     airdrop
         .claim(
-            Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 + 1, },
-            array![].span()
+            Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 + 1 },
+            array![].span(),
         );
 }
 
@@ -207,30 +207,30 @@ fn test_compute_root_of_group_empty() {
 fn test_compute_root_of_group() {
     assert_eq!(
         compute_root_of_group(
-            array![Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 }].span()
+            array![Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 }].span(),
         ),
-        0x0336963eacdeee5da262a870ddfc7f8d12c6162ebdf58a805941c06d3baf8b40
-    );
-    assert_eq!(
-        compute_root_of_group(
-            array![
-                Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 },
-                Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789 }
-            ]
-                .span()
-        ),
-        0x0526f232ab9be3fef7ac6e1f8fd57f45232f9287ce58073c0436b135e1c77ea7
+        0x0336963eacdeee5da262a870ddfc7f8d12c6162ebdf58a805941c06d3baf8b40,
     );
     assert_eq!(
         compute_root_of_group(
             array![
                 Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 },
                 Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789 },
-                Claim { id: 2, claimee: contract_address_const::<4567>(), amount: 89 }
             ]
-                .span()
+                .span(),
         ),
-        0x06a2f92ce1d9514d0270addf05923a6aeb568ec3fb962a40ddc62c86d0bd3846
+        0x0526f232ab9be3fef7ac6e1f8fd57f45232f9287ce58073c0436b135e1c77ea7,
+    );
+    assert_eq!(
+        compute_root_of_group(
+            array![
+                Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 },
+                Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789 },
+                Claim { id: 2, claimee: contract_address_const::<4567>(), amount: 89 },
+            ]
+                .span(),
+        ),
+        0x06a2f92ce1d9514d0270addf05923a6aeb568ec3fb962a40ddc62c86d0bd3846,
     );
 }
 
@@ -242,14 +242,14 @@ fn test_compute_root_of_group_large() {
     while i < 256 {
         arr
             .append(
-                Claim { id: i, claimee: contract_address_const::<2345>(), amount: (i + 1).into() }
+                Claim { id: i, claimee: contract_address_const::<2345>(), amount: (i + 1).into() },
             );
         i += 1;
     };
 
     assert_eq!(
         compute_root_of_group(arr.span()),
-        0x0570d1767033fda8e16a754fccc383a47bc79a60d1b97c905b354adda64355d4
+        0x0570d1767033fda8e16a754fccc383a47bc79a60d1b97c905b354adda64355d4,
     );
 }
 
@@ -261,14 +261,14 @@ fn test_compute_root_of_group_large_odd() {
     while i < 257 {
         arr
             .append(
-                Claim { id: i, claimee: contract_address_const::<2345>(), amount: (i + 1).into() }
+                Claim { id: i, claimee: contract_address_const::<2345>(), amount: (i + 1).into() },
             );
         i += 1;
     };
 
     assert_eq!(
         compute_root_of_group(arr.span()),
-        0x360de0739531ee0f159a2d940ff6b83066a4269da0ce1e2ecad27feebf81d4
+        0x360de0739531ee0f159a2d940ff6b83066a4269da0ce1e2ecad27feebf81d4,
     );
 }
 
@@ -276,8 +276,8 @@ fn test_compute_root_of_group_large_odd() {
 fn test_claim_two_claims() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
-    let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789, };
+    let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
+    let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789 };
 
     let leaf_a = hash_claim(claim_a);
     let leaf_b = hash_claim(claim_b);
@@ -300,8 +300,8 @@ fn test_claim_two_claims() {
 fn test_claim_two_claims_via_claim_128() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
-    let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789, };
+    let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
+    let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789 };
 
     let leaf_a = hash_claim(claim_a);
     let leaf_b = hash_claim(claim_b);
@@ -341,9 +341,9 @@ fn test_claim_two_claims_via_claim_128() {
 fn test_claim_three_claims_one_invalid_via_claim_128() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
-    let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789, };
-    let claim_b_2 = Claim { id: 2, claimee: contract_address_const::<3456>(), amount: 789, };
+    let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
+    let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789 };
+    let claim_b_2 = Claim { id: 2, claimee: contract_address_const::<3456>(), amount: 789 };
 
     let leaf_a = hash_claim(claim_a);
     let leaf_b = hash_claim(claim_b);
@@ -385,7 +385,7 @@ fn test_claim_from_end_of_tree() {
         claim: Claim {
             id: 3592,
             claimee: contract_address_const::<
-                827929506653898309809051765272831150759947744606852950844797791651878826782
+                827929506653898309809051765272831150759947744606852950844797791651878826782,
             >(),
             amount: 1001271836113844608,
         },
@@ -401,8 +401,8 @@ fn test_claim_from_end_of_tree() {
             2315326196699957769855383121961607281382192717308836542377578681714910420282,
             2382716371051479826678099165037038065721763275238547296230775213540032250366,
             775413931716626428851693665000522046203123080573891636225659041253540837203,
-            1844857354889111805724320956769488995432351795269595216315100679068515517971
-        ]
+            1844857354889111805724320956769488995432351795269595216315100679068515517971,
+        ],
     );
 }
 
@@ -413,7 +413,7 @@ fn test_claim_from_end_of_tree_large() {
         claim: Claim {
             id: 16605,
             claimee: contract_address_const::<
-                284836135682475739559347904100664354678769084599508066858400818369306251115
+                284836135682475739559347904100664354678769084599508066858400818369306251115,
             >(),
             amount: 1000080194694973312,
         },
@@ -432,8 +432,8 @@ fn test_claim_from_end_of_tree_large() {
             3391878612706733042690751883383139274310601469785669990192514358124091696985,
             1858283206563877188634011031115620633400912073664087333553401439891983671978,
             653009678825348308131020658113913238736663469737876248844258093567627009338,
-            1776702285563761589028945262957253286857459730675857906935919165166876058497
-        ]
+            1776702285563761589028945262957253286857459730675857906935919165166876058497,
+        ],
     );
 }
 
@@ -444,7 +444,7 @@ fn test_claim_from_end_of_tree_middle_of_bitmap() {
         claim: Claim {
             id: 16567,
             claimee: contract_address_const::<
-                1748616718994798723044863281884565737514860606804556124091102474369748521947
+                1748616718994798723044863281884565737514860606804556124091102474369748521947,
             >(),
             amount: 1005026355664803840,
         },
@@ -463,8 +463,8 @@ fn test_claim_from_end_of_tree_middle_of_bitmap() {
             3391878612706733042690751883383139274310601469785669990192514358124091696985,
             1858283206563877188634011031115620633400912073664087333553401439891983671978,
             653009678825348308131020658113913238736663469737876248844258093567627009338,
-            1776702285563761589028945262957253286857459730675857906935919165166876058497
-        ]
+            1776702285563761589028945262957253286857459730675857906935919165166876058497,
+        ],
     );
 }
 
@@ -475,7 +475,7 @@ fn test_double_claim_from_generated_tree() {
         claim: Claim {
             id: 0,
             claimee: contract_address_const::<
-                1257981684727298919953780547925609938727371268283996697135018561811391002099
+                1257981684727298919953780547925609938727371268283996697135018561811391002099,
             >(),
             amount: 845608158412629999616,
         },
@@ -491,8 +491,8 @@ fn test_double_claim_from_generated_tree() {
             3378969471732886394431481313236934101872088301949153794471811360320074526103,
             2691963575009292057768595613759919396863463394980592564921927341908988940473,
             22944591007266013337629529054088070826740344136663051917181912077498206093,
-            2846046884061389749777735515205600989814522753032574962636562486677935396074
-        ]
+            2846046884061389749777735515205600989814522753032574962636562486677935396074,
+        ],
     );
 }
 
@@ -501,7 +501,7 @@ fn test_double_claim_after_other_claim() {
     let claim_0 = Claim {
         id: 0,
         claimee: contract_address_const::<
-            1257981684727298919953780547925609938727371268283996697135018561811391002099
+            1257981684727298919953780547925609938727371268283996697135018561811391002099,
         >(),
         amount: 845608158412629999616,
     };
@@ -509,7 +509,7 @@ fn test_double_claim_after_other_claim() {
     let claim_1 = Claim {
         id: 1,
         claimee: contract_address_const::<
-            2446484730111463702450186103350698828806903266085688038950964576824849476058
+            2446484730111463702450186103350698828806903266085688038950964576824849476058,
         >(),
         amount: 758639984742607224832,
     };
@@ -537,11 +537,11 @@ fn test_double_claim_after_other_claim() {
                     3378969471732886394431481313236934101872088301949153794471811360320074526103,
                     2691963575009292057768595613759919396863463394980592564921927341908988940473,
                     22944591007266013337629529054088070826740344136663051917181912077498206093,
-                    2846046884061389749777735515205600989814522753032574962636562486677935396074
+                    2846046884061389749777735515205600989814522753032574962636562486677935396074,
                 ]
-                    .span()
+                    .span(),
             ),
-        true
+        true,
     );
 
     assert_eq!(
@@ -560,11 +560,11 @@ fn test_double_claim_after_other_claim() {
                     3378969471732886394431481313236934101872088301949153794471811360320074526103,
                     2691963575009292057768595613759919396863463394980592564921927341908988940473,
                     22944591007266013337629529054088070826740344136663051917181912077498206093,
-                    2846046884061389749777735515205600989814522753032574962636562486677935396074
+                    2846046884061389749777735515205600989814522753032574962636562486677935396074,
                 ]
-                    .span()
+                    .span(),
             ),
-        true
+        true,
     );
 
     // double claim of claim id 1
@@ -584,23 +584,23 @@ fn test_double_claim_after_other_claim() {
                     3378969471732886394431481313236934101872088301949153794471811360320074526103,
                     2691963575009292057768595613759919396863463394980592564921927341908988940473,
                     22944591007266013337629529054088070826740344136663051917181912077498206093,
-                    2846046884061389749777735515205600989814522753032574962636562486677935396074
+                    2846046884061389749777735515205600989814522753032574962636562486677935396074,
                 ]
-                    .span()
+                    .span(),
             ),
-        false
+        false,
     );
 }
 
 #[test]
 #[should_panic(
-    expected: ('INSUFFICIENT_TRANSFER_BALANCE', 'ENTRYPOINT_FAILED', 'ENTRYPOINT_FAILED')
+    expected: ('INSUFFICIENT_TRANSFER_BALANCE', 'ENTRYPOINT_FAILED', 'ENTRYPOINT_FAILED'),
 )]
 fn test_claim_before_funded() {
     let claim_0 = Claim {
         id: 0,
         claimee: contract_address_const::<
-            1257981684727298919953780547925609938727371268283996697135018561811391002099
+            1257981684727298919953780547925609938727371268283996697135018561811391002099,
         >(),
         amount: 845608158412629999616,
     };
@@ -625,9 +625,9 @@ fn test_claim_before_funded() {
                 3378969471732886394431481313236934101872088301949153794471811360320074526103,
                 2691963575009292057768595613759919396863463394980592564921927341908988940473,
                 22944591007266013337629529054088070826740344136663051917181912077498206093,
-                2846046884061389749777735515205600989814522753032574962636562486677935396074
+                2846046884061389749777735515205600989814522753032574962636562486677935396074,
             ]
-                .span()
+                .span(),
         );
 }
 
@@ -636,7 +636,7 @@ fn test_multiple_claims_from_generated_tree() {
     let claim_0 = Claim {
         id: 0,
         claimee: contract_address_const::<
-            1257981684727298919953780547925609938727371268283996697135018561811391002099
+            1257981684727298919953780547925609938727371268283996697135018561811391002099,
         >(),
         amount: 845608158412629999616,
     };
@@ -644,7 +644,7 @@ fn test_multiple_claims_from_generated_tree() {
     let claim_1 = Claim {
         id: 1,
         claimee: contract_address_const::<
-            2446484730111463702450186103350698828806903266085688038950964576824849476058
+            2446484730111463702450186103350698828806903266085688038950964576824849476058,
         >(),
         amount: 758639984742607224832,
     };
@@ -671,9 +671,9 @@ fn test_multiple_claims_from_generated_tree() {
                 3378969471732886394431481313236934101872088301949153794471811360320074526103,
                 2691963575009292057768595613759919396863463394980592564921927341908988940473,
                 22944591007266013337629529054088070826740344136663051917181912077498206093,
-                2846046884061389749777735515205600989814522753032574962636562486677935396074
+                2846046884061389749777735515205600989814522753032574962636562486677935396074,
             ]
-                .span()
+                .span(),
         );
 
     let log = pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
@@ -694,9 +694,9 @@ fn test_multiple_claims_from_generated_tree() {
                 3378969471732886394431481313236934101872088301949153794471811360320074526103,
                 2691963575009292057768595613759919396863463394980592564921927341908988940473,
                 22944591007266013337629529054088070826740344136663051917181912077498206093,
-                2846046884061389749777735515205600989814522753032574962636562486677935396074
+                2846046884061389749777735515205600989814522753032574962636562486677935396074,
             ]
-                .span()
+                .span(),
         );
     let log = pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
     assert_eq!(log.claim, claim_0);
@@ -707,8 +707,8 @@ fn test_multiple_claims_from_generated_tree() {
 fn test_claim_128_fails_if_not_id_aligned() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, };
-    let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789, };
+    let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
+    let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789 };
 
     let leaf_a = hash_claim(claim_a);
     let leaf_b = hash_claim(claim_b);
@@ -740,7 +740,7 @@ fn test_claim_128_too_many_claims() {
     let mut claims: Array<Claim> = array![];
     let mut i: u64 = 0;
     while i < 129 {
-        claims.append(Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789, });
+        claims.append(Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 });
         i += 1;
     };
 
@@ -802,7 +802,7 @@ fn test_claim_128_double_claim() {
     let mut i: u64 = 0;
     while let Option::Some(claimed) = pop_log::<Airdrop::Claimed>(airdrop.contract_address) {
         assert_eq!(
-            claimed.claim, Claim { id: i, amount: 3, claimee: contract_address_const::<0xcdee>() }
+            claimed.claim, Claim { id: i, amount: 3, claimee: contract_address_const::<0xcdee>() },
         );
         i += 1;
     };
@@ -813,8 +813,8 @@ fn test_claim_128_double_claim() {
 
 mod refundable {
     use super::{
-        deploy_token, deploy_with_refundee, get_contract_address, contract_address_const,
-        set_block_timestamp, IAirdropDispatcherTrait, IERC20DispatcherTrait, ContractAddress
+        ContractAddress, IAirdropDispatcherTrait, IERC20DispatcherTrait, contract_address_const,
+        deploy_token, deploy_with_refundee, get_contract_address, set_block_timestamp,
     };
 
     fn refund_to() -> ContractAddress {
@@ -828,7 +828,7 @@ mod refundable {
             token: token.contract_address,
             root: 'root',
             refundable_timestamp: 1,
-            refund_to: refund_to()
+            refund_to: refund_to(),
         );
 
         set_block_timestamp(1);
@@ -855,7 +855,7 @@ mod refundable {
             token: token.contract_address,
             root: 'root',
             refundable_timestamp: 1,
-            refund_to: refund_to()
+            refund_to: refund_to(),
         );
 
         token.transfer(airdrop.contract_address, 567);
@@ -870,7 +870,7 @@ mod refundable {
             token: token.contract_address,
             root: 'root',
             refundable_timestamp: 0,
-            refund_to: refund_to()
+            refund_to: refund_to(),
         );
 
         airdrop.refund();
@@ -884,7 +884,7 @@ mod refundable {
             token: token.contract_address,
             root: 'root',
             refundable_timestamp: 0,
-            refund_to: refund_to()
+            refund_to: refund_to(),
         );
 
         set_block_timestamp(1);

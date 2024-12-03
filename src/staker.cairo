@@ -7,7 +7,7 @@ pub trait IStaker<TContractState> {
 
     // Returns the amount staked from the staker to the delegate.
     fn get_staked(
-        self: @TContractState, staker: ContractAddress, delegate: ContractAddress
+        self: @TContractState, staker: ContractAddress, delegate: ContractAddress,
     ) -> u128;
 
     // Transfers the approved amount of token from the caller into this contract and delegates it to
@@ -28,7 +28,7 @@ pub trait IStaker<TContractState> {
         ref self: TContractState,
         delegate: ContractAddress,
         recipient: ContractAddress,
-        amount: u128
+        amount: u128,
     );
 
     // Gets the currently delegated amount of token. Note this is not flash-loan resistant.
@@ -39,18 +39,18 @@ pub trait IStaker<TContractState> {
 
     // Gets the cumulative delegated amount * seconds for an address at a certain timestamp.
     fn get_delegated_cumulative(
-        self: @TContractState, delegate: ContractAddress, timestamp: u64
+        self: @TContractState, delegate: ContractAddress, timestamp: u64,
     ) -> u256;
 
     // Gets the average amount delegated over the given period, where end > start and end <= current
     // time.
     fn get_average_delegated(
-        self: @TContractState, delegate: ContractAddress, start: u64, end: u64
+        self: @TContractState, delegate: ContractAddress, start: u64, end: u64,
     ) -> u128;
 
     // Gets the average amount delegated over the last period seconds.
     fn get_average_delegated_over_last(
-        self: @TContractState, delegate: ContractAddress, period: u64
+        self: @TContractState, delegate: ContractAddress, period: u64,
     ) -> u128;
 }
 
@@ -59,14 +59,14 @@ pub mod Staker {
     use core::num::traits::zero::{Zero};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::{
-        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess,
-        StoragePointerWriteAccess, StoragePathEntry
+        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry,
+        StoragePointerReadAccess, StoragePointerWriteAccess,
     };
     use starknet::{
-        get_caller_address, get_contract_address, get_block_timestamp,
-        storage_access::{StorePacking}
+        get_block_timestamp, get_caller_address, get_contract_address,
+        storage_access::{StorePacking},
     };
-    use super::{IStaker, ContractAddress};
+    use super::{ContractAddress, IStaker};
 
 
     #[derive(Copy, Drop, PartialEq, Debug)]
@@ -90,7 +90,7 @@ pub mod Staker {
 
         fn unpack(value: felt252) -> DelegatedSnapshot {
             let (timestamp, delegated_cumulative) = DivRem::div_rem(
-                value.into(), TWO_POW_192_DIVISOR
+                value.into(), TWO_POW_192_DIVISOR,
             );
             DelegatedSnapshot { timestamp: timestamp.low.try_into().unwrap(), delegated_cumulative }
         }
@@ -136,7 +136,7 @@ pub mod Staker {
     #[generate_trait]
     impl InternalMethods of InternalMethodsTrait {
         fn insert_snapshot(
-            ref self: ContractState, address: ContractAddress, timestamp: u64
+            ref self: ContractState, address: ContractAddress, timestamp: u64,
         ) -> u128 {
             let amount_delegated = self.amount_delegated.read(address);
             let mut num_snapshots = self.delegated_cumulative_num_snapshots.read(address);
@@ -155,7 +155,7 @@ pub mod Staker {
                                 delegated_cumulative: last_snapshot.delegated_cumulative
                                     + ((timestamp - last_snapshot.timestamp).into()
                                         * amount_delegated.into()),
-                            }
+                            },
                         );
                     num_snapshots += 1;
                     self.delegated_cumulative_num_snapshots.write(address, num_snapshots);
@@ -175,7 +175,7 @@ pub mod Staker {
             delegate: ContractAddress,
             min_index: u64,
             max_index_exclusive: u64,
-            timestamp: u64
+            timestamp: u64,
         ) -> u256 {
             let snapshots_path = self.delegated_cumulative_snapshot.entry(delegate);
             if (min_index == (max_index_exclusive - 1)) {
@@ -221,7 +221,7 @@ pub mod Staker {
         }
 
         fn get_staked(
-            self: @ContractState, staker: ContractAddress, delegate: ContractAddress
+            self: @ContractState, staker: ContractAddress, delegate: ContractAddress,
         ) -> u128 {
             self.staked.read((staker, delegate))
         }
@@ -235,7 +235,7 @@ pub mod Staker {
                         .read()
                         .allowance(get_caller_address(), get_contract_address())
                         .try_into()
-                        .expect('ALLOWANCE_OVERFLOW')
+                        .expect('ALLOWANCE_OVERFLOW'),
                 );
         }
 
@@ -245,7 +245,7 @@ pub mod Staker {
 
             assert(
                 token.transferFrom(from, get_contract_address(), amount.into()),
-                'TRANSFER_FROM_FAILED'
+                'TRANSFER_FROM_FAILED',
             );
 
             let key = (from, delegate);
@@ -257,11 +257,11 @@ pub mod Staker {
         }
 
         fn withdraw(
-            ref self: ContractState, delegate: ContractAddress, recipient: ContractAddress
+            ref self: ContractState, delegate: ContractAddress, recipient: ContractAddress,
         ) {
             self
                 .withdraw_amount(
-                    delegate, recipient, self.staked.read((get_caller_address(), delegate))
+                    delegate, recipient, self.staked.read((get_caller_address(), delegate)),
                 )
         }
 
@@ -269,7 +269,7 @@ pub mod Staker {
             ref self: ContractState,
             delegate: ContractAddress,
             recipient: ContractAddress,
-            amount: u128
+            amount: u128,
         ) {
             let from = get_caller_address();
             let key = (from, delegate);
@@ -288,7 +288,7 @@ pub mod Staker {
         }
 
         fn get_delegated_at(
-            self: @ContractState, delegate: ContractAddress, timestamp: u64
+            self: @ContractState, delegate: ContractAddress, timestamp: u64,
         ) -> u128 {
             (self.get_delegated_cumulative(delegate, timestamp)
                 - self.get_delegated_cumulative(delegate, timestamp - 1))
@@ -297,7 +297,7 @@ pub mod Staker {
         }
 
         fn get_delegated_cumulative(
-            self: @ContractState, delegate: ContractAddress, timestamp: u64
+            self: @ContractState, delegate: ContractAddress, timestamp: u64,
         ) -> u256 {
             assert(timestamp <= get_block_timestamp(), 'FUTURE');
 
@@ -310,13 +310,13 @@ pub mod Staker {
                         delegate: delegate,
                         min_index: 0,
                         max_index_exclusive: num_snapshots,
-                        timestamp: timestamp
+                        timestamp: timestamp,
                     )
             };
         }
 
         fn get_average_delegated(
-            self: @ContractState, delegate: ContractAddress, start: u64, end: u64
+            self: @ContractState, delegate: ContractAddress, start: u64, end: u64,
         ) -> u128 {
             assert(end > start, 'ORDER');
             assert(end <= get_block_timestamp(), 'FUTURE');
@@ -328,7 +328,7 @@ pub mod Staker {
         }
 
         fn get_average_delegated_over_last(
-            self: @ContractState, delegate: ContractAddress, period: u64
+            self: @ContractState, delegate: ContractAddress, period: u64,
         ) -> u128 {
             let now = get_block_timestamp();
             self.get_average_delegated(delegate, now - period, now)

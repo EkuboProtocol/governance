@@ -42,7 +42,7 @@ pub trait IAirdrop<TContractState> {
     // proof verification is optimized in this method.
     // Returns the number of claims that were executed.
     fn claim_128(
-        ref self: TContractState, claims: Span<Claim>, remaining_proof: Span<felt252>
+        ref self: TContractState, claims: Span<Claim>, remaining_proof: Span<felt252>,
     ) -> u8;
 
     // Returns whether the claim with the given ID has been claimed.
@@ -60,12 +60,12 @@ pub mod Airdrop {
     use governance::interfaces::erc20::{IERC20DispatcherTrait};
     use governance::utils::exp2::{exp2};
     use starknet::storage::{
-        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerWriteAccess,
-        StoragePointerReadAccess
+        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess,
+        StoragePointerWriteAccess,
     };
     use starknet::{get_block_timestamp, get_contract_address};
 
-    use super::{Config, IAirdrop, ContractAddress, Claim, IERC20Dispatcher};
+    use super::{Claim, Config, ContractAddress, IAirdrop, IERC20Dispatcher};
 
     pub fn hash_function(a: felt252, b: felt252) -> felt252 {
         let a_u256: u256 = a.into();
@@ -96,7 +96,7 @@ pub mod Airdrop {
 
     #[derive(Drop, starknet::Event)]
     pub(crate) struct Claimed {
-        pub claim: Claim
+        pub claim: Claim,
     }
 
     #[derive(starknet::Event, Drop)]
@@ -187,7 +187,7 @@ pub mod Airdrop {
         }
 
         fn claim_128(
-            ref self: ContractState, mut claims: Span<Claim>, remaining_proof: Span<felt252>
+            ref self: ContractState, mut claims: Span<Claim>, remaining_proof: Span<felt252>,
         ) -> u8 {
             assert(claims.len() < 129, 'TOO_MANY_CLAIMS');
             assert(!claims.is_empty(), 'CLAIMS_EMPTY');
@@ -204,7 +204,7 @@ pub mod Airdrop {
 
             assert(
                 config.root == compute_pedersen_root(root_of_group, remaining_proof),
-                'INVALID_PROOF'
+                'INVALID_PROOF',
             );
 
             let mut bitmap = self.claimed_bitmap.read(word);

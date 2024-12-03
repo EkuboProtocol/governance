@@ -19,14 +19,14 @@ impl TwoU64TupleStorePacking of StorePacking<(u64, u64), u128> {
 pub struct ExecutionState {
     pub created: u64,
     pub executed: u64,
-    pub canceled: u64
+    pub canceled: u64,
 }
 
 impl ExecutionStateStorePacking of StorePacking<ExecutionState, felt252> {
     fn pack(value: ExecutionState) -> felt252 {
         u256 {
             low: TwoU64TupleStorePacking::pack((value.created, value.executed)),
-            high: value.canceled.into()
+            high: value.canceled.into(),
         }
             .try_into()
             .unwrap()

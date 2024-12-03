@@ -22,7 +22,7 @@ trait IAirdropClaimCheck<TContractState> {
 mod AirdropClaimCheck {
     use governance::airdrop::{IAirdropDispatcherTrait};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
-    use super::{IAirdropClaimCheck, CheckParams, CheckResult};
+    use super::{CheckParams, CheckResult, IAirdropClaimCheck};
 
     #[storage]
     struct Storage {}
@@ -34,12 +34,12 @@ mod AirdropClaimCheck {
 
             while let Option::Some(claim_check) = claims.pop_front() {
                 let token = IERC20Dispatcher {
-                    contract_address: (*claim_check.airdrop).get_token()
+                    contract_address: (*claim_check.airdrop).get_token(),
                 };
                 let claimed = (*claim_check.airdrop).is_claimed(*claim_check.claim_id);
                 let funded = token
                     .balanceOf(
-                        *claim_check.airdrop.contract_address
+                        *claim_check.airdrop.contract_address,
                     ) >= ((*claim_check.amount).into());
                 result.append(CheckResult { claimed, funded });
             };
