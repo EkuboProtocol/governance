@@ -272,18 +272,16 @@ pub mod Staker {
                     }
                 );
             } else {
-                // Add the first record
-                if is_add {
-                    log.append().write(
-                        StakingLogRecord {
-                            timestamp: get_block_timestamp(),
-                            total_staked: amount,
-                            cumulative_staked_per_second: 0,
-                        }
-                    );
-                } else {
-                    assert(false, 'IMPOSSIBRU'); // TODO: fix
-                }
+                // Add the first record. If withdrawal, then it's underflow.
+                assert(is_add, 'BAD AMOUNT'); 
+
+                log.append().write(
+                    StakingLogRecord {
+                        timestamp: get_block_timestamp(),
+                        total_staked: amount,
+                        cumulative_staked_per_second: 0,
+                    }
+                );
             }
         }    
 
