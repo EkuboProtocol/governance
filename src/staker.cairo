@@ -54,7 +54,7 @@ pub trait IStaker<TContractState> {
     ) -> u128;
 
     // Gets the cumulative staked amount * per second staked for the given timestamp and account.
-    fn get_staked_per_second(self: @TContractState, from: ContractAddress, timestamp: u64) -> u128;
+    fn get_staked_seconds(self: @TContractState, for_address: ContractAddress, at_ts: u64) -> u128;
 }
 
 #[starknet::contract]
@@ -442,11 +442,11 @@ use core::num::traits::zero::{Zero};
             self.get_average_delegated(delegate, now - period, now)
         }
 
-        fn get_staked_per_second(
-            self: @ContractState, from: ContractAddress, timestamp: u64,
+        fn get_staked_seconds(
+            self: @ContractState, for_address: ContractAddress, at_ts: u64,
         ) -> u128 {
-            if let Option::Some(log_record) = self.find_in_change_log(from, timestamp) {
-                let time_diff = timestamp - log_record.timestamp;
+            if let Option::Some(log_record) = self.find_in_change_log(for_address, at_ts) {
+                let time_diff = at_ts - log_record.timestamp;
                 let staked_seconds = log_record.total_staked * time_diff.into() / 1000; // staked seconds
                 return log_record.cumulative_staked_per_second + staked_seconds;
             } else {
