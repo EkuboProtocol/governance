@@ -295,7 +295,6 @@ pub mod Staker {
             // Find first log record in an array whos timestamp is less or equal to timestamp.
             // Uses binary search.
             
-            // TODO(baitcode): Should probably be an argument. But seems not possible.
             let log = self.staking_log.entry(from);
             
             let mut left = 0;
