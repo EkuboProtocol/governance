@@ -63,7 +63,7 @@ pub trait IStaker<TContractState> {
 #[starknet::contract]
 pub mod Staker {
     use starknet::storage::MutableVecTrait;
-use core::num::traits::zero::{Zero};
+    use core::num::traits::zero::{Zero};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::{
         Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry,
@@ -73,7 +73,7 @@ use core::num::traits::zero::{Zero};
 
     use starknet::{
         get_block_timestamp, get_caller_address, get_contract_address,
-        replace_class_syscall, storage_access::{StorePacking}, ClassHash, 
+        syscalls::{replace_class_syscall}, storage_access::{StorePacking}, ClassHash, 
     };
     use super::{ContractAddress, IStaker};
 
