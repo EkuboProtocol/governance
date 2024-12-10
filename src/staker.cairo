@@ -1,4 +1,4 @@
-use starknet::{ContractAddress};
+use starknet::{ContractAddress, ClassHash};
 
 #[starknet::interface]
 pub trait IStaker<TContractState> {
@@ -52,19 +52,28 @@ pub trait IStaker<TContractState> {
     fn get_average_delegated_over_last(
         self: @TContractState, delegate: ContractAddress, period: u64,
     ) -> u128;
+
+    // Gets the cumulative staked amount * per second staked for the given timestamp and account.
+    fn get_staked_seconds(self: @TContractState, for_address: ContractAddress, at_ts: u64) -> u128;
+
+    // Replaces the code at this address. This must be self-called via a governor proposal.
+    fn upgrade(ref self: TContractState, class_hash: ClassHash);
 }
 
 #[starknet::contract]
 pub mod Staker {
+    use starknet::storage::MutableVecTrait;
     use core::num::traits::zero::{Zero};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::{
         Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry,
         StoragePointerReadAccess, StoragePointerWriteAccess,
+        Vec, VecTrait,
     };
+
     use starknet::{
         get_block_timestamp, get_caller_address, get_contract_address,
-        storage_access::{StorePacking},
+        syscalls::{replace_class_syscall}, storage_access::{StorePacking}, ClassHash, 
     };
     use super::{ContractAddress, IStaker};
 
@@ -96,19 +105,30 @@ pub mod Staker {
         }
     }
 
+    #[derive(Drop, Serde, starknet::Store)]
+    struct StakingLogRecord {
+        timestamp: u64,
+        total_staked: u128,
+        cumulative_staked_per_second: u128
+    }
+
     #[storage]
     struct Storage {
         token: IERC20Dispatcher,
+        governor: ContractAddress,
         // owner, delegate => amount
         staked: Map<(ContractAddress, ContractAddress), u128>,
         amount_delegated: Map<ContractAddress, u128>,
         delegated_cumulative_num_snapshots: Map<ContractAddress, u64>,
         delegated_cumulative_snapshot: Map<ContractAddress, Map<u64, DelegatedSnapshot>>,
+
+        staking_log: Map<ContractAddress, Vec<StakingLogRecord>>
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, token: IERC20Dispatcher) {
+    fn constructor(ref self: ContractState, token: IERC20Dispatcher, governor: ContractAddress) {
         self.token.write(token);
+        self.governor.write(governor);
     }
 
     #[derive(starknet::Event, PartialEq, Debug, Drop)]
@@ -212,7 +232,98 @@ pub mod Staker {
                 self.find_delegated_cumulative(delegate, mid, max_index_exclusive, timestamp)
             }
         }
+
+        fn log_change(ref self: ContractState, delegate: ContractAddress, amount: u128, is_add: bool) {
+            let from = get_caller_address();
+            let log = self.staking_log.entry(from);
+
+            if let Option::Some(last_record_ptr) = log.get(log.len() - 1) {
+                let mut last_record = last_record_ptr.read();
+
+                let mut record = if last_record.timestamp == get_block_timestamp() {
+                    // update record
+                    last_record_ptr 
+                } else {
+                    // create new record
+                    log.append()
+                };
+
+                // Might be zero
+                let time_diff = get_block_timestamp() - last_record.timestamp;
+                    
+                let staked_seconds = last_record.total_staked * time_diff.into() / 1000; // staked seconds
+
+                let total_staked = if is_add {
+                    // overflow check
+                    assert(last_record.total_staked + amount > last_record.total_staked, 'BAD AMOUNT'); 
+                    last_record.total_staked + amount
+                } else {
+                    // underflow check
+                    assert(last_record.total_staked > amount, 'BAD AMOUNT'); 
+                    last_record.total_staked - amount
+                };
+
+                // Add a new record.
+                record.write(
+                    StakingLogRecord {
+                        timestamp: get_block_timestamp(),
+                        total_staked: total_staked,
+                        cumulative_staked_per_second: last_record.cumulative_staked_per_second + staked_seconds,
+                    }
+                );
+            } else {
+                // Add the first record. If withdrawal, then it's underflow.
+                assert(is_add, 'BAD AMOUNT'); 
+
+                log.append().write(
+                    StakingLogRecord {
+                        timestamp: get_block_timestamp(),
+                        total_staked: amount,
+                        cumulative_staked_per_second: 0,
+                    }
+                );
+            }
+        }    
+
+        fn check_governor_call(self: @ContractState) {
+            assert(self.governor.read().is_non_zero(), 'GOVERNOR_UNDEFINED');
+            assert(get_caller_address().is_non_zero(), 'GOVERNOR_ONLY');
+            assert(get_caller_address() == self.governor.read(), 'GOVERNOR_ONLY');
+        }
+
+        fn find_in_change_log(self: @ContractState, from: ContractAddress, timestamp: u64) -> Option<StakingLogRecord> {
+            // Find first log record in an array whos timestamp is less or equal to timestamp.
+            // Uses binary search.
+            
+            let log = self.staking_log.entry(from);
+            
+            let mut left = 0;
+            let mut right = log.len() - 1;
+            
+            // To avoid reading from the storage multiple times.
+            let mut result_ptr = Option::None;
+
+            while left <= right {
+                let center = (right - left) / 2;
+                let record = log.at(center);
+                
+                if record.timestamp.read() <= timestamp {
+                    result_ptr = Option::Some(record);
+                    left = center + 1;
+                } else {
+                    right = center - 1;
+                }
+            };
+
+            if let Option::Some(result) = result_ptr {
+                return Option::Some(result.read());
+            }
+            
+            return Option::None;
+        }
     }
+
+
 
     #[abi(embed_v0)]
     impl StakerImpl of IStaker<ContractState> {
@@ -253,6 +364,9 @@ pub mod Staker {
             self
                 .amount_delegated
                 .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) + amount);
+            
+            self.log_change(delegate, amount, true);
+            
             self.emit(Staked { from, delegate, amount });
         }
 
@@ -280,6 +394,9 @@ pub mod Staker {
                 .amount_delegated
                 .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) - amount);
             assert(self.token.read().transfer(recipient, amount.into()), 'TRANSFER_FAILED');
+            
+            self.log_change(delegate, amount, false);
+            
             self.emit(Withdrawn { from, delegate, to: recipient, amount });
         }
 
@@ -332,6 +449,26 @@ pub mod Staker {
         ) -> u128 {
             let now = get_block_timestamp();
             self.get_average_delegated(delegate, now - period, now)
+        }
+
+        fn get_staked_seconds(
+            self: @ContractState, for_address: ContractAddress, at_ts: u64,
+        ) -> u128 {
+            if let Option::Some(log_record) = self.find_in_change_log(for_address, at_ts) {
+                let time_diff = at_ts - log_record.timestamp;
+                let staked_seconds = log_record.total_staked * time_diff.into() / 1000; // staked seconds
+                return log_record.cumulative_staked_per_second + staked_seconds;
+            } else {
+                return 0;
+            }
+        }
+
+        fn upgrade(ref self: ContractState, class_hash: ClassHash) {
+            assert(class_hash.is_non_zero(), 'INVALID_CLASS_HASH');
+            self.check_governor_call();
+            replace_class_syscall(class_hash).unwrap();
+            
+            // TODO(baitcode): Ideally we should emit an event here.
         }
     }
 }
