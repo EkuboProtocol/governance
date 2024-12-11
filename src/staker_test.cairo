@@ -17,10 +17,10 @@ use starknet::{
 pub(crate) fn setup(amount: u256) -> (IStakerDispatcher, IERC20Dispatcher) {
     let token = deploy_token(get_contract_address(), amount);
     
-    let classHash: ClassHash = Staker::TEST_CLASS_HASH.try_into().unwrap();
+    let class_hash: ClassHash = Staker::TEST_CLASS_HASH.try_into().unwrap();
 
     let (staker_address, _) = deploy_syscall(
-        classHash,
+        class_hash,
         0,
         array![token.contract_address.into()].span(),
         true,
