@@ -11,6 +11,7 @@ use starknet::{contract_address_const, get_contract_address, syscalls::deploy_sy
 
 pub(crate) fn setup(amount: u256) -> (IStakerDispatcher, IERC20Dispatcher) {
     let token = deploy_token(get_contract_address(), amount);
+    
     let (staker_address, _) = deploy_syscall(
         Staker::TEST_CLASS_HASH.try_into().unwrap(),
         0,
@@ -393,4 +394,69 @@ fn test_delegate_undelegate() {
     assert(staker.get_delegated_at(delegatee, timestamp: 4) == 12345, 'at 4');
     assert(staker.get_delegated_at(delegatee, timestamp: 5) == 12345, 'at 5');
     assert(staker.get_delegated_at(delegatee, timestamp: 6) == 0, 'at 6');
+}
+
+mod staker_staked_seconds_calculation {
+    use starknet::{
+        get_caller_address
+    };
+    use super::{ 
+        setup, contract_address_const, set_block_timestamp,
+        IERC20DispatcherTrait, IStakerDispatcherTrait
+    };
+
+    #[test]
+    fn test_should_stake_10000_tokens_for_5_seconds_adding_10000_every_second_to_staked_seconds() {
+        let (staker, token) = setup(1000);
+
+        // Caller is token owner
+        let token_owner = get_caller_address();
+
+        // Allow staker to spend 10000 tokens from owner account
+        token.approve(staker.contract_address, 10000);    
+
+        // Adress to delegate tokens to
+        let delegatee = contract_address_const::<1234567890>();
+        
+        set_block_timestamp(0);    
+        staker.stake(delegatee); // Will transfer 10000 tokens to contract account and setup delegatee
+
+        set_block_timestamp(5000); // 5 seconds passed
+        staker.withdraw(delegatee, token_owner); // Will withdraw all 10000 tokens back to owner
+
+        set_block_timestamp(10000);
+        assert(staker.get_staked(delegatee, token_owner) == 0, 'Not all tokens were withdrawn');
+        
+        assert(staker.get_staked_seconds_at(token_owner, 0) == 0, 'At 0 should be 0');
+        assert(staker.get_staked_seconds_at(token_owner, 1000) == 10000, 'At 1s should be 10000 tok*sec');
+        assert(staker.get_staked_seconds_at(token_owner, 1100) == 10000, 'At 1.1s should be 10000 tok*sec');
+        assert(staker.get_staked_seconds_at(token_owner, 1500) == 10000, 'At 1.5s should be 10000 tok*sec');
+        assert(staker.get_staked_seconds_at(token_owner, 1900) == 10000, 'At 1.9s should be 10000 tok*sec');
+        assert(staker.get_staked_seconds_at(token_owner, 2000) == 20000, 'At 2s should be 20000 tok*sec');
+        assert(staker.get_staked_seconds_at(token_owner, 3000) == 30000, 'At 3s should be 30000 tok*sec');
+        assert(staker.get_staked_seconds_at(token_owner, 4000) == 40000, 'At 4s should be 40000 tok*sec');
+        assert(staker.get_staked_seconds_at(token_owner, 5000) == 50000, 'At 5s should be 50000 tok*sec');
+        assert(staker.get_staked_seconds_at(token_owner, 6000) == 50000, 'At 6s should be 50000 tok*sec');
+        assert(staker.get_staked_seconds_at(token_owner, 7000) == 50000, 'At 7s should be 50000 tok*sec');
+    }
+
+    #[test]
+    #[should_panic(expected: ('FUTURE', 'ENTRYPOINT_FAILED'))]
+    fn test_raises_error_if_no_history_exists_and_withdrawal_happens() {
+        let (staker, token) = setup(1000);
+
+        // Caller is token owner
+        let token_owner = get_caller_address();
+
+        // Allow staker to spend 10000 tokens from owner account
+        token.approve(staker.contract_address, 10000);    
+
+        // Adress to delegate tokens to
+        let delegatee = contract_address_const::<1234567890>();
+        
+        set_block_timestamp(5000); // 5 seconds passed
+        staker.withdraw(delegatee, token_owner); // Will withdraw all 10000 tokens back to owner
+    }
+
+
 }

@@ -54,7 +54,7 @@ pub trait IStaker<TContractState> {
     ) -> u128;
 
     // Gets the cumulative staked amount * per second staked for the given timestamp and account.
-    fn get_staked_seconds(self: @TContractState, for_address: ContractAddress, at_ts: u64) -> u128;
+    fn get_staked_seconds_at(self: @TContractState, owner: ContractAddress, timestamp: u64) -> u128;
 
     // Replaces the code at this address. This must be self-called via a governor proposal.
     fn upgrade(ref self: TContractState, class_hash: ClassHash);
@@ -109,7 +109,7 @@ pub mod Staker {
     struct StakingLogRecord {
         timestamp: u64,
         total_staked: u128,
-        cumulative_staked_per_second: u128
+        cumulative_staked_seconds: u128
     }
 
     #[storage]
@@ -268,7 +268,7 @@ pub mod Staker {
                     StakingLogRecord {
                         timestamp: get_block_timestamp(),
                         total_staked: total_staked,
-                        cumulative_staked_per_second: last_record.cumulative_staked_per_second + staked_seconds,
+                        cumulative_staked_seconds: last_record.cumulative_staked_seconds + staked_seconds,
                     }
                 );
             } else {
@@ -279,7 +279,7 @@ pub mod Staker {
                     StakingLogRecord {
                         timestamp: get_block_timestamp(),
                         total_staked: amount,
-                        cumulative_staked_per_second: 0,
+                        cumulative_staked_seconds: 0,
                     }
                 );
             }
@@ -451,13 +451,13 @@ pub mod Staker {
             self.get_average_delegated(delegate, now - period, now)
         }
 
-        fn get_staked_seconds(
-            self: @ContractState, for_address: ContractAddress, at_ts: u64,
+        fn get_staked_seconds_at(
+            self: @ContractState, owner: ContractAddress, timestamp: u64,
         ) -> u128 {
-            if let Option::Some(log_record) = self.find_in_change_log(for_address, at_ts) {
-                let time_diff = at_ts - log_record.timestamp;
+            if let Option::Some(log_record) = self.find_in_change_log(owner, timestamp) {
+                let time_diff = timestamp - log_record.timestamp;
                 let staked_seconds = log_record.total_staked * time_diff.into() / 1000; // staked seconds
-                return log_record.cumulative_staked_per_second + staked_seconds;
+                return log_record.cumulative_staked_seconds + staked_seconds;
             } else {
                 return 0;
             }
