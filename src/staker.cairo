@@ -57,18 +57,17 @@ pub trait IStaker<TContractState> {
     fn get_staked_seconds_at(self: @TContractState, owner: ContractAddress, timestamp: u64) -> u128;
 
     // Replaces the code at this address. This must be self-called via a governor proposal.
-    fn upgrade(ref self: TContractState, class_hash: ClassHash);
+    // fn upgrade(ref self: TContractState, class_hash: ClassHash);
 }
 
 #[starknet::contract]
 pub mod Staker {
-    use starknet::storage::MutableVecTrait;
     use core::num::traits::zero::{Zero};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::{
         Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry,
         StoragePointerReadAccess, StoragePointerWriteAccess,
-        Vec, VecTrait,
+        Vec, VecTrait, MutableVecTrait,
     };
 
     use starknet::{
@@ -115,20 +114,20 @@ pub mod Staker {
     #[storage]
     struct Storage {
         token: IERC20Dispatcher,
-        governor: ContractAddress,
+        // governor: ContractAddress,
         // owner, delegate => amount
         staked: Map<(ContractAddress, ContractAddress), u128>,
         amount_delegated: Map<ContractAddress, u128>,
         delegated_cumulative_num_snapshots: Map<ContractAddress, u64>,
         delegated_cumulative_snapshot: Map<ContractAddress, Map<u64, DelegatedSnapshot>>,
-
-        staking_log: Map<ContractAddress, Vec<StakingLogRecord>>
+        staking_log: Map<ContractAddress, Vec<StakingLogRecord>>,
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, token: IERC20Dispatcher, governor: ContractAddress) {
+    fn constructor(ref self: ContractState, token: IERC20Dispatcher) {
+        // , governor: ContractAddress
         self.token.write(token);
-        self.governor.write(governor);
+        // self.governor.write(governor);
     }
 
     #[derive(starknet::Event, PartialEq, Debug, Drop)]
@@ -285,11 +284,11 @@ pub mod Staker {
             }
         }    
 
-        fn check_governor_call(self: @ContractState) {
-            assert(self.governor.read().is_non_zero(), 'GOVERNOR_UNDEFINED');
-            assert(get_caller_address().is_non_zero(), 'GOVERNOR_ONLY');
-            assert(get_caller_address() == self.governor.read(), 'GOVERNOR_ONLY');
-        }
+        // fn check_governor_call(self: @ContractState) {
+            // assert(self.governor.read().is_non_zero(), 'GOVERNOR_UNDEFINED');
+            // assert(get_caller_address().is_non_zero(), 'GOVERNOR_ONLY');
+            // assert(get_caller_address() == self.governor.read(), 'GOVERNOR_ONLY');
+        // }
 
         fn find_in_change_log(self: @ContractState, from: ContractAddress, timestamp: u64) -> Option<StakingLogRecord> {
             // Find first log record in an array whos timestamp is less or equal to timestamp.
@@ -463,12 +462,12 @@ pub mod Staker {
             }
         }
 
-        fn upgrade(ref self: ContractState, class_hash: ClassHash) {
-            assert(class_hash.is_non_zero(), 'INVALID_CLASS_HASH');
-            self.check_governor_call();
-            replace_class_syscall(class_hash).unwrap();
+        // fn upgrade(ref self: ContractState, class_hash: ClassHash) {
+        //     assert(class_hash.is_non_zero(), 'INVALID_CLASS_HASH');
+        //     self.check_governor_call();
+        //     replace_class_syscall(class_hash).unwrap();
             
-            // TODO(baitcode): Ideally we should emit an event here.
-        }
+        //     // TODO(baitcode): Ideally we should emit an event here.
+        // }
     }
 }

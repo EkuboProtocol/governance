@@ -7,13 +7,20 @@ use governance::staker::{
 };
 use governance::test::test_token::{TestToken, deploy as deploy_token};
 use starknet::testing::{pop_log, set_block_timestamp};
-use starknet::{contract_address_const, get_contract_address, syscalls::deploy_syscall};
+use starknet::{
+    ClassHash, 
+    contract_address_const, 
+    get_contract_address, 
+    syscalls::deploy_syscall
+};
 
 pub(crate) fn setup(amount: u256) -> (IStakerDispatcher, IERC20Dispatcher) {
     let token = deploy_token(get_contract_address(), amount);
     
+    let classHash: ClassHash = Staker::TEST_CLASS_HASH.try_into().unwrap();
+
     let (staker_address, _) = deploy_syscall(
-        Staker::TEST_CLASS_HASH.try_into().unwrap(),
+        classHash,
         0,
         array![token.contract_address.into()].span(),
         true,
