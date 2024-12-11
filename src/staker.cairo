@@ -1,4 +1,4 @@
-use starknet::{ContractAddress, ClassHash};
+use starknet::{ContractAddress};
 
 #[starknet::interface]
 pub trait IStaker<TContractState> {
@@ -54,7 +54,7 @@ pub trait IStaker<TContractState> {
     ) -> u128;
 
     // Gets the cumulative staked amount * per second staked for the given timestamp and account.
-    fn get_staked_seconds_at(self: @TContractState, owner: ContractAddress, timestamp: u64) -> u128;
+    fn get_staked_seconds_at(self: @TContractState, staker: ContractAddress, timestamp: u64) -> u128;
 
 }
 
@@ -70,7 +70,7 @@ pub mod Staker {
 
     use starknet::{
         get_block_timestamp, get_caller_address, get_contract_address,
-        syscalls::{replace_class_syscall}, storage_access::{StorePacking}, ClassHash, 
+        storage_access::{StorePacking},
     };
     use super::{ContractAddress, IStaker};
 
@@ -227,45 +227,10 @@ pub mod Staker {
             }
         }
 
-        fn log_change(ref self: ContractState, delegate: ContractAddress, amount: u128, is_add: bool) {
-            let from = get_caller_address();
-            let log = self.staking_log.entry(from);
+        fn log_change(ref self: ContractState, staker: ContractAddress, amount: u128, is_add: bool) {
+            let log = self.staking_log.entry(staker);
 
-            if let Option::Some(last_record_ptr) = log.get(log.len() - 1) {
-                let mut last_record = last_record_ptr.read();
-
-                let mut record = if last_record.timestamp == get_block_timestamp() {
-                    // update record
-                    last_record_ptr 
-                } else {
-                    // create new record
-                    log.append()
-                };
-
-                // Might be zero
-                let time_diff = get_block_timestamp() - last_record.timestamp;
-                    
-                let staked_seconds = last_record.total_staked * time_diff.into() / 1000; // staked seconds
-
-                let total_staked = if is_add {
-                    // overflow check
-                    assert(last_record.total_staked + amount > last_record.total_staked, 'BAD AMOUNT'); 
-                    last_record.total_staked + amount
-                } else {
-                    // underflow check
-                    assert(last_record.total_staked > amount, 'BAD AMOUNT'); 
-                    last_record.total_staked - amount
-                };
-
-                // Add a new record.
-                record.write(
-                    StakingLogRecord {
-                        timestamp: get_block_timestamp(),
-                        total_staked: total_staked,
-                        cumulative_staked_seconds: last_record.cumulative_staked_seconds + staked_seconds,
-                    }
-                );
-            } else {
+            if log.len() == 0 {
                 // Add the first record. If withdrawal, then it's underflow.
                 assert(is_add, 'BAD AMOUNT'); 
 
@@ -276,20 +241,56 @@ pub mod Staker {
                         cumulative_staked_seconds: 0,
                     }
                 );
+                
+                return;
             }
-        }    
 
-        // fn check_governor_call(self: @ContractState) {
-            // assert(self.governor.read().is_non_zero(), 'GOVERNOR_UNDEFINED');
-            // assert(get_caller_address().is_non_zero(), 'GOVERNOR_ONLY');
-            // assert(get_caller_address() == self.governor.read(), 'GOVERNOR_ONLY');
-        // }
+            let last_record_ptr = log.at(log.len() - 1);
+                
+            let mut last_record = last_record_ptr.read();
 
-        fn find_in_change_log(self: @ContractState, from: ContractAddress, timestamp: u64) -> Option<StakingLogRecord> {
+            let mut record = if last_record.timestamp == get_block_timestamp() {
+                // update record
+                last_record_ptr 
+            } else {
+                // create new record
+                log.append()
+            };
+
+            // Might be zero
+            let seconds_diff = (get_block_timestamp() - last_record.timestamp) / 1000;
+                
+            let staked_seconds = last_record.total_staked * seconds_diff.into(); // staked seconds
+
+            let total_staked = if is_add {
+                // overflow check
+                assert(last_record.total_staked + amount >= last_record.total_staked, 'BAD AMOUNT'); 
+                last_record.total_staked + amount
+            } else {
+                // underflow check
+                assert(last_record.total_staked >= amount, 'BAD AMOUNT'); 
+                last_record.total_staked - amount
+            };
+
+            // Add a new record.
+            record.write(
+                StakingLogRecord {
+                    timestamp: get_block_timestamp(),
+                    total_staked: total_staked,
+                    cumulative_staked_seconds: last_record.cumulative_staked_seconds + staked_seconds,
+                }
+            );
+        }
+
+        fn find_in_change_log(self: @ContractState, staker: ContractAddress, timestamp: u64) -> Option<StakingLogRecord> {
             // Find first log record in an array whos timestamp is less or equal to timestamp.
             // Uses binary search.
             
-            let log = self.staking_log.entry(from);
+            let log = self.staking_log.entry(staker);
+
+            if log.len() == 0 {
+                return Option::None;
+            }
             
             let mut left = 0;
             let mut right = log.len() - 1;
@@ -298,7 +299,7 @@ pub mod Staker {
             let mut result_ptr = Option::None;
 
             while left <= right {
-                let center = (right - left) / 2;
+                let center = (right + left) / 2;
                 let record = log.at(center);
                 
                 if record.timestamp.read() <= timestamp {
@@ -316,7 +317,6 @@ pub mod Staker {
             return Option::None;
         }
     }
-
 
 
     #[abi(embed_v0)]
@@ -359,7 +359,7 @@ pub mod Staker {
                 .amount_delegated
                 .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) + amount);
             
-            // self.log_change(delegate, amount, true);
+            self.log_change(from, amount, true);
             
             self.emit(Staked { from, delegate, amount });
         }
@@ -389,7 +389,7 @@ pub mod Staker {
                 .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) - amount);
             assert(self.token.read().transfer(recipient, amount.into()), 'TRANSFER_FAILED');
             
-            // self.log_change(delegate, amount, false);
+            self.log_change(from, amount, false);
             
             self.emit(Withdrawn { from, delegate, to: recipient, amount });
         }
@@ -446,11 +446,11 @@ pub mod Staker {
         }
 
         fn get_staked_seconds_at(
-            self: @ContractState, owner: ContractAddress, timestamp: u64,
+            self: @ContractState, staker: ContractAddress, timestamp: u64,
         ) -> u128 {
-            if let Option::Some(log_record) = self.find_in_change_log(owner, timestamp) {
-                let time_diff = timestamp - log_record.timestamp;
-                let staked_seconds = log_record.total_staked * time_diff.into() / 1000; // staked seconds
+            if let Option::Some(log_record) = self.find_in_change_log(staker, timestamp) {
+                let seconds_diff = (timestamp - log_record.timestamp) / 1000;
+                let staked_seconds = log_record.total_staked * seconds_diff.into(); // staked seconds
                 return log_record.cumulative_staked_seconds + staked_seconds;
             } else {
                 return 0;
