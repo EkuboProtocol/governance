@@ -56,8 +56,6 @@ pub trait IStaker<TContractState> {
     // Gets the cumulative staked amount * per second staked for the given timestamp and account.
     fn get_staked_seconds_at(self: @TContractState, owner: ContractAddress, timestamp: u64) -> u128;
 
-    // Replaces the code at this address. This must be self-called via a governor proposal.
-    // fn upgrade(ref self: TContractState, class_hash: ClassHash);
 }
 
 #[starknet::contract]
@@ -114,7 +112,6 @@ pub mod Staker {
     #[storage]
     struct Storage {
         token: IERC20Dispatcher,
-        // governor: ContractAddress,
         // owner, delegate => amount
         staked: Map<(ContractAddress, ContractAddress), u128>,
         amount_delegated: Map<ContractAddress, u128>,
@@ -125,9 +122,7 @@ pub mod Staker {
 
     #[constructor]
     fn constructor(ref self: ContractState, token: IERC20Dispatcher) {
-        // , governor: ContractAddress
         self.token.write(token);
-        // self.governor.write(governor);
     }
 
     #[derive(starknet::Event, PartialEq, Debug, Drop)]
@@ -364,7 +359,7 @@ pub mod Staker {
                 .amount_delegated
                 .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) + amount);
             
-            self.log_change(delegate, amount, true);
+            // self.log_change(delegate, amount, true);
             
             self.emit(Staked { from, delegate, amount });
         }
@@ -394,7 +389,7 @@ pub mod Staker {
                 .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) - amount);
             assert(self.token.read().transfer(recipient, amount.into()), 'TRANSFER_FAILED');
             
-            self.log_change(delegate, amount, false);
+            // self.log_change(delegate, amount, false);
             
             self.emit(Withdrawn { from, delegate, to: recipient, amount });
         }
@@ -461,13 +456,5 @@ pub mod Staker {
                 return 0;
             }
         }
-
-        // fn upgrade(ref self: ContractState, class_hash: ClassHash) {
-        //     assert(class_hash.is_non_zero(), 'INVALID_CLASS_HASH');
-        //     self.check_governor_call();
-        //     replace_class_syscall(class_hash).unwrap();
-            
-        //     // TODO(baitcode): Ideally we should emit an event here.
-        // }
     }
 }
