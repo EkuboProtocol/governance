@@ -1,4 +1,6 @@
 use starknet::{ContractAddress};
+use crate::utils::fp::{UFixedPoint};
+
 
 #[starknet::interface]
 pub trait IStaker<TContractState> {
@@ -54,25 +56,31 @@ pub trait IStaker<TContractState> {
     ) -> u128;
 
     // Gets the cumulative staked amount * per second staked for the given timestamp and account.
-    fn get_staked_seconds_at(self: @TContractState, staker: ContractAddress, timestamp: u64) -> u128;
+    fn get_cumulative_seconds_per_total_staked_at(self: @TContractState, timestamp: u64) -> UFixedPoint;
 
+    // Gets the cumulative staked amount * per second staked for the given timestamp and account.
+    fn calculate_staked_seconds_for_amount_between(self: @TContractState, token_amount: u128, start_at: u64, end_at: u64) -> u128;
 }
+
 
 #[starknet::contract]
 pub mod Staker {
+    use starknet::storage::StorageAsPath;
+use super::super::utils::fp::UFixedPointTrait;
     use core::num::traits::zero::{Zero};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::{
-        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry,
+        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry, StoragePath,
         StoragePointerReadAccess, StoragePointerWriteAccess,
         Vec, VecTrait, MutableVecTrait,
     };
+    use crate::utils::fp::{UFixedPoint, UFixedPointZero};
 
     use starknet::{
         get_block_timestamp, get_caller_address, get_contract_address,
-        storage_access::{StorePacking},
+        storage_access::{StorePacking}, ContractAddress,
     };
-    use super::{ContractAddress, IStaker};
+    use super::{IStaker};
 
 
     #[derive(Copy, Drop, PartialEq, Debug)]
@@ -106,7 +114,7 @@ pub mod Staker {
     struct StakingLogRecord {
         timestamp: u64,
         total_staked: u128,
-        cumulative_staked_seconds: u128
+        cumulative_seconds_per_total_staked: UFixedPoint,
     }
 
     #[storage]
@@ -117,7 +125,8 @@ pub mod Staker {
         amount_delegated: Map<ContractAddress, u128>,
         delegated_cumulative_num_snapshots: Map<ContractAddress, u64>,
         delegated_cumulative_snapshot: Map<ContractAddress, Map<u64, DelegatedSnapshot>>,
-        staking_log: Map<ContractAddress, Vec<StakingLogRecord>>,
+        
+        staking_log: Vec<StakingLogRecord>,
     }
 
     #[constructor]
@@ -227,8 +236,8 @@ pub mod Staker {
             }
         }
 
-        fn log_change(ref self: ContractState, staker: ContractAddress, amount: u128, is_add: bool) {
-            let log = self.staking_log.entry(staker);
+        fn log_change(ref self: ContractState, amount: u128, is_add: bool) {
+            let log = self.staking_log.as_path();
 
             if log.len() == 0 {
                 // Add the first record. If withdrawal, then it's underflow.
@@ -238,7 +247,7 @@ pub mod Staker {
                     StakingLogRecord {
                         timestamp: get_block_timestamp(),
                         total_staked: amount,
-                        cumulative_staked_seconds: 0,
+                        cumulative_seconds_per_total_staked: 0_u64.into(),
                     }
                 );
                 
@@ -260,7 +269,7 @@ pub mod Staker {
             // Might be zero
             let seconds_diff = (get_block_timestamp() - last_record.timestamp) / 1000;
                 
-            let staked_seconds = last_record.total_staked * seconds_diff.into(); // staked seconds
+            let staked_seconds: UFixedPoint = seconds_diff.into() / last_record.total_staked.into(); // staked seconds
 
             let total_staked = if is_add {
                 // overflow check
@@ -277,16 +286,17 @@ pub mod Staker {
                 StakingLogRecord {
                     timestamp: get_block_timestamp(),
                     total_staked: total_staked,
-                    cumulative_staked_seconds: last_record.cumulative_staked_seconds + staked_seconds,
+                    cumulative_seconds_per_total_staked: (
+                        last_record.cumulative_seconds_per_total_staked + staked_seconds
+                    ),
                 }
             );
         }
 
-        fn find_in_change_log(self: @ContractState, staker: ContractAddress, timestamp: u64) -> Option<StakingLogRecord> {
+        fn find_in_change_log(self: @ContractState, timestamp: u64) -> Option<StakingLogRecord> {
             // Find first log record in an array whos timestamp is less or equal to timestamp.
             // Uses binary search.
-            
-            let log = self.staking_log.entry(staker);
+            let log = self.staking_log.as_path();
 
             if log.len() == 0 {
                 return Option::None;
@@ -296,9 +306,9 @@ pub mod Staker {
             let mut right = log.len() - 1;
             
             // To avoid reading from the storage multiple times.
-            let mut result_ptr = Option::None;
+            let mut result_ptr: Option<StoragePath<StakingLogRecord>> = Option::None;
 
-            while left <= right {
+            while (left <= right) {
                 let center = (right + left) / 2;
                 let record = log.at(center);
                 
@@ -307,7 +317,7 @@ pub mod Staker {
                     left = center + 1;
                 } else {
                     right = center - 1;
-                }
+                };
             };
 
             if let Option::Some(result) = result_ptr {
@@ -359,9 +369,31 @@ pub mod Staker {
                 .amount_delegated
                 .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) + amount);
             
-            self.log_change(from, amount, true);
+            self.log_change(amount, true);
             
             self.emit(Staked { from, delegate, amount });
+        }
+
+        fn calculate_staked_seconds_for_amount_between(
+            self: @ContractState, 
+            token_amount: u128, 
+            start_at: u64, end_at: u64
+        ) -> u128 {
+            let user_cumulative_at_start: UFixedPoint = if let Option::Some(log_record) = self.find_in_change_log(start_at) {
+                log_record.cumulative_seconds_per_total_staked
+            } else {
+                Zero::zero()
+            };
+
+            let user_cumulative_at_end: UFixedPoint = if let Option::Some(log_record) = self.find_in_change_log(start_at) {
+                log_record.cumulative_seconds_per_total_staked
+            } else {
+                Zero::zero()
+            };
+            
+            let res = (user_cumulative_at_end - user_cumulative_at_start) * token_amount.into();
+            
+            return res.get_integer();
         }
 
         fn withdraw(
@@ -389,7 +421,7 @@ pub mod Staker {
                 .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) - amount);
             assert(self.token.read().transfer(recipient, amount.into()), 'TRANSFER_FAILED');
             
-            self.log_change(from, amount, false);
+            self.log_change(amount, false);
             
             self.emit(Withdrawn { from, delegate, to: recipient, amount });
         }
@@ -445,15 +477,13 @@ pub mod Staker {
             self.get_average_delegated(delegate, now - period, now)
         }
 
-        fn get_staked_seconds_at(
-            self: @ContractState, staker: ContractAddress, timestamp: u64,
-        ) -> u128 {
-            if let Option::Some(log_record) = self.find_in_change_log(staker, timestamp) {
+        fn get_cumulative_seconds_per_total_staked_at(self: @ContractState, timestamp: u64) -> UFixedPoint {
+            if let Option::Some(log_record) = self.find_in_change_log(timestamp) {
                 let seconds_diff = (timestamp - log_record.timestamp) / 1000;
-                let staked_seconds = log_record.total_staked * seconds_diff.into(); // staked seconds
-                return log_record.cumulative_staked_seconds + staked_seconds;
+                let staked_seconds: UFixedPoint = seconds_diff.into() / log_record.total_staked.into(); // staked seconds
+                return log_record.cumulative_seconds_per_total_staked + staked_seconds;
             } else {
-                return 0;
+                return 0_u64.into();
             }
         }
     }

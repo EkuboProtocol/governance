@@ -24,6 +24,9 @@ mod interfaces {
 }
 mod utils {
     pub(crate) mod exp2;
+    pub(crate) mod fp;
+    #[cfg(test)]
+    pub(crate) mod fp_test;
 }
 
 #[cfg(test)]
