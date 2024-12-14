@@ -1,4 +1,6 @@
 use starknet::{ContractAddress};
+use crate::utils::fp::{UFixedPoint};
+
 
 #[starknet::interface]
 pub trait IStaker<TContractState> {
@@ -52,21 +54,30 @@ pub trait IStaker<TContractState> {
     fn get_average_delegated_over_last(
         self: @TContractState, delegate: ContractAddress, period: u64,
     ) -> u128;
+
+    // Gets the cumulative staked amount * per second staked for the given timestamp and account.
+    fn get_cumulative_seconds_per_total_staked_at(self: @TContractState, timestamp: u64) -> UFixedPoint;
+
 }
+
 
 #[starknet::contract]
 pub mod Staker {
+    use starknet::storage::StorageAsPath;
     use core::num::traits::zero::{Zero};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::{
-        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry,
+        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry, StoragePath,
         StoragePointerReadAccess, StoragePointerWriteAccess,
+        Vec, VecTrait, MutableVecTrait,
     };
+    use crate::utils::fp::{UFixedPoint, UFixedPointZero};
+
     use starknet::{
         get_block_timestamp, get_caller_address, get_contract_address,
-        storage_access::{StorePacking},
+        storage_access::{StorePacking}, ContractAddress,
     };
-    use super::{ContractAddress, IStaker};
+    use super::{IStaker};
 
 
     #[derive(Copy, Drop, PartialEq, Debug)]
@@ -96,6 +107,13 @@ pub mod Staker {
         }
     }
 
+    #[derive(Drop, Serde, starknet::Store)]
+    struct StakingLogRecord {
+        timestamp: u64,
+        total_staked: u128,
+        cumulative_seconds_per_total_staked: UFixedPoint,
+    }
+
     #[storage]
     struct Storage {
         token: IERC20Dispatcher,
@@ -104,6 +122,8 @@ pub mod Staker {
         amount_delegated: Map<ContractAddress, u128>,
         delegated_cumulative_num_snapshots: Map<ContractAddress, u64>,
         delegated_cumulative_snapshot: Map<ContractAddress, Map<u64, DelegatedSnapshot>>,
+        
+        staking_log: Vec<StakingLogRecord>,
     }
 
     #[constructor]
@@ -212,7 +232,103 @@ pub mod Staker {
                 self.find_delegated_cumulative(delegate, mid, max_index_exclusive, timestamp)
             }
         }
+
+        fn log_change(ref self: ContractState, amount: u128, is_add: bool) {
+            let log = self.staking_log.as_path();
+
+            if log.len() == 0 {
+                // Add the first record. If withdrawal, then it's underflow.
+                assert(is_add, 'BAD AMOUNT'); 
+
+                log.append().write(
+                    StakingLogRecord {
+                        timestamp: get_block_timestamp(),
+                        total_staked: amount,
+                        cumulative_seconds_per_total_staked: 0_u64.into(),
+                    }
+                );
+                
+                return;
+            }
+
+            let last_record_ptr = log.at(log.len() - 1);
+                
+            let mut last_record = last_record_ptr.read();
+
+            let mut record = if last_record.timestamp == get_block_timestamp() {
+                // update record
+                last_record_ptr 
+            } else {
+                // create new record
+                log.append()
+            };
+
+            // Might be zero
+            let seconds_diff = (get_block_timestamp() - last_record.timestamp) / 1000;
+                
+            let staked_seconds: UFixedPoint = if last_record.total_staked == 0 {
+                0_u64.into()
+            } else {
+                seconds_diff.into() / last_record.total_staked.into()
+            };
+
+            let total_staked = if is_add {
+                // overflow check
+                assert(last_record.total_staked + amount >= last_record.total_staked, 'BAD AMOUNT'); 
+                last_record.total_staked + amount
+            } else {
+                // underflow check
+                assert(last_record.total_staked >= amount, 'BAD AMOUNT'); 
+                last_record.total_staked - amount
+            };
+
+            // Add a new record.
+            record.write(
+                StakingLogRecord {
+                    timestamp: get_block_timestamp(),
+                    total_staked: total_staked,
+                    cumulative_seconds_per_total_staked: (
+                        last_record.cumulative_seconds_per_total_staked + staked_seconds
+                    ),
+                }
+            );
+        }
+
+        fn find_in_change_log(self: @ContractState, timestamp: u64) -> Option<StakingLogRecord> {
+            // Find first log record in an array whos timestamp is less or equal to timestamp.
+            // Uses binary search.
+            let log = self.staking_log.as_path();
+
+            if log.len() == 0 {
+                return Option::None;
+            }
+            
+            let mut left = 0;
+            let mut right = log.len() - 1;
+            
+            // To avoid reading from the storage multiple times.
+            let mut result_ptr: Option<StoragePath<StakingLogRecord>> = Option::None;
+
+            while (left <= right) {
+                let center = (right + left) / 2;
+                let record = log.at(center);
+                
+                if record.timestamp.read() <= timestamp {
+                    result_ptr = Option::Some(record);
+                    left = center + 1;
+                } else {
+                    right = center - 1;
+                };
+            };
+
+            if let Option::Some(result) = result_ptr {
+                return Option::Some(result.read());
+            }
+            
+            return Option::None;
+        }
     }
+
 
     #[abi(embed_v0)]
     impl StakerImpl of IStaker<ContractState> {
@@ -240,6 +356,7 @@ pub mod Staker {
         }
 
         fn stake_amount(ref self: ContractState, delegate: ContractAddress, amount: u128) {
+            assert(amount != 0, 'PFFFFF');
             let from = get_caller_address();
             let token = self.token.read();
 
@@ -253,6 +370,9 @@ pub mod Staker {
             self
                 .amount_delegated
                 .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) + amount);
+            
+            self.log_change(amount, true);
+            
             self.emit(Staked { from, delegate, amount });
         }
 
@@ -280,6 +400,9 @@ pub mod Staker {
                 .amount_delegated
                 .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) - amount);
             assert(self.token.read().transfer(recipient, amount.into()), 'TRANSFER_FAILED');
+            
+            self.log_change(amount, false);
+            
             self.emit(Withdrawn { from, delegate, to: recipient, amount });
         }
 
@@ -332,6 +455,22 @@ pub mod Staker {
         ) -> u128 {
             let now = get_block_timestamp();
             self.get_average_delegated(delegate, now - period, now)
+        }
+
+        fn get_cumulative_seconds_per_total_staked_at(self: @ContractState, timestamp: u64) -> UFixedPoint {
+            if let Option::Some(log_record) = self.find_in_change_log(timestamp) {
+                let seconds_diff = (timestamp - log_record.timestamp) / 1000;
+                
+                let staked_seconds: UFixedPoint = if log_record.total_staked == 0 {
+                    0_u64.into()
+                } else {
+                    seconds_diff.into() / log_record.total_staked.into()
+                };
+
+                return log_record.cumulative_seconds_per_total_staked + staked_seconds;
+            } else {
+                return 0_u64.into();
+            }
         }
     }
 }
