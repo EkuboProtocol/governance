@@ -58,15 +58,12 @@ pub trait IStaker<TContractState> {
     // Gets the cumulative staked amount * per second staked for the given timestamp and account.
     fn get_cumulative_seconds_per_total_staked_at(self: @TContractState, timestamp: u64) -> UFixedPoint;
 
-    // Gets the cumulative staked amount * per second staked for the given timestamp and account.
-    fn calculate_staked_seconds_for_amount_between(self: @TContractState, token_amount: u128, start_at: u64, end_at: u64) -> u128;
 }
 
 
 #[starknet::contract]
 pub mod Staker {
     use starknet::storage::StorageAsPath;
-use super::super::utils::fp::UFixedPointTrait;
     use core::num::traits::zero::{Zero};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::{
@@ -269,7 +266,11 @@ use super::super::utils::fp::UFixedPointTrait;
             // Might be zero
             let seconds_diff = (get_block_timestamp() - last_record.timestamp) / 1000;
                 
-            let staked_seconds: UFixedPoint = seconds_diff.into() / last_record.total_staked.into(); // staked seconds
+            let staked_seconds: UFixedPoint = if last_record.total_staked == 0 {
+                0_u64.into()
+            } else {
+                seconds_diff.into() / last_record.total_staked.into()
+            };
 
             let total_staked = if is_add {
                 // overflow check
@@ -355,6 +356,7 @@ use super::super::utils::fp::UFixedPointTrait;
         }
 
         fn stake_amount(ref self: ContractState, delegate: ContractAddress, amount: u128) {
+            assert(amount != 0, 'PFFFFF');
             let from = get_caller_address();
             let token = self.token.read();
 
@@ -372,28 +374,6 @@ use super::super::utils::fp::UFixedPointTrait;
             self.log_change(amount, true);
             
             self.emit(Staked { from, delegate, amount });
-        }
-
-        fn calculate_staked_seconds_for_amount_between(
-            self: @ContractState, 
-            token_amount: u128, 
-            start_at: u64, end_at: u64
-        ) -> u128 {
-            let user_cumulative_at_start: UFixedPoint = if let Option::Some(log_record) = self.find_in_change_log(start_at) {
-                log_record.cumulative_seconds_per_total_staked
-            } else {
-                Zero::zero()
-            };
-
-            let user_cumulative_at_end: UFixedPoint = if let Option::Some(log_record) = self.find_in_change_log(start_at) {
-                log_record.cumulative_seconds_per_total_staked
-            } else {
-                Zero::zero()
-            };
-            
-            let res = (user_cumulative_at_end - user_cumulative_at_start) * token_amount.into();
-            
-            return res.get_integer();
         }
 
         fn withdraw(
@@ -480,7 +460,13 @@ use super::super::utils::fp::UFixedPointTrait;
         fn get_cumulative_seconds_per_total_staked_at(self: @ContractState, timestamp: u64) -> UFixedPoint {
             if let Option::Some(log_record) = self.find_in_change_log(timestamp) {
                 let seconds_diff = (timestamp - log_record.timestamp) / 1000;
-                let staked_seconds: UFixedPoint = seconds_diff.into() / log_record.total_staked.into(); // staked seconds
+                
+                let staked_seconds: UFixedPoint = if log_record.total_staked == 0 {
+                    0_u64.into()
+                } else {
+                    seconds_diff.into() / log_record.total_staked.into()
+                };
+
                 return log_record.cumulative_seconds_per_total_staked + staked_seconds;
             } else {
                 return 0_u64.into();

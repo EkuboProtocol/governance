@@ -2,8 +2,10 @@ use starknet::storage_access::{StorePacking};
 use core::num::traits::{WideMul, Zero};
 use core::integer::{u512, u512_safe_div_rem_by_u256};
 
+pub const EPSILON: u256 = 0x10_u256;
+
 // 128.128
-#[derive(Drop, Copy, PartialEq)]
+#[derive(Drop, Copy)]
 pub struct UFixedPoint { 
     pub(crate) value: u512
 }
@@ -15,6 +17,19 @@ pub impl UFixedPointStorePacking of StorePacking<UFixedPoint, u256> {
 
     fn unpack(value: u256) -> UFixedPoint {
         value.into()
+    }
+}
+
+pub impl UFixedPointPartialEq of PartialEq<UFixedPoint> {
+    fn eq(lhs: @UFixedPoint, rhs: @UFixedPoint) -> bool {
+        let left: u256 = (*lhs).into();
+        let right: u256 = (*rhs).into();
+        let diff = if left > right {
+            left - right 
+        } else {
+            right - left
+        };
+        diff < EPSILON
     }
 }
 
@@ -70,7 +85,7 @@ pub(crate) impl U128IntoUFixedPoint of Into<u128, UFixedPoint> {
         UFixedPoint { 
             value: u512 {
                 limb0: 0,           // fractional 
-                limb1: self.into(), // integer
+                limb1: self, // integer
                 limb2: 0,
                 limb3: 0,
             }
@@ -103,7 +118,7 @@ pub impl UFixedPointImpl of UFixedPointTrait {
 }
 
 #[generate_trait]
-impl UFixedPointShiftImpl of BitShiftImpl {
+pub impl UFixedPointShiftImpl of BitShiftImpl {
         
     fn bitshift_128_up(self: UFixedPoint) -> UFixedPoint {
         UFixedPoint { 
@@ -122,6 +137,17 @@ impl UFixedPointShiftImpl of BitShiftImpl {
                 limb0: self.value.limb1, 
                 limb1: self.value.limb2, 
                 limb2: self.value.limb3,
+                limb3: 0,
+            }
+        } 
+    }
+
+    fn bitshift_256_down(self: UFixedPoint) -> UFixedPoint {
+        UFixedPoint { 
+            value: u512 {
+                limb0: self.value.limb2, 
+                limb1: self.value.limb3, 
+                limb2: 0,
                 limb3: 0,
             }
         } 
@@ -166,15 +192,16 @@ pub impl UFpImplMul of Mul<UFixedPoint> {
         let left: u256 = lhs.into();
         let right: u256 = rhs.into();
         
-        let z = left.wide_mul(right);
+        let res = left.wide_mul(right);
         
-        UFixedPoint { value: z }.bitshift_128_down()
+        UFixedPoint { value: res }.bitshift_128_down()
     }
 }
 
 pub impl UFpImplDiv of Div<UFixedPoint> {
     fn div(lhs: UFixedPoint, rhs: UFixedPoint) -> UFixedPoint {
         let rhs: u256 = rhs.into();
+        assert(rhs != 0, 'DIVISION_BY_ZERO');
         
         let (result, _) = u512_safe_div_rem_by_u256(
             lhs.bitshift_128_up().value,
