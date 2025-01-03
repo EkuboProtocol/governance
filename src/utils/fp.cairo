@@ -10,20 +10,20 @@ pub struct UFixedPoint {
     pub(crate) value: u512
 }
 
-pub impl UFixedPointStorePacking of StorePacking<UFixedPoint, u256> {
-    fn pack(value: UFixedPoint) -> u256 {
-        value.into()
+pub impl UFixedPointStorePacking of StorePacking<UFixedPoint, felt252> {
+    fn pack(value: UFixedPoint) -> felt252 {
+        value.try_into().unwrap()
     }
 
-    fn unpack(value: u256) -> UFixedPoint {
+    fn unpack(value: felt252) -> UFixedPoint {
         value.into()
     }
 }
 
 pub impl UFixedPointPartialEq of PartialEq<UFixedPoint> {
     fn eq(lhs: @UFixedPoint, rhs: @UFixedPoint) -> bool {
-        let left: u256 = (*lhs).into();
-        let right: u256 = (*rhs).into();
+        let left: u256 = (*lhs).try_into().unwrap();
+        let right: u256 = (*rhs).try_into().unwrap();
         let diff = if left > right {
             left - right 
         } else {
@@ -57,12 +57,12 @@ pub impl UFixedPointZero of Zero<UFixedPoint> {
 
 impl UFixedPointSerde of core::serde::Serde<UFixedPoint> {
     fn serialize(self: @UFixedPoint, ref output: Array<felt252>) {
-        let value: u256 = (*self).try_into().unwrap();
+        let value: felt252 = (*self).try_into().unwrap();
         Serde::serialize(@value, ref output)
     }
 
     fn deserialize(ref serialized: Span<felt252>) -> Option<UFixedPoint> {
-        let value: u256 = Serde::deserialize(ref serialized)?;
+        let value: felt252 = Serde::deserialize(ref serialized)?;
         Option::Some(value.into())
     }
 }
@@ -103,6 +103,13 @@ pub(crate) impl U256IntoUFixedPoint of Into<u256, UFixedPoint> {
                 limb3: 0,
             }
         } 
+    }
+}
+
+pub(crate) impl Felt252IntoUFixedPoint of Into<felt252, UFixedPoint> {
+    fn into(self: felt252) -> UFixedPoint { 
+        let medium: u256 = self.into();
+        medium.into()
     }
 }
 
@@ -154,13 +161,21 @@ pub impl UFixedPointShiftImpl of BitShiftImpl {
     }
 }
 
-pub(crate) impl FixedPointIntoU256 of Into<UFixedPoint, u256> {
-    fn into(self: UFixedPoint) -> u256 { self.value.try_into().unwrap() }
+pub(crate) impl FixedPointIntoU256 of TryInto<UFixedPoint, u256> {
+    fn try_into(self: UFixedPoint) -> Option<u256> { self.value.try_into() }
 }
+
+pub(crate) impl FixedPointIntoFelt252 of TryInto<UFixedPoint, felt252> {
+    fn try_into(self: UFixedPoint) -> Option<felt252> { 
+        let medium: u256 = self.try_into().unwrap();
+        medium.try_into()
+    }
+}
+
 
 pub impl UFpImplAdd of Add<UFixedPoint> {
     fn add(lhs: UFixedPoint, rhs: UFixedPoint) -> UFixedPoint {
-        let sum: u256 = rhs.into() + lhs.into();
+        let sum: u256 = rhs.try_into().unwrap() + lhs.try_into().unwrap();
         UFixedPoint {
             value: u512 {
                 limb0: sum.low,
@@ -174,7 +189,7 @@ pub impl UFpImplAdd of Add<UFixedPoint> {
 
 pub impl UFpImplSub of Sub<UFixedPoint> {
     fn sub(lhs: UFixedPoint, rhs: UFixedPoint) -> UFixedPoint {
-        let sum: u256 = rhs.into() - lhs.into();
+        let sum: u256 = rhs.try_into().unwrap() - lhs.try_into().unwrap();
         UFixedPoint {
             value: u512 {
                 limb0: sum.low,
@@ -189,8 +204,8 @@ pub impl UFpImplSub of Sub<UFixedPoint> {
 // 20100
 pub impl UFpImplMul of Mul<UFixedPoint> {
     fn mul(lhs: UFixedPoint, rhs: UFixedPoint) -> UFixedPoint {
-        let left: u256 = lhs.into();
-        let right: u256 = rhs.into();
+        let left: u256 = lhs.try_into().unwrap();
+        let right: u256 = rhs.try_into().unwrap();
         
         let res = left.wide_mul(right);
         
@@ -200,7 +215,7 @@ pub impl UFpImplMul of Mul<UFixedPoint> {
 
 pub impl UFpImplDiv of Div<UFixedPoint> {
     fn div(lhs: UFixedPoint, rhs: UFixedPoint) -> UFixedPoint {
-        let rhs: u256 = rhs.into();
+        let rhs: u256 = rhs.try_into().unwrap();
         assert(rhs != 0, 'DIVISION_BY_ZERO');
         
         let (result, _) = u512_safe_div_rem_by_u256(

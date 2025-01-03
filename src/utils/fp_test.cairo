@@ -11,7 +11,7 @@ fn test_add() {
     let f1 : UFixedPoint = 0xFFFFFFFFFFFFFFFF_u64.into();
     let f2 : UFixedPoint = 1_u64.into();
     let res = f1 + f2;
-    let z: u256 = res.into();
+    let z: u256 = res.try_into().unwrap();
     assert(z.low == 0, 'low 0');
     assert(z.high == 18446744073709551616, 'high 18446744073709551616');
 }
@@ -22,7 +22,7 @@ fn test_fp_value_mapping() {
     assert(f1.value.limb0 == 0x0, 'limb0 == 0');
     assert(f1.value.limb1 == 0x7, 'limb1 == 7');
 
-    let val: u256 = f1.into();
+    let val: u256 = f1.try_into().unwrap();
     assert(val == 7_u256*0x100000000000000000000000000000000, 'val has to be 128 bit shifted');
 }
 
@@ -39,7 +39,7 @@ fn test_mul() {
     assert(expected.limb2 == 49, 'limb2==0');
     assert(expected.limb3 == 0, 'limb3==0');
     
-    let res: u256 = (f1 * f2).into();
+    let res: u256 = (f1 * f2).try_into().unwrap();
     assert(res.high == 49, 'high 49');
     assert(res.low == 0, 'low 0');
 }
@@ -64,7 +64,7 @@ fn test_multiplication() {
     assert(expected.low == 0, 'low == 0');
     assert(expected.high == 0x40000000000000000000000000000000, 'high != 0');
 
-    let result: u256 = res.into();
+    let result: u256 = res.try_into().unwrap();
     assert(result == expected, 'unexpected mult result');
 }
 
