@@ -1003,6 +1003,55 @@ fn test_upgrade_succeeds_self_call() {
 
 #[test]
 #[should_panic(expected: ('SELF_CALL_ONLY', 'ENTRYPOINT_FAILED'))]
+fn test_send_message_to_l1_fails_if_not_self_call() {
+    let (_staker, _token, governor, _config) = setup();
+    governor.send_message_to_l1(123_felt252.try_into().unwrap(), array![1, 2, 3].span());
+}
+
+
+#[test]
+fn test_send_message_to_l1_succeeds_self_call() {
+    let (staker, token, governor, config) = setup();
+
+    token.approve(staker.contract_address, config.quorum.into());
+    staker.stake(proposer());
+    advance_time(config.voting_weight_smoothing_duration);
+
+    let id = create_proposal_with_call(
+        governor,
+        token,
+        staker,
+        Call {
+            to: governor.contract_address,
+            selector: selector!("send_message_to_l1"),
+            calldata: array![0xabcd, 2, 0xdead, 0xbeef].span(),
+        },
+    );
+
+    advance_time(config.voting_start_delay);
+
+    set_contract_address(proposer());
+    governor.vote(id, true);
+
+    advance_time(config.voting_period + config.execution_delay);
+
+    governor
+        .execute(
+            id,
+            array![
+                Call {
+                    to: governor.contract_address,
+                    selector: selector!("send_message_to_l1"),
+                    calldata: array![0xabcd, 2, 0xdead, 0xbeef].span(),
+                },
+            ]
+                .span(),
+        );
+}
+
+
+#[test]
+#[should_panic(expected: ('SELF_CALL_ONLY', 'ENTRYPOINT_FAILED'))]
 fn test_reconfigure_fails_if_not_self_call() {
     let (_staker, _token, governor, _config) = setup();
     governor
