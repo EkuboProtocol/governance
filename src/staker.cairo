@@ -1,5 +1,5 @@
 use starknet::{ContractAddress};
-use crate::utils::fp::{UFixedPoint};
+use crate::utils::fp::{UFixedPoint124x128};
 
 
 #[starknet::interface]
@@ -56,7 +56,7 @@ pub trait IStaker<TContractState> {
     ) -> u128;
 
     // Gets the cumulative staked amount * per second staked for the given timestamp and account.
-    fn get_cumulative_seconds_per_total_staked_at(self: @TContractState, timestamp: u64) -> UFixedPoint;
+    fn get_cumulative_seconds_per_total_staked_at(self: @TContractState, timestamp: u64) -> UFixedPoint124x128;
 
 }
 
@@ -70,7 +70,7 @@ pub mod Staker {
         Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry,
         StoragePointerReadAccess, StoragePointerWriteAccess,
     };
-    use crate::utils::fp::{UFixedPoint, UFixedPointZero};
+    use crate::utils::fp::{UFixedPoint124x128, UFixedPoint124x128Zero};
     use crate::staker_log::{StakingLog};
 
     use starknet::{
@@ -357,11 +357,11 @@ pub mod Staker {
             self.get_average_delegated(delegate, now - period, now)
         }
 
-        fn get_cumulative_seconds_per_total_staked_at(self: @ContractState, timestamp: u64) -> UFixedPoint {
+        fn get_cumulative_seconds_per_total_staked_at(self: @ContractState, timestamp: u64) -> UFixedPoint124x128 {
             if let Option::Some(log_record) = self.staking_log.find_in_change_log(timestamp) {
                 let seconds_diff = (timestamp - log_record.timestamp) / 1000;
                 
-                let staked_seconds: UFixedPoint = if log_record.total_staked == 0 {
+                let staked_seconds: UFixedPoint124x128 = if log_record.total_staked == 0 {
                     0_u64.into()
                 } else {
                     seconds_diff.into() / log_record.total_staked.into()

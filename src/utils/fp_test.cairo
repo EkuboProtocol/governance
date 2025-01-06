@@ -2,14 +2,14 @@ use core::num::traits::WideMul;
 use super::fp::BitShiftImpl;
 use super::fp::UFixedPointTrait;
 
-use crate::utils::fp::{UFixedPoint, UFixedPointShiftImpl};
+use crate::utils::fp::{UFixedPoint124x128};
 
 const SCALE_FACTOR: u256 = 0x100000000000000000000000000000000;
 
 #[test]
 fn test_add() {
-    let f1 : UFixedPoint = 0xFFFFFFFFFFFFFFFF_u64.into();
-    let f2 : UFixedPoint = 1_u64.into();
+    let f1 : UFixedPoint124x128 = 0xFFFFFFFFFFFFFFFF_u64.into();
+    let f2 : UFixedPoint124x128 = 1_u64.into();
     let res = f1 + f2;
     let z: u256 = res.into();
     assert_eq!(z.low, 0);
@@ -18,7 +18,7 @@ fn test_add() {
 
 #[test]
 fn test_fp_value_mapping() {
-    let f1 : UFixedPoint = 7_u64.into();
+    let f1 : UFixedPoint124x128 = 7_u64.into();
     assert_eq!(f1.value.low, 0x0);
     assert_eq!(f1.value.high, 0x7);
 
@@ -29,8 +29,8 @@ fn test_fp_value_mapping() {
 
 #[test]
 fn test_mul() {
-    let f1 : UFixedPoint = 7_u64.into();
-    let f2 : UFixedPoint = 7_u64.into();
+    let f1 : UFixedPoint124x128 = 7_u64.into();
+    let f2 : UFixedPoint124x128 = 7_u64.into();
 
     let expected = (7_u256*SCALE_FACTOR).wide_mul(7_u256*SCALE_FACTOR);
     
@@ -46,7 +46,7 @@ fn test_mul() {
 
 #[test]
 fn test_multiplication() {
-    let f1 : UFixedPoint = 9223372036854775808_u128.into();
+    let f1 : UFixedPoint124x128 = 9223372036854775808_u128.into();
     assert_eq!(f1.value.low, 0);
     assert_eq!(f1.value.high, 9223372036854775808_u128);
 
@@ -72,7 +72,7 @@ fn test_u256_conversion() {
     assert_eq!(f.high, 0x0123456789ABCDEFFEDCBA9876543210);
 
     // BITSHIFT DOWN
-    let fp: UFixedPoint = f.into();
+    let fp: UFixedPoint124x128 = f.into();
     assert_eq!(fp.get_integer(), f.high);
     assert_eq!(fp.get_fractional(), f.low);
     
@@ -85,7 +85,7 @@ fn test_u256_conversion() {
     assert_eq!(fp.get_fractional(), 0);
 
     // BITSHIFT UP
-    let fp: UFixedPoint = f.into();
+    let fp: UFixedPoint124x128 = f.into();
     assert_eq!(fp.get_integer(), f.high);
     assert_eq!(fp.get_fractional(), f.low);
 
@@ -99,17 +99,17 @@ fn test_u256_conversion() {
 }
 
 fn run_division_test(left: u128, right: u128, expected_int: u128, expected_frac: u128) {
-    let f1 : UFixedPoint = left.into();
-    let f2 : UFixedPoint = right.into();
+    let f1 : UFixedPoint124x128 = left.into();
+    let f2 : UFixedPoint124x128 = right.into();
     let res = f1 / f2;
     assert_eq!(res.get_integer(), expected_int);
     assert_eq!(res.get_fractional(), expected_frac);
 }
 
 fn run_division_and_multiplication_test(numenator: u128, divisor: u128, mult: u128, expected_int: u128, expected_frac: u128) {
-    let f1 : UFixedPoint = numenator.into();
-    let f2 : UFixedPoint = divisor.into();
-    let f3 : UFixedPoint = mult.into();
+    let f1 : UFixedPoint124x128 = numenator.into();
+    let f2 : UFixedPoint124x128 = divisor.into();
+    let f3 : UFixedPoint124x128 = mult.into();
     let res = f1 / f2 * f3;
     assert_eq!(res.get_integer(), expected_int);
     assert_eq!(res.get_fractional(), expected_frac);

@@ -405,7 +405,7 @@ fn test_delegate_undelegate() {
 
 mod staker_staked_seconds_per_total_staked_calculation {
     use starknet::{get_caller_address};
-    use crate::utils::fp::{UFixedPoint, UFixedPointImpl};
+    use crate::utils::fp::{UFixedPoint124x128, UFixedPoint124x128Impl};
     use super::{ 
         setup, contract_address_const, set_block_timestamp,
         IERC20DispatcherTrait, IStakerDispatcherTrait, 
@@ -466,7 +466,7 @@ mod staker_staked_seconds_per_total_staked_calculation {
     }
     
 
-    fn assert_fp(value: UFixedPoint, integer: u128, fractional: u128) {
+    fn assert_fp(value: UFixedPoint124x128, integer: u128, fractional: u128) {
         assert_eq!(value.get_integer(), integer);
         assert_eq!(value.get_fractional(), fractional);
     }

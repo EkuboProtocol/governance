@@ -13,7 +13,7 @@ use starknet::storage::{
     StoragePointerReadAccess, StoragePointerWriteAccess
 };
 
-use crate::utils::fp::{UFixedPoint, div_u64_by_u128};
+use crate::utils::fp::{UFixedPoint124x128, div_u64_by_u128};
 
 pub type StakingLog = Vec<StakingLogRecord>;
 
@@ -21,7 +21,7 @@ pub type StakingLog = Vec<StakingLogRecord>;
 pub(crate) struct StakingLogRecord {
     pub(crate) timestamp: u64,
     pub(crate) total_staked: u128,
-    pub(crate) cumulative_seconds_per_total_staked: UFixedPoint,
+    pub(crate) cumulative_seconds_per_total_staked: UFixedPoint124x128,
 }
 
 #[generate_trait]
@@ -92,7 +92,7 @@ pub impl StakingLogOperations of LogOperations {
         // Might be zero
         let seconds_diff = (get_block_timestamp() - last_record.timestamp) / 1000;
             
-        let staked_seconds: UFixedPoint = if last_record.total_staked == 0 {
+        let staked_seconds: UFixedPoint124x128 = if last_record.total_staked == 0 {
             0_u64.into()
         } else {
             div_u64_by_u128(seconds_diff, last_record.total_staked)
@@ -156,7 +156,7 @@ pub(crate) impl StakingLogRecordStorePacking of StorePacking<StakingLogRecord, (
 pub(crate) struct StakingLogRecordSubPointers {
     pub(crate) timestamp: StoragePointer<u64>,
     pub(crate) total_staked: StoragePointer<u128>,
-    pub(crate) cumulative_seconds_per_total_staked: StoragePointer<UFixedPoint>,
+    pub(crate) cumulative_seconds_per_total_staked: StoragePointer<UFixedPoint124x128>,
 }
 
 pub(crate) impl StakingLogRecordSubPointersImpl of SubPointers<StakingLogRecord> {
@@ -195,7 +195,7 @@ pub(crate) impl StakingLogRecordSubPointersImpl of SubPointers<StakingLogRecord>
 pub(crate) struct StakingLogRecordSubPointersMut {
     pub(crate) timestamp: StoragePointer<Mutable<u64>>,
     pub(crate) total_staked: StoragePointer<Mutable<u128>>,
-    pub(crate) cumulative_seconds_per_total_staked: StoragePointer<Mutable<UFixedPoint>>,
+    pub(crate) cumulative_seconds_per_total_staked: StoragePointer<Mutable<UFixedPoint124x128>>,
 }
 
 pub(crate) impl StakingLogRecordSubPointersMutImpl of SubPointersMut<StakingLogRecord> {

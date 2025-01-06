@@ -4,24 +4,24 @@ use core::integer::{u512, u512_safe_div_rem_by_u256 };
 
 pub const EPSILON: u256 = 0x10_u256;
 
-// 128.128
+// 64.128
 #[derive(Drop, Copy, Serde)]
-pub struct UFixedPoint { 
+pub struct UFixedPoint124x128 { 
     pub(crate) value: u256
 }
 
-pub impl UFixedPointStorePacking of StorePacking<UFixedPoint, felt252> {
-    fn pack(value: UFixedPoint) -> felt252 {
+pub impl UFixedPoint124x128StorePacking of StorePacking<UFixedPoint124x128, felt252> {
+    fn pack(value: UFixedPoint124x128) -> felt252 {
         value.try_into().unwrap()
     }
 
-    fn unpack(value: felt252) -> UFixedPoint {
+    fn unpack(value: felt252) -> UFixedPoint124x128 {
         value.into()
     }
 }
 
-pub impl UFixedPointPartialEq of PartialEq<UFixedPoint> {
-    fn eq(lhs: @UFixedPoint, rhs: @UFixedPoint) -> bool {
+pub impl UFixedPoint124x128PartialEq of PartialEq<UFixedPoint124x128> {
+    fn eq(lhs: @UFixedPoint124x128, rhs: @UFixedPoint124x128) -> bool {
         let left: u256 = (*lhs).value;
         let right: u256 = (*rhs).value;
 
@@ -35,9 +35,9 @@ pub impl UFixedPointPartialEq of PartialEq<UFixedPoint> {
     }
 }
 
-pub impl UFixedPointZero of Zero<UFixedPoint> {
-    fn zero() -> UFixedPoint {
-        UFixedPoint { 
+pub impl UFixedPoint124x128Zero of Zero<UFixedPoint124x128> {
+    fn zero() -> UFixedPoint124x128 {
+        UFixedPoint124x128 { 
             value: u256 {
                 low: 0,
                 high: 0,
@@ -45,85 +45,63 @@ pub impl UFixedPointZero of Zero<UFixedPoint> {
         }
     }
 
-    fn is_zero(self: @UFixedPoint) -> bool {
+    fn is_zero(self: @UFixedPoint124x128) -> bool {
         self.value.is_zero()
     }
 
-    fn is_non_zero(self: @UFixedPoint) -> bool { !self.is_zero() }
+    fn is_non_zero(self: @UFixedPoint124x128) -> bool { !self.is_zero() }
 }
 
-pub(crate) impl U256IntoUFixedPoint of Into<u256, UFixedPoint> {
-    fn into(self: u256) -> UFixedPoint { UFixedPoint { value: self } }
+pub(crate) impl U256IntoUFixedPoint of Into<u256, UFixedPoint124x128> {
+    fn into(self: u256) -> UFixedPoint124x128 { UFixedPoint124x128 { value: self } }
 }
 
-pub(crate) impl UFixedPointIntoU256 of Into<UFixedPoint, u256> {
-    fn into(self: UFixedPoint) -> u256 { self.value }
+pub(crate) impl UFixedPointIntoU256 of Into<UFixedPoint124x128, u256> {
+    fn into(self: UFixedPoint124x128) -> u256 { self.value }
 }
 
-pub(crate) impl Felt252IntoUFixedPoint of Into<felt252, UFixedPoint> {
-    fn into(self: felt252) -> UFixedPoint { 
+pub(crate) impl Felt252IntoUFixedPoint of Into<felt252, UFixedPoint124x128> {
+    fn into(self: felt252) -> UFixedPoint124x128 { 
         let medium: u256 = self.into();
         medium.into()
     }
 }
 
 #[generate_trait]
-pub impl UFixedPointImpl of UFixedPointTrait {
-    fn get_integer(self: UFixedPoint) -> u128 { self.value.high }
-    fn get_fractional(self: UFixedPoint) -> u128 { self.value.low }
+pub impl UFixedPoint124x128Impl of UFixedPointTrait {
+    fn get_integer(self: UFixedPoint124x128) -> u128 { self.value.high }
+    fn get_fractional(self: UFixedPoint124x128) -> u128 { self.value.low }
 }
 
-#[generate_trait]
-pub impl UFixedPointShiftImpl of BitShiftImpl {
-        
-    fn bitshift_128_up(self: UFixedPoint) -> UFixedPoint {
-        UFixedPoint { 
-            value: u256 {
-                low: 0,                
-                high: self.value.low, 
-            }
-        } 
-    }
-
-    fn bitshift_128_down(self: UFixedPoint) -> UFixedPoint {
-        UFixedPoint { 
-            value: u256 {
-                low: self.value.high, 
-                high: 0, 
-            }
-        } 
-    }
-}
-
-pub(crate) impl FixedPointIntoFelt252 of TryInto<UFixedPoint, felt252> {
-    fn try_into(self: UFixedPoint) -> Option<felt252> { 
+pub(crate) impl UFixedPoint124x128IntoFelt252 of TryInto<UFixedPoint124x128, felt252> {
+    fn try_into(self: UFixedPoint124x128) -> Option<felt252> { 
         self.value.try_into()
     }
 }
 
-pub impl UFpImplAdd of Add<UFixedPoint> {
-    fn add(lhs: UFixedPoint, rhs: UFixedPoint) -> UFixedPoint {
+pub impl UFixedPoint124x128ImplAdd of Add<UFixedPoint124x128> {
+    fn add(lhs: UFixedPoint124x128, rhs: UFixedPoint124x128) -> UFixedPoint124x128 {
         // TODO: overflow checking
-        UFixedPoint {
+        UFixedPoint124x128 {
             value: rhs.value + lhs.value
         }
     }
 }
 
-pub impl UFpImplSub of Sub<UFixedPoint> {
-    fn sub(lhs: UFixedPoint, rhs: UFixedPoint) -> UFixedPoint {
+pub impl UFixedPoint124x128ImplSub of Sub<UFixedPoint124x128> {
+    fn sub(lhs: UFixedPoint124x128, rhs: UFixedPoint124x128) -> UFixedPoint124x128 {
         // TODO: underflow checking
-        UFixedPoint {
+        UFixedPoint124x128 {
             value: rhs.value - lhs.value
         }
     }
 }
 
-pub impl UFpImplMul of Mul<UFixedPoint> {
-    fn mul(lhs: UFixedPoint, rhs: UFixedPoint) -> UFixedPoint {        
+pub impl UFixedPoint124x128ImplMul of Mul<UFixedPoint124x128> {
+    fn mul(lhs: UFixedPoint124x128, rhs: UFixedPoint124x128) -> UFixedPoint124x128 {        
         let res: u512 = lhs.value.wide_mul(rhs.value);
         
-        UFixedPoint { 
+        UFixedPoint124x128 { 
             // res << 128
             value: u256 {
                 low: res.limb1,
@@ -133,8 +111,8 @@ pub impl UFpImplMul of Mul<UFixedPoint> {
     }
 }
 
-pub impl UFpImplDiv of Div<UFixedPoint> {
-    fn div(lhs: UFixedPoint, rhs: UFixedPoint) -> UFixedPoint {        
+pub impl UFixedPoint124x128ImplDiv of Div<UFixedPoint124x128> {
+    fn div(lhs: UFixedPoint124x128, rhs: UFixedPoint124x128) -> UFixedPoint124x128 {        
         let left: u512 = u512 {
             limb0: 0,
             limb1: 0,
@@ -149,7 +127,7 @@ pub impl UFpImplDiv of Div<UFixedPoint> {
             rhs.value.try_into().unwrap(),
         );
 
-        UFixedPoint { 
+        UFixedPoint124x128 { 
             value: u256 {
                 low: result.limb2,
                 high: result.limb3,
@@ -158,14 +136,14 @@ pub impl UFpImplDiv of Div<UFixedPoint> {
     }
 }
 
-pub fn div_u64_by_u128(lhs: u64, rhs: u128) -> UFixedPoint {
+pub fn div_u64_by_u128(lhs: u64, rhs: u128) -> UFixedPoint124x128 {
     // lhs >> 128
     let left: u256 = u256 {
         low: 0,
         high: lhs.into(),
     };
 
-    UFixedPoint {
+    UFixedPoint124x128 {
         value: left / rhs.into()
     }
 }
@@ -174,9 +152,9 @@ pub fn div_u64_by_u128(lhs: u64, rhs: u128) -> UFixedPoint {
 //  TODO: Not sure if that is needed. Tests use it.
 //
 
-pub(crate) impl U64IntoUFixedPoint of Into<u64, UFixedPoint> {
-    fn into(self: u64) -> UFixedPoint { 
-        UFixedPoint { 
+pub(crate) impl U64IntoUFixedPoint of Into<u64, UFixedPoint124x128> {
+    fn into(self: u64) -> UFixedPoint124x128 { 
+        UFixedPoint124x128 { 
             value: u256 {
                 low: 0,            // fractional 
                 high: self.into(), // integer
@@ -185,9 +163,9 @@ pub(crate) impl U64IntoUFixedPoint of Into<u64, UFixedPoint> {
     }
 }
 
-pub(crate) impl U128IntoUFixedPoint of Into<u128, UFixedPoint> {
-    fn into(self: u128) -> UFixedPoint { 
-        UFixedPoint { 
+pub(crate) impl U128IntoUFixedPoint of Into<u128, UFixedPoint124x128> {
+    fn into(self: u128) -> UFixedPoint124x128 { 
+        UFixedPoint124x128 { 
             value: u256 {
                 low: 0,     // fractional 
                 high: self, // integer
