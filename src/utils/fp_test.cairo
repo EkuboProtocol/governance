@@ -11,7 +11,7 @@ fn test_add() {
     let f1 : UFixedPoint = 0xFFFFFFFFFFFFFFFF_u64.into();
     let f2 : UFixedPoint = 1_u64.into();
     let res = f1 + f2;
-    let z: u256 = res.try_into().unwrap();
+    let z: u256 = res.into();
     assert_eq!(z.low, 0);
     assert_eq!(z.high, 18446744073709551616);
 }
@@ -19,10 +19,10 @@ fn test_add() {
 #[test]
 fn test_fp_value_mapping() {
     let f1 : UFixedPoint = 7_u64.into();
-    assert_eq!(f1.value.limb0, 0x0);
-    assert_eq!(f1.value.limb1, 0x7);
+    assert_eq!(f1.value.low, 0x0);
+    assert_eq!(f1.value.high, 0x7);
 
-    let val: u256 = f1.try_into().unwrap();
+    let val: u256 = f1.into();
     assert_eq!(val, 7_u256*0x100000000000000000000000000000000);
 }
 
@@ -39,7 +39,7 @@ fn test_mul() {
     assert_eq!(expected.limb2, 49);
     assert_eq!(expected.limb3, 0);
     
-    let res: u256 = (f1 * f2).try_into().unwrap();
+    let res: u256 = (f1 * f2).into();
     assert_eq!(res.high, 49);
     assert_eq!(res.low, 0);
 }
@@ -47,24 +47,20 @@ fn test_mul() {
 #[test]
 fn test_multiplication() {
     let f1 : UFixedPoint = 9223372036854775808_u128.into();
-    assert_eq!(f1.value.limb0, 0);
-    assert_eq!(f1.value.limb1, 9223372036854775808_u128);
-    assert_eq!(f1.value.limb2, 0);
-    assert_eq!(f1.value.limb3, 0);
+    assert_eq!(f1.value.low, 0);
+    assert_eq!(f1.value.high, 9223372036854775808_u128);
 
     let res = f1 * f1;
 
-    assert_eq!(res.value.limb0, 0);
-    assert_eq!(res.value.limb1, 0x40000000000000000000000000000000);
-    assert_eq!(res.value.limb2, 0);
-    assert_eq!(res.value.limb3, 0);
+    assert_eq!(res.value.low, 0);
+    assert_eq!(res.value.high, 0x40000000000000000000000000000000);
 
     let expected = 9223372036854775808_u128.wide_mul(9223372036854775808_u128) * SCALE_FACTOR;
 
     assert_eq!(expected.low, 0);
     assert_eq!(expected.high, 0x40000000000000000000000000000000);
 
-    let result: u256 = res.try_into().unwrap();
+    let result: u256 = res.into();
     assert(result == expected, 'unexpected mult result');
 }
 

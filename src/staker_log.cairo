@@ -1,17 +1,19 @@
-use starknet::storage::StoragePointerWriteAccess;
 use starknet::storage::MutableVecTrait;
-use starknet::{ContractAddress, Store, get_block_timestamp};
+use starknet::{Store, get_block_timestamp};
 use starknet::storage_access::{StorePacking};
 
 use starknet::storage::{
     Vec, VecTrait
 };
 use starknet::storage::{
-    StoragePointer, StorageBase, StoragePath, StorageAsPath, 
-    SubPointers, SubPointersMut, Mutable, StoragePointerReadAccess
+    StoragePointer, 
+    StorageBase, Mutable,
+    StoragePath, StorageAsPath, 
+    SubPointers, SubPointersMut, 
+    StoragePointerReadAccess, StoragePointerWriteAccess
 };
 
-use crate::utils::fp::{UFixedPoint};
+use crate::utils::fp::{UFixedPoint, div_u64_by_u128};
 
 pub type StakingLog = Vec<StakingLogRecord>;
 
@@ -93,7 +95,7 @@ pub impl StakingLogOperations of LogOperations {
         let staked_seconds: UFixedPoint = if last_record.total_staked == 0 {
             0_u64.into()
         } else {
-            seconds_diff.into() / last_record.total_staked.into()
+            div_u64_by_u128(seconds_diff, last_record.total_staked)
         };
 
         let total_staked = if is_add {
