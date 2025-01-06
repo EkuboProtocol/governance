@@ -63,16 +63,15 @@ pub trait IStaker<TContractState> {
 
 #[starknet::contract]
 pub mod Staker {
-    use starknet::storage::StorageAsPath;
+    use super::super::staker_log::LogOperations;
     use core::num::traits::zero::{Zero};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::{
-        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry, StoragePath,
+        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry,
         StoragePointerReadAccess, StoragePointerWriteAccess,
-        Vec, VecTrait, MutableVecTrait,
     };
     use crate::utils::fp::{UFixedPoint, UFixedPointZero};
-    use crate::staker_storage::{StakingLogRecord};
+    use crate::staker_log::{StakingLog};
 
     use starknet::{
         get_block_timestamp, get_caller_address, get_contract_address,
@@ -118,7 +117,7 @@ pub mod Staker {
         delegated_cumulative_num_snapshots: Map<ContractAddress, u64>,
         delegated_cumulative_snapshot: Map<ContractAddress, Map<u64, DelegatedSnapshot>>,
         
-        staking_log: Vec<StakingLogRecord>,
+        staking_log: StakingLog,
     }
 
     #[constructor]
@@ -228,100 +227,6 @@ pub mod Staker {
             }
         }
 
-        fn log_change(ref self: ContractState, amount: u128, is_add: bool) {
-            let log = self.staking_log.as_path();
-
-            if log.len() == 0 {
-                // Add the first record. If withdrawal, then it's underflow.
-                assert(is_add, 'BAD AMOUNT'); 
-
-                log.append().write(
-                    StakingLogRecord {
-                        timestamp: get_block_timestamp(),
-                        total_staked: amount,
-                        cumulative_seconds_per_total_staked: 0_u64.into(),
-                    }
-                );
-                
-                return;
-            }
-
-            let last_record_ptr = log.at(log.len() - 1);
-                
-            let mut last_record = last_record_ptr.read();
-
-            let mut record = if last_record.timestamp == get_block_timestamp() {
-                // update record
-                last_record_ptr 
-            } else {
-                // create new record
-                log.append()
-            };
-
-            // Might be zero
-            let seconds_diff = (get_block_timestamp() - last_record.timestamp) / 1000;
-                
-            let staked_seconds: UFixedPoint = if last_record.total_staked == 0 {
-                0_u64.into()
-            } else {
-                seconds_diff.into() / last_record.total_staked.into()
-            };
-
-            let total_staked = if is_add {
-                // overflow check
-                assert(last_record.total_staked + amount >= last_record.total_staked, 'BAD AMOUNT'); 
-                last_record.total_staked + amount
-            } else {
-                // underflow check
-                assert(last_record.total_staked >= amount, 'BAD AMOUNT'); 
-                last_record.total_staked - amount
-            };
-
-            // Add a new record.
-            record.write(
-                StakingLogRecord {
-                    timestamp: get_block_timestamp(),
-                    total_staked: total_staked,
-                    cumulative_seconds_per_total_staked: (
-                        last_record.cumulative_seconds_per_total_staked + staked_seconds
-                    ),
-                }
-            );
-        }
-
-        fn find_in_change_log(self: @ContractState, timestamp: u64) -> Option<StakingLogRecord> {
-            // Find first log record in an array whos timestamp is less or equal to timestamp.
-            // Uses binary search.
-            let log = self.staking_log.as_path();
-
-            if log.len() == 0 {
-                return Option::None;
-            }
-            
-            let mut left = 0;
-            let mut right = log.len() - 1;
-            
-            // To avoid reading from the storage multiple times.
-            let mut result_ptr: Option<StoragePath<StakingLogRecord>> = Option::None;
-
-            while (left <= right) {
-                let center = (right + left) / 2;
-                let record = log.at(center);
-                
-                if record.timestamp.read() <= timestamp {
-                    result_ptr = Option::Some(record);
-                    left = center + 1;
-                } else {
-                    right = center - 1;
-                };
-            };
-
-            if let Option::Some(result) = result_ptr {
-                return Option::Some(result.read());
-            }
-            
-            return Option::None;
-        }
     }
 
 
@@ -366,7 +271,7 @@ pub mod Staker {
                 .amount_delegated
                 .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) + amount);
             
-            self.log_change(amount, true);
+            self.staking_log.log_change(amount, true);
             
             self.emit(Staked { from, delegate, amount });
         }
@@ -396,7 +301,7 @@ pub mod Staker {
                 .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) - amount);
             assert(self.token.read().transfer(recipient, amount.into()), 'TRANSFER_FAILED');
             
-            self.log_change(amount, false);
+            self.staking_log.log_change(amount, false);
             
             self.emit(Withdrawn { from, delegate, to: recipient, amount });
         }
@@ -436,7 +341,7 @@ pub mod Staker {
         fn get_average_delegated(
             self: @ContractState, delegate: ContractAddress, start: u64, end: u64,
         ) -> u128 {
-            assert(end > start, 'ORDER');
+            assert(end > start, '6');
             assert(end <= get_block_timestamp(), 'FUTURE');
 
             let start_snapshot = self.get_delegated_cumulative(delegate, start);
@@ -453,7 +358,7 @@ pub mod Staker {
         }
 
         fn get_cumulative_seconds_per_total_staked_at(self: @ContractState, timestamp: u64) -> UFixedPoint {
-            if let Option::Some(log_record) = self.find_in_change_log(timestamp) {
+            if let Option::Some(log_record) = self.staking_log.find_in_change_log(timestamp) {
                 let seconds_diff = (timestamp - log_record.timestamp) / 1000;
                 
                 let staked_seconds: UFixedPoint = if log_record.total_staked == 0 {

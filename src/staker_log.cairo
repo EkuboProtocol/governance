@@ -1,8 +1,19 @@
-use starknet::{ContractAddress, Store};
+use starknet::storage::StoragePointerWriteAccess;
+use starknet::storage::MutableVecTrait;
+use starknet::{ContractAddress, Store, get_block_timestamp};
 use starknet::storage_access::{StorePacking};
-use starknet::storage::{StoragePointer, SubPointers, SubPointersMut, Mutable};
+
+use starknet::storage::{
+    Vec, VecTrait
+};
+use starknet::storage::{
+    StoragePointer, StorageBase, StoragePath, StorageAsPath, 
+    SubPointers, SubPointersMut, Mutable, StoragePointerReadAccess
+};
+
 use crate::utils::fp::{UFixedPoint};
 
+pub type StakingLog = Vec<StakingLogRecord>;
 
 #[derive(Drop, Serde)]
 pub(crate) struct StakingLogRecord {
@@ -10,6 +21,108 @@ pub(crate) struct StakingLogRecord {
     pub(crate) total_staked: u128,
     pub(crate) cumulative_seconds_per_total_staked: UFixedPoint,
 }
+
+#[generate_trait]
+pub impl StakingLogOperations of LogOperations {
+    fn find_in_change_log(self: @StorageBase<StakingLog>, timestamp: u64) -> Option<StakingLogRecord> {
+        let log = self.as_path();
+
+        if log.len() == 0 {
+            return Option::None;
+        }
+        
+        let mut left = 0;
+        let mut right = log.len() - 1;
+        
+        // To avoid reading from the storage multiple times.
+        let mut result_ptr: Option<StoragePath<StakingLogRecord>> = Option::None;
+
+        while (left <= right) {
+            let center = (right + left) / 2;
+            let record = log.at(center);
+            
+            if record.timestamp.read() <= timestamp {
+                result_ptr = Option::Some(record);
+                left = center + 1;
+            } else {
+                right = center - 1;
+            };
+        };
+
+        if let Option::Some(result) = result_ptr {
+            return Option::Some(result.read());
+        }
+        
+        return Option::None;
+    }
+
+    // TODO: shall I use ref here?
+    fn log_change(self: StorageBase<Mutable<StakingLog>>, amount: u128, is_add: bool) {
+        let log = self.as_path();
+
+        if log.len() == 0 {
+            // Add the first record. If withdrawal, then it's underflow.
+            assert(is_add, 'BAD AMOUNT'); 
+
+            log.append().write(
+                StakingLogRecord {
+                    timestamp: get_block_timestamp(),
+                    total_staked: amount,
+                    cumulative_seconds_per_total_staked: 0_u64.into(),
+                }
+            );
+            
+            return;
+        }
+
+        let last_record_ptr = log.at(log.len() - 1);
+            
+        let mut last_record = last_record_ptr.read();
+
+        let mut record = if last_record.timestamp == get_block_timestamp() {
+            // update record
+            last_record_ptr 
+        } else {
+            // create new record
+            log.append()
+        };
+
+        // Might be zero
+        let seconds_diff = (get_block_timestamp() - last_record.timestamp) / 1000;
+            
+        let staked_seconds: UFixedPoint = if last_record.total_staked == 0 {
+            0_u64.into()
+        } else {
+            seconds_diff.into() / last_record.total_staked.into()
+        };
+
+        let total_staked = if is_add {
+            // overflow check
+            assert(last_record.total_staked + amount >= last_record.total_staked, 'BAD AMOUNT'); 
+            last_record.total_staked + amount
+        } else {
+            // underflow check
+            assert(last_record.total_staked >= amount, 'BAD AMOUNT'); 
+            last_record.total_staked - amount
+        };
+
+        // Add a new record.
+        record.write(
+            StakingLogRecord {
+                timestamp: get_block_timestamp(),
+                total_staked: total_staked,
+                cumulative_seconds_per_total_staked: (
+                    last_record.cumulative_seconds_per_total_staked + staked_seconds
+                ),
+            }
+        );
+    }
+}
+
+
+// 
+// Storage layout for StakingLogRecord
+// 
 
 pub(crate) impl StakingLogRecordStorePacking of StorePacking<StakingLogRecord, (felt252, felt252)> {
     fn pack(value: StakingLogRecord) -> (felt252, felt252) {
