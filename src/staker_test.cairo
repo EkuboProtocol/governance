@@ -467,8 +467,8 @@ mod staker_staked_seconds_per_total_staked_calculation {
     
 
     fn assert_fp(value: UFixedPoint, integer: u128, fractional: u128) {
-        assert(value.get_integer() == integer, 'Integer part is not correct');
-        assert(value.get_fractional() == fractional, 'Fractional part is not correct');
+        assert_eq!(value.get_integer(), integer);
+        assert_eq!(value.get_fractional(), fractional);
     }
 
 

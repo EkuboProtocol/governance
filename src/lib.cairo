@@ -16,6 +16,7 @@ pub mod governor;
 mod governor_test;
 
 pub mod staker;
+pub mod staker_storage;
 #[cfg(test)]
 mod staker_test;
 

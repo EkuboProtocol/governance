@@ -72,6 +72,7 @@ pub mod Staker {
         Vec, VecTrait, MutableVecTrait,
     };
     use crate::utils::fp::{UFixedPoint, UFixedPointZero};
+    use crate::staker_storage::{StakingLogRecord};
 
     use starknet::{
         get_block_timestamp, get_caller_address, get_contract_address,
@@ -107,41 +108,10 @@ pub mod Staker {
         }
     }
 
-    #[derive(Drop, Serde)]
-    struct StakingLogRecord {
-        timestamp: u64,
-        total_staked: u128,
-        cumulative_seconds_per_total_staked: UFixedPoint,
-    }
-
-    pub impl StakingLogRecordStorePacking of StorePacking<StakingLogRecord, (felt252, felt252)> {
-        fn pack(value: StakingLogRecord) -> (felt252, felt252) {
-            let first: felt252 = u256 {
-                high: value.timestamp.into(),
-                low: value.total_staked,
-            }.try_into().unwrap();
-            
-            let second: felt252 = value.cumulative_seconds_per_total_staked
-                .try_into()
-                .unwrap();
-            
-            (first, second)
-        }
-    
-        fn unpack(value: (felt252, felt252)) -> StakingLogRecord {
-            let (packed_ts_total_staked, cumulative_seconds_per_total_staked) = value;
-            let medium: u256 = packed_ts_total_staked.into();
-            StakingLogRecord {
-                timestamp: medium.high.try_into().unwrap(),
-                total_staked: medium.low,
-                cumulative_seconds_per_total_staked: cumulative_seconds_per_total_staked.try_into().unwrap(),
-            }
-        }
-    }
-
     #[storage]
     struct Storage {
         token: IERC20Dispatcher,
+        
         // owner, delegate => amount
         staked: Map<(ContractAddress, ContractAddress), u128>,
         amount_delegated: Map<ContractAddress, u128>,

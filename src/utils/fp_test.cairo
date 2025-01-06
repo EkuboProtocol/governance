@@ -12,18 +12,18 @@ fn test_add() {
     let f2 : UFixedPoint = 1_u64.into();
     let res = f1 + f2;
     let z: u256 = res.try_into().unwrap();
-    assert(z.low == 0, 'low 0');
-    assert(z.high == 18446744073709551616, 'high 18446744073709551616');
+    assert_eq!(z.low, 0);
+    assert_eq!(z.high, 18446744073709551616);
 }
 
 #[test]
 fn test_fp_value_mapping() {
     let f1 : UFixedPoint = 7_u64.into();
-    assert(f1.value.limb0 == 0x0, 'limb0 == 0');
-    assert(f1.value.limb1 == 0x7, 'limb1 == 7');
+    assert_eq!(f1.value.limb0, 0x0);
+    assert_eq!(f1.value.limb1, 0x7);
 
     let val: u256 = f1.try_into().unwrap();
-    assert(val == 7_u256*0x100000000000000000000000000000000, 'val has to be 128 bit shifted');
+    assert_eq!(val, 7_u256*0x100000000000000000000000000000000);
 }
 
 
@@ -34,35 +34,35 @@ fn test_mul() {
 
     let expected = (7_u256*SCALE_FACTOR).wide_mul(7_u256*SCALE_FACTOR);
     
-    assert(expected.limb0 == 0, 'limb0==0');
-    assert(expected.limb1 == 0, 'limb1==0');
-    assert(expected.limb2 == 49, 'limb2==0');
-    assert(expected.limb3 == 0, 'limb3==0');
+    assert_eq!(expected.limb0, 0);
+    assert_eq!(expected.limb1, 0);
+    assert_eq!(expected.limb2, 49);
+    assert_eq!(expected.limb3, 0);
     
     let res: u256 = (f1 * f2).try_into().unwrap();
-    assert(res.high == 49, 'high 49');
-    assert(res.low == 0, 'low 0');
+    assert_eq!(res.high, 49);
+    assert_eq!(res.low, 0);
 }
 
 #[test]
 fn test_multiplication() {
     let f1 : UFixedPoint = 9223372036854775808_u128.into();
-    assert(f1.value.limb0 == 0, 'f1.limb0 0= 0');
-    assert(f1.value.limb1 == 9223372036854775808_u128, 'f1.limb1 != 0');
-    assert(f1.value.limb2 == 0, 'f1.limb2 == 0');
-    assert(f1.value.limb3 == 0, 'f1.limb3 == 0');
+    assert_eq!(f1.value.limb0, 0);
+    assert_eq!(f1.value.limb1, 9223372036854775808_u128);
+    assert_eq!(f1.value.limb2, 0);
+    assert_eq!(f1.value.limb3, 0);
 
     let res = f1 * f1;
 
-    assert(res.value.limb0 == 0, 'res.limb0 != 0');
-    assert(res.value.limb1 == 0x40000000000000000000000000000000, 'res.limb1 != 0');
-    assert(res.value.limb2 == 0, 'res.limb2 == 0');
-    assert(res.value.limb3 == 0, 'res.limb3 == 0');
+    assert_eq!(res.value.limb0, 0);
+    assert_eq!(res.value.limb1, 0x40000000000000000000000000000000);
+    assert_eq!(res.value.limb2, 0);
+    assert_eq!(res.value.limb3, 0);
 
     let expected = 9223372036854775808_u128.wide_mul(9223372036854775808_u128) * SCALE_FACTOR;
 
-    assert(expected.low == 0, 'low == 0');
-    assert(expected.high == 0x40000000000000000000000000000000, 'high != 0');
+    assert_eq!(expected.low, 0);
+    assert_eq!(expected.high, 0x40000000000000000000000000000000);
 
     let result: u256 = res.try_into().unwrap();
     assert(result == expected, 'unexpected mult result');
@@ -72,42 +72,42 @@ fn test_multiplication() {
 fn test_u256_conversion() {
     let f: u256 = 0x0123456789ABCDEFFEDCBA987654321000112233445566778899AABBCCDDEEFF_u256;
     
-    assert(f.low == 0x00112233445566778899AABBCCDDEEFF, 'low');
-    assert(f.high == 0x0123456789ABCDEFFEDCBA9876543210, 'high');
+    assert_eq!(f.low, 0x00112233445566778899AABBCCDDEEFF);
+    assert_eq!(f.high, 0x0123456789ABCDEFFEDCBA9876543210);
 
     // BITSHIFT DOWN
     let fp: UFixedPoint = f.into();
-    assert(fp.get_integer() == f.high, 'integer == f.high');
-    assert(fp.get_fractional() == f.low, 'fractional == f.low');
+    assert_eq!(fp.get_integer(), f.high);
+    assert_eq!(fp.get_fractional(), f.low);
     
     let fp = fp.bitshift_128_down();
-    assert(fp.get_integer() == 0, 'integer==0 bs_down');
-    assert(fp.get_fractional() == f.high, 'fractional == f.low bs_down');
+    assert_eq!(fp.get_integer(), 0);
+    assert_eq!(fp.get_fractional(), f.high);
     
     let fp = fp.bitshift_128_down();
-    assert(fp.get_integer() == 0, 'integer==0 bs_down 2');
-    assert(fp.get_fractional() == 0, 'fractional == 0 bs_down 2');
+    assert_eq!(fp.get_integer(), 0);
+    assert_eq!(fp.get_fractional(), 0);
 
     // BITSHIFT UP
     let fp: UFixedPoint = f.into();
-    assert(fp.get_integer() == f.high, 'integer == f.high');
-    assert(fp.get_fractional() == f.low, 'fractional == f.low');
+    assert_eq!(fp.get_integer(), f.high);
+    assert_eq!(fp.get_fractional(), f.low);
 
     let fp = fp.bitshift_128_up();
-    assert(fp.get_integer() == f.low, 'integer == f.high bs_up');
-    assert(fp.get_fractional() == 0, 'fractional == f.low bs_up');
+    assert_eq!(fp.get_integer(), f.low);
+    assert_eq!(fp.get_fractional(), 0);
 
     let fp = fp.bitshift_128_up();
-    assert(fp.get_integer() == 0, 'integer == f.high bs_up');
-    assert(fp.get_fractional() == 0, 'fractional == f.low bs_up');
+    assert_eq!(fp.get_integer(), 0);
+    assert_eq!(fp.get_fractional(), 0);
 }
 
 fn run_division_test(left: u128, right: u128, expected_int: u128, expected_frac: u128) {
     let f1 : UFixedPoint = left.into();
     let f2 : UFixedPoint = right.into();
     let res = f1 / f2;
-    assert(res.get_integer() == expected_int, 'integer');
-    assert(res.get_fractional() == expected_frac, 'fractional');
+    assert_eq!(res.get_integer(), expected_int);
+    assert_eq!(res.get_fractional(), expected_frac);
 }
 
 fn run_division_and_multiplication_test(numenator: u128, divisor: u128, mult: u128, expected_int: u128, expected_frac: u128) {
@@ -115,8 +115,8 @@ fn run_division_and_multiplication_test(numenator: u128, divisor: u128, mult: u1
     let f2 : UFixedPoint = divisor.into();
     let f3 : UFixedPoint = mult.into();
     let res = f1 / f2 * f3;
-    assert(res.get_integer() == expected_int, 'integer');
-    assert(res.get_fractional() == expected_frac, 'fractional');
+    assert_eq!(res.get_integer(), expected_int);
+    assert_eq!(res.get_fractional(), expected_frac);
 }
 
 
