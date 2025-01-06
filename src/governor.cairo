@@ -1,7 +1,7 @@
 use governance::execution_state::{ExecutionState};
 use governance::staker::{IStakerDispatcher};
 use starknet::account::{Call};
-use starknet::{ClassHash, ContractAddress};
+use starknet::{ClassHash, ContractAddress, EthAddress};
 
 #[derive(Copy, Drop, Serde, starknet::Store, PartialEq, Debug)]
 pub struct ProposalInfo {
@@ -92,6 +92,9 @@ pub trait IGovernor<TContractState> {
     // Replaces the code at this address. This must be self-called via a proposal.
     fn upgrade(ref self: TContractState, class_hash: ClassHash);
 
+    // Sends a message to L1 via syscall
+    fn send_message_to_l1(self: @TContractState, to_address: EthAddress, payload: Span<felt252>);
+
     // Migrates to the latest version of storage layout, from the version of storage before v2.1.0
     fn _migrate_old_config_storage(ref self: TContractState);
 }
@@ -110,11 +113,11 @@ pub mod Governor {
     use starknet::storage_access::{Store, storage_base_address_from_felt252};
     use starknet::{
         AccountContract, get_block_timestamp, get_caller_address, get_contract_address, get_tx_info,
-        syscalls::{replace_class_syscall},
+        syscalls::{replace_class_syscall, send_message_to_l1_syscall},
     };
     use super::{
         Call, ClassHash, Config, ContractAddress, ExecutionState, IGovernor, IStakerDispatcher,
-        ProposalInfo,
+        ProposalInfo, EthAddress,
     };
 
 
@@ -457,6 +460,14 @@ pub mod Governor {
             self.check_self_call();
 
             replace_class_syscall(class_hash).unwrap();
+        }
+
+        fn send_message_to_l1(
+            self: @ContractState, to_address: EthAddress, payload: Span<felt252>,
+        ) {
+            self.check_self_call();
+
+            send_message_to_l1_syscall(to_address.into(), payload).expect('SYSCALL_FAILED')
         }
 
         fn _migrate_old_config_storage(ref self: ContractState) {
