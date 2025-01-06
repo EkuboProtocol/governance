@@ -1,5 +1,4 @@
 use core::num::traits::WideMul;
-use super::fp::BitShiftImpl;
 use super::fp::UFixedPointTrait;
 
 use crate::utils::fp::{UFixedPoint124x128};
@@ -71,31 +70,9 @@ fn test_u256_conversion() {
     assert_eq!(f.low, 0x00112233445566778899AABBCCDDEEFF);
     assert_eq!(f.high, 0x0123456789ABCDEFFEDCBA9876543210);
 
-    // BITSHIFT DOWN
     let fp: UFixedPoint124x128 = f.into();
     assert_eq!(fp.get_integer(), f.high);
     assert_eq!(fp.get_fractional(), f.low);
-    
-    let fp = fp.bitshift_128_down();
-    assert_eq!(fp.get_integer(), 0);
-    assert_eq!(fp.get_fractional(), f.high);
-    
-    let fp = fp.bitshift_128_down();
-    assert_eq!(fp.get_integer(), 0);
-    assert_eq!(fp.get_fractional(), 0);
-
-    // BITSHIFT UP
-    let fp: UFixedPoint124x128 = f.into();
-    assert_eq!(fp.get_integer(), f.high);
-    assert_eq!(fp.get_fractional(), f.low);
-
-    let fp = fp.bitshift_128_up();
-    assert_eq!(fp.get_integer(), f.low);
-    assert_eq!(fp.get_fractional(), 0);
-
-    let fp = fp.bitshift_128_up();
-    assert_eq!(fp.get_integer(), 0);
-    assert_eq!(fp.get_fractional(), 0);
 }
 
 fn run_division_test(left: u128, right: u128, expected_int: u128, expected_frac: u128) {
