@@ -256,7 +256,6 @@ pub mod Staker {
         }
 
         fn stake_amount(ref self: ContractState, delegate: ContractAddress, amount: u128) {
-            assert(amount != 0, 'PFFFFF');
             let from = get_caller_address();
             let token = self.token.read();
 
@@ -341,7 +340,7 @@ pub mod Staker {
         fn get_average_delegated(
             self: @ContractState, delegate: ContractAddress, start: u64, end: u64,
         ) -> u128 {
-            assert(end > start, '6');
+            assert(end > start, 'ORDER');
             assert(end <= get_block_timestamp(), 'FUTURE');
 
             let start_snapshot = self.get_delegated_cumulative(delegate, start);

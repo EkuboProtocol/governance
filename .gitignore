@@ -1,7 +1,7 @@
 .env
 .vscode
 .starkli
-
+.DS_Store
 #######
 Scarb
 #######

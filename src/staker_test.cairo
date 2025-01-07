@@ -515,7 +515,7 @@ mod staker_staked_seconds_per_total_staked_calculation {
         assert_fp(staker.get_cumulative_seconds_per_total_staked_at(8000), 2, 0x80000000000000000000000000000000_u128);
         assert_fp(staker.get_cumulative_seconds_per_total_staked_at(9000), 2, 0x80000000000000000000000000000000_u128);
         assert_fp(staker.get_cumulative_seconds_per_total_staked_at(10000), 2, 0x80000000000000000000000000000000_u128);
-        // 7 were staked here
+        // // 7 were staked here
         assert_fp(staker.get_cumulative_seconds_per_total_staked_at(17000), 3, 0x80000000000000000000000000000000_u128);
         assert_fp(staker.get_cumulative_seconds_per_total_staked_at(24000), 4, 0x80000000000000000000000000000000_u128);
     }

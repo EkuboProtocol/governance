@@ -8,9 +8,9 @@ pub const EPSILON: u256 = 0x10_u256;
 pub const MAX_INT: u128 = 0x10000000000000000000000000000000_u128;
 
 // 124.128 (= 252 which 1 felt exactly) 
-#[derive(Drop, Copy, Serde)]
+#[derive(Debug, Drop, Copy, Serde)]
 pub struct UFixedPoint124x128 { 
-    pub(crate) value: u256
+    value: u256
 }
 
 pub mod Errors {
@@ -149,11 +149,11 @@ pub impl UFixedPoint124x128ImplDiv of Div<UFixedPoint124x128> {
 
         let res = UFixedPoint124x128 { 
             value: u256 {
-                low: div_res.limb2,
-                high: div_res.limb3,
+                low: div_res.limb1,
+                high: div_res.limb2,
             }
         };
-
+        
         res.validate();
 
         res

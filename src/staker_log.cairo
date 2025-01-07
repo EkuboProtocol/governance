@@ -9,7 +9,7 @@ use starknet::storage::{
     StoragePointer, 
     StorageBase, Mutable,
     StoragePath, StorageAsPath, 
-    SubPointers, SubPointersMut, 
+    SubPointers, 
     StoragePointerReadAccess, StoragePointerWriteAccess
 };
 
@@ -43,7 +43,8 @@ pub impl StakingLogOperations of LogOperations {
             let center = (right + left) / 2;
             let record = log.at(center);
             
-            if record.timestamp.read() <= timestamp {
+            let record_part = record.packed_timestamp_and_total_staked.read();
+            if record_part.timestamp <= timestamp {
                 result_ptr = Option::Some(record);
                 left = center + 1;
             } else {
@@ -128,34 +129,64 @@ pub impl StakingLogOperations of LogOperations {
 
 pub(crate) impl StakingLogRecordStorePacking of StorePacking<StakingLogRecord, (felt252, felt252)> {
     fn pack(value: StakingLogRecord) -> (felt252, felt252) {
-        let first: felt252 = u256 {
-            high: value.timestamp.into(),
-            low: value.total_staked,
-        }.try_into().unwrap();
+        let packed_ts_total_staked: felt252 = PackedValuesStorePacking::pack((value.timestamp, value.total_staked).into());
         
-        let second: felt252 = value.cumulative_seconds_per_total_staked
+        let cumulative_seconds_per_total_staked: felt252 = value.cumulative_seconds_per_total_staked
             .try_into()
             .unwrap();
         
-        (first, second)
+        (packed_ts_total_staked, cumulative_seconds_per_total_staked)
     }
 
     fn unpack(value: (felt252, felt252)) -> StakingLogRecord {
         let (packed_ts_total_staked, cumulative_seconds_per_total_staked) = value;
-        let medium: u256 = packed_ts_total_staked.into();
+        let record = PackedValuesStorePacking::unpack(packed_ts_total_staked);
         StakingLogRecord {
-            timestamp: medium.high.try_into().unwrap(),
-            total_staked: medium.low,
+            timestamp: record.timestamp,
+            total_staked: record.total_staked,
             cumulative_seconds_per_total_staked: cumulative_seconds_per_total_staked.try_into().unwrap(),
         }
     }
 }
 
+#[derive(Drop, Serde)]
+pub(crate) struct PackedPart {
+    timestamp: u64,
+    total_staked: u128,
+}
+
+pub(crate) impl TupleToPackedPart of Into<(u64, u128), PackedPart> {
+    fn into(self: (u64, u128)) -> PackedPart { 
+        let (timestamp, total_staked) = self;
+        PackedPart { timestamp: timestamp, total_staked: total_staked } 
+    }
+}
+
+pub impl PackedValuesStorePacking of StorePacking<PackedPart, felt252> {
+    fn pack(value: PackedPart) -> felt252 {
+        u256 {
+            high: value.timestamp.into(),
+            low: value.total_staked,
+        }.try_into().unwrap()
+    }
+
+    fn unpack(value: felt252) -> PackedPart {
+        let packed_ts_total_staked_u256: u256 = value.into();
+        PackedPart {
+            timestamp: packed_ts_total_staked_u256.high.try_into().unwrap(), 
+            total_staked: packed_ts_total_staked_u256.low
+        }
+    }
+}
+
+
+//
+// Record subpoiters allow to minimase memory read operarions. Thus while doing binary search we ca read only 1 felt252 from memory.
+//
 
 #[derive(Drop, Copy)]
 pub(crate) struct StakingLogRecordSubPointers {
-    pub(crate) timestamp: StoragePointer<u64>,
-    pub(crate) total_staked: StoragePointer<u128>,
+    pub(crate) packed_timestamp_and_total_staked: StoragePointer<PackedPart>,
     pub(crate) cumulative_seconds_per_total_staked: StoragePointer<UFixedPoint124x128>,
 }
 
@@ -166,68 +197,19 @@ pub(crate) impl StakingLogRecordSubPointersImpl of SubPointers<StakingLogRecord>
     fn sub_pointers(self: StoragePointer<StakingLogRecord>) -> StakingLogRecordSubPointers {
         let base_address = self.__storage_pointer_address__;
 
-        let mut current_offset = self.__storage_pointer_offset__;
-        let __packed_low_128__ = StoragePointer {
+        let total_staked_ptr = StoragePointer {
             __storage_pointer_address__: base_address, 
-            __storage_pointer_offset__: current_offset,
+            __storage_pointer_offset__: self.__storage_pointer_offset__,
         };
 
-        let __packed_high_124__ = StoragePointer {
+        let cumulative_seconds_per_total_staked_ptr = StoragePointer {
             __storage_pointer_address__: base_address, 
-            __storage_pointer_offset__: current_offset + Store::<u128>::size(),
-        };
-
-        current_offset = current_offset + Store::<felt252>::size();
-        let __packed_felt2__ = StoragePointer {
-            __storage_pointer_address__: base_address, 
-            __storage_pointer_offset__: current_offset,
+            __storage_pointer_offset__: self.__storage_pointer_offset__ + Store::<felt252>::size(),
         };
 
         StakingLogRecordSubPointers {
-            timestamp: __packed_high_124__,
-            total_staked: __packed_low_128__,
-            cumulative_seconds_per_total_staked: __packed_felt2__,
-        }
-    }
-}
-
-#[derive(Drop, Copy)]
-pub(crate) struct StakingLogRecordSubPointersMut {
-    pub(crate) timestamp: StoragePointer<Mutable<u64>>,
-    pub(crate) total_staked: StoragePointer<Mutable<u128>>,
-    pub(crate) cumulative_seconds_per_total_staked: StoragePointer<Mutable<UFixedPoint124x128>>,
-}
-
-pub(crate) impl StakingLogRecordSubPointersMutImpl of SubPointersMut<StakingLogRecord> {
-    
-    type SubPointersType = StakingLogRecordSubPointersMut;
-
-    fn sub_pointers_mut(
-        self: StoragePointer<Mutable<StakingLogRecord>>,
-    ) -> StakingLogRecordSubPointersMut {
-        let base_address = self.__storage_pointer_address__;
-
-        let mut current_offset = self.__storage_pointer_offset__;
-        let __packed_low_128__ = StoragePointer {
-            __storage_pointer_address__: base_address, 
-            __storage_pointer_offset__: current_offset,
-        };
-
-        let __packed_high_124__ = StoragePointer {
-            __storage_pointer_address__: base_address, 
-            __storage_pointer_offset__: current_offset + Store::<u128>::size(),
-        };
-
-        current_offset = current_offset + Store::<felt252>::size();
-        let __packed_felt2__ = StoragePointer {
-            __storage_pointer_address__: base_address, 
-            __storage_pointer_offset__: current_offset,
-        };
-
-        StakingLogRecordSubPointersMut {
-            timestamp: __packed_high_124__,
-            total_staked: __packed_low_128__,
-            cumulative_seconds_per_total_staked: __packed_felt2__,
+            packed_timestamp_and_total_staked: total_staked_ptr,
+            cumulative_seconds_per_total_staked: cumulative_seconds_per_total_staked_ptr,
         }
     }
 }
