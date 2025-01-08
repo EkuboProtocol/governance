@@ -1,11 +1,12 @@
 use starknet::storage_access::{StorePacking};
-use core::num::traits::{WideMul, Zero};
+use core::num::traits::{WideMul, Zero };
 use core::integer::{u512, u512_safe_div_rem_by_u256 };
 
 pub const EPSILON: u256 = 0x10_u256;
 
 // 2^124
 pub const MAX_INT: u128 = 0x10000000000000000000000000000000_u128;
+pub const HALF: u128 = 0x80000000000000000000000000000000_u128;
 
 // 124.128 (= 252 which 1 felt exactly) 
 #[derive(Debug, Drop, Copy, Serde)]
@@ -79,6 +80,14 @@ pub(crate) impl Felt252IntoUFixedPoint of Into<felt252, UFixedPoint124x128> {
 pub impl UFixedPoint124x128Impl of UFixedPointTrait {
     fn get_integer(self: UFixedPoint124x128) -> u128 { self.value.high }
     fn get_fractional(self: UFixedPoint124x128) -> u128 { self.value.low }
+    
+    fn round(self: UFixedPoint124x128) -> u128 {
+        self.get_integer() + if (self.get_fractional() >= HALF) {
+            1
+        } else {
+            0
+        }
+    }
 
     fn validate(self: UFixedPoint124x128) { 
         assert(self.value.high < MAX_INT, Errors::INTEGER_OVERFLOW);
@@ -106,27 +115,10 @@ pub impl UFixedPoint124x128ImplSub of Sub<UFixedPoint124x128> {
     fn sub(lhs: UFixedPoint124x128, rhs: UFixedPoint124x128) -> UFixedPoint124x128 {
         // TODO: underflow checking
         let res = UFixedPoint124x128 {
-            value: rhs.value - lhs.value
+            value: lhs.value - rhs.value
         };
         res.validate();
         
-        res
-    }
-}
-
-pub impl UFixedPoint124x128ImplMul of Mul<UFixedPoint124x128> {
-    fn mul(lhs: UFixedPoint124x128, rhs: UFixedPoint124x128) -> UFixedPoint124x128 {        
-        let mult_res: u512 = lhs.value.wide_mul(rhs.value);
-
-        let res = UFixedPoint124x128 { 
-            // res << 128
-            value: u256 {
-                low: mult_res.limb1,
-                high: mult_res.limb2,
-            }
-        };
-        res.validate();
-
         res
     }
 }
@@ -178,9 +170,28 @@ pub fn div_u64_by_u128(lhs: u64, rhs: u128) -> UFixedPoint124x128 {
     res
 }
 
-//
-//  TODO: Not sure if that is needed. Tests use it.
-//
+pub fn div_u64_by_fixed_point(lhs: u64, rhs: UFixedPoint124x128) -> UFixedPoint124x128 {
+    assert(!rhs.is_zero(), Errors::DIVISION_BY_ZERO);
+    
+    lhs.into() / rhs
+}
+
+pub fn mul_fp_by_u128(lhs: UFixedPoint124x128, rhs: u128) -> UFixedPoint124x128 {
+    let mult_res = lhs.value.wide_mul(rhs.into());
+    
+    // TODO: add overflow check
+
+    let res = UFixedPoint124x128 {
+        value: u256 {
+            low: mult_res.limb0,
+            high: mult_res.limb1,
+        }
+    };
+
+    res.validate();
+
+    res
+}
 
 pub(crate) impl U64IntoUFixedPoint of Into<u64, UFixedPoint124x128> {
     fn into(self: u64) -> UFixedPoint124x128 { 
@@ -190,20 +201,5 @@ pub(crate) impl U64IntoUFixedPoint of Into<u64, UFixedPoint124x128> {
                 high: self.into(), // integer
             }
         } 
-    }
-}
-
-pub(crate) impl U128IntoUFixedPoint of Into<u128, UFixedPoint124x128> {
-    fn into(self: u128) -> UFixedPoint124x128 { 
-        let res = UFixedPoint124x128 { 
-            value: u256 {
-                low: 0,     // fractional 
-                high: self, // integer
-            }
-        };
-
-        res.validate();
-
-        res
     }
 }

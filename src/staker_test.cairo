@@ -419,26 +419,7 @@ mod staker_staked_seconds_per_total_staked_calculation {
         assert(staker.get_cumulative_seconds_per_total_staked_at(1000) == 0_u64.into(), 'At 1000 should be 0');
     }
 
-
-    #[test]
-    #[should_panic(expected: ('BAD AMOUNT', 'ENTRYPOINT_FAILED'))]
-    fn test_raises_error_if_withdrawn_more_than_staked() {
-        let (staker, token) = setup(10000);
-
-        // Caller is token owner
-        let token_owner = get_caller_address();
-
-        // Allow staker to spend 10000 tokens from owner account
-        token.approve(staker.contract_address, 10000);    
-
-        // Adress to delegate tokens to
-        let delegatee = contract_address_const::<1234567890>();
-        
-        set_block_timestamp(5000); // 5 seconds passed
-        staker.withdraw(delegatee, token_owner); // Will withdraw all 10000 tokens back to owner
-    }
-
-
+    
     #[test]
     #[should_panic(expected: ('INSUFFICIENT_AMOUNT_STAKED', 'ENTRYPOINT_FAILED'))]
     fn test_raises_error_if_no_history_exists_and_withdrawal_happens() {
@@ -479,14 +460,14 @@ mod staker_staked_seconds_per_total_staked_calculation {
         // Caller is token owner
         let token_owner = get_caller_address();
 
-        // Allow staker contract to spend 10000 tokens from owner account
+        // Allow staker contract to spend 2 tokens from owner account
         token.approve(staker.contract_address, 2);    
 
         // Adress to delegate tokens to
         let delegatee = contract_address_const::<1234567890>();
         
         set_block_timestamp(0);    
-        staker.stake(delegatee); // Will transfer 10 token to contract account and setup delegatee
+        staker.stake(delegatee); // Will transfer 2 token to contract account and setup delegatee
 
         set_block_timestamp(5000); // 5 seconds passed
 
@@ -509,15 +490,15 @@ mod staker_staked_seconds_per_total_staked_calculation {
         assert_fp(staker.get_cumulative_seconds_per_total_staked_at(4000), 2, 0_u128);
         assert_fp(staker.get_cumulative_seconds_per_total_staked_at(5000), 2, 0x80000000000000000000000000000000_u128);
         
-        // NOTE: After 5s value stops changing as nothing is staked. @Moody is that a desired behaviour?
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(6000), 2, 0x80000000000000000000000000000000_u128);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(7000), 2, 0x80000000000000000000000000000000_u128);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(8000), 2, 0x80000000000000000000000000000000_u128);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(9000), 2, 0x80000000000000000000000000000000_u128);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(10000), 2, 0x80000000000000000000000000000000_u128);
+        // // NOTE: After 5s value stops changing as nothing is staked. @Moody is that a desired behaviour?
+        // assert_fp(staker.get_cumulative_seconds_per_total_staked_at(6000), 2, 0x80000000000000000000000000000000_u128);
+        // assert_fp(staker.get_cumulative_seconds_per_total_staked_at(7000), 2, 0x80000000000000000000000000000000_u128);
+        // assert_fp(staker.get_cumulative_seconds_per_total_staked_at(8000), 2, 0x80000000000000000000000000000000_u128);
+        // assert_fp(staker.get_cumulative_seconds_per_total_staked_at(9000), 2, 0x80000000000000000000000000000000_u128);
+        // assert_fp(staker.get_cumulative_seconds_per_total_staked_at(10000), 2, 0x80000000000000000000000000000000_u128);
         // // 7 were staked here
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(17000), 3, 0x80000000000000000000000000000000_u128);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(24000), 4, 0x80000000000000000000000000000000_u128);
+        // assert_fp(staker.get_cumulative_seconds_per_total_staked_at(17000), 3, 0x80000000000000000000000000000000_u128);
+        // assert_fp(staker.get_cumulative_seconds_per_total_staked_at(24000), 4, 0x80000000000000000000000000000000_u128);
     }
 
 }

@@ -1,9 +1,25 @@
 use core::num::traits::WideMul;
 use super::fp::UFixedPointTrait;
 
-use crate::utils::fp::{UFixedPoint124x128, div_u64_by_u128};
+use crate::utils::fp::{
+    UFixedPoint124x128, 
+    div_u64_by_u128, mul_fp_by_u128, div_u64_by_fixed_point,
+    MAX_INT
+};
 
 const SCALE_FACTOR: u256 = 0x100000000000000000000000000000000;
+
+
+pub(crate) impl U64IntoUFixedPoint of Into<u128, UFixedPoint124x128> {
+    fn into(self: u128) -> UFixedPoint124x128 { 
+        let medium = u256 {
+            low: 0,
+            high: self,
+        };
+        medium.into()
+    }
+}
+
 
 #[test]
 fn test_add() {
@@ -28,8 +44,8 @@ fn test_fp_value_mapping() {
 
 #[test]
 fn test_mul() {
-    let f1 : UFixedPoint124x128 = 7_u64.into();
-    let f2 : UFixedPoint124x128 = 7_u64.into();
+    let f1 = 7_u64;
+    let f2 = 7_u64;
 
     let expected = (7_u256*SCALE_FACTOR).wide_mul(7_u256*SCALE_FACTOR);
     
@@ -38,7 +54,7 @@ fn test_mul() {
     assert_eq!(expected.limb2, 49);
     assert_eq!(expected.limb3, 0);
     
-    let res: u256 = (f1 * f2).into();
+    let res: u256 = mul_fp_by_u128(f1.into(), f2.try_into().unwrap()).into();
     assert_eq!(res.high, 49);
     assert_eq!(res.low, 0);
 }
@@ -46,41 +62,9 @@ fn test_mul() {
 #[test]
 #[should_panic(expected: 'INTEGER_OVERFLOW')]
 fn test_multiplication_overflow() {
-    let f1 : UFixedPoint124x128 = 9223372036854775808_u128.into();
-    assert_eq!(f1.get_fractional(), 0);
-    assert_eq!(f1.get_integer(), 9223372036854775808_u128);
-
-    let res = f1 * f1;
-
-    assert_eq!(res.get_fractional(), 0);
-    assert_eq!(res.get_integer(), 0x40000000000000000000000000000000);
-
-    let expected = 9223372036854775808_u128.wide_mul(9223372036854775808_u128) * SCALE_FACTOR;
-
-    assert_eq!(expected.low, 0);
-    assert_eq!(expected.high, 0x40000000000000000000000000000000);
-
-    let result: u256 = res.into();
-    assert(result == expected, 'unexpected mult result');
-}
-
-#[test]
-fn test_multiplication() {
-    let f1 : UFixedPoint124x128 = 1152921504606846976_u128.into();
-    let f2 : UFixedPoint124x128 = 9223372036854775808_u128.into();
-
-    let res = f1 * f2;
-
-    assert_eq!(res.get_fractional(), 0);
-    assert_eq!(res.get_integer(), 0x8000000000000000000000000000000);
-
-    let expected = 1152921504606846976_u128.wide_mul(9223372036854775808_u128) * SCALE_FACTOR;
-
-    assert_eq!(expected.low, 0);
-    assert_eq!(expected.high, 0x8000000000000000000000000000000);
-
-    let result: u256 = res.into();
-    assert(result == expected, 'unexpected mult result');
+    let f1 = MAX_INT - 1;
+    let f2 = MAX_INT - 1;
+    let _ = mul_fp_by_u128(f1.into(), f2.try_into().unwrap());
 }
 
 #[test]
@@ -102,22 +86,10 @@ fn run_division_test(left: u64, right: u128, expected_int: u128, expected_frac: 
     assert_eq!(res.get_fractional(), expected_frac);
 }
 
-fn run_division_test_using_class(left: u64, right: u128, expected_int: u128, expected_frac: u128) {
-    let f1 : UFixedPoint124x128 = left.into();
-    let f2 : UFixedPoint124x128 = right.into();
+fn run_division_and_multiplication_test(numenator: u64, divisor: u128, mult: u128, expected_int: u128, expected_frac: u128) {
+    let divided = div_u64_by_u128(numenator, divisor);
+    let res = mul_fp_by_u128(divided, mult);
 
-    let res = f1 / f2;
-
-    assert_eq!(res.get_integer(), expected_int);
-    assert_eq!(res.get_fractional(), expected_frac);
-}
-
-fn run_division_and_multiplication_test(numenator: u128, divisor: u128, mult: u128, expected_int: u128, expected_frac: u128) {
-    let f1 : UFixedPoint124x128 = numenator.into();
-    let f2 : UFixedPoint124x128 = divisor.into();
-    let f3 : UFixedPoint124x128 = mult.into();
-    
-    let res = f1 / f2 * f3;
     assert_eq!(res.get_integer(), expected_int);
     assert_eq!(res.get_fractional(), expected_frac);
 }
@@ -151,18 +123,6 @@ fn test_division() {
     run_division_test(0x46106cf2302ff8fa, 0xf6d765c9, 0x48a9ec96, 0x44eb3c9b3e7337e3750761dca19c8098);
     run_division_test(0xe4311b247d0fccd4, 0x751c9792, 0x1f2d0b9ef, 0xb5e4969913d37a40ba6cc33b74a5ea6d);
     run_division_test(0x7bc92347ffca33de, 0x73038c20, 0x113864700, 0xa7549c75ef40e011c8ab37b7f05a706d);
-    
-    run_division_test_using_class(0x51cb6348d4f073eb, 0xae797e7d, 0x7803938f, 0xc7836eec158af9487775eb8656cf38fc);
-    run_division_test_using_class(0x62337e9d72ddfb51, 0x59214f47, 0x11a0dcac3, 0x1acf56e174d88003af63f46791468df3);
-    run_division_test_using_class(0xd5ecb2a682ba1fee, 0x865f3300, 0x1978f8bd2, 0x3354716b276ed7e6c759e14d58ab5767);
-    run_division_test_using_class(0xda53f5e167d39325, 0x491317ba, 0x2fcdca379, 0xcaab30305da3be6620c494367695761e);
-    run_division_test_using_class(0x22afcdd641467cd1, 0xdedbc9d, 0x27d85372e, 0x76e1c4fe6939db4dcd8b67f2def5c102);
-    run_division_test_using_class(0x37bc576886b36435, 0x9563dc74, 0x5f82b8e1, 0xc7c4701f73ebf57b4c59d2f357775a0d);
-    run_division_test_using_class(0x84bd569f3d7ce768, 0x555d2820, 0x18e1384ee, 0x596b1a4ce6995f4a1229e9f185ec0672);
-    run_division_test_using_class(0x46106cf2302ff8fa, 0xf6d765c9, 0x48a9ec96, 0x44eb3c9b3e7337e3750761dca19c8098);
-    run_division_test_using_class(0xe4311b247d0fccd4, 0x751c9792, 0x1f2d0b9ef, 0xb5e4969913d37a40ba6cc33b74a5ea6d);
-    run_division_test_using_class(0x7bc92347ffca33de, 0x73038c20, 0x113864700, 0xa7549c75ef40e011c8ab37b7f05a706d);
-    
 
     run_division_test(0x72895698b8a67aa2, 0x6b27b2f8336c0bc, 0x11, 0x1a2768bb9a123be83f2c893726d5d4dc);
     run_division_test(0xe43e43db78e75c8c, 0x3bafd02937f52e73, 0x3, 0xd2f2c717d8d53457b6c4d8a0c400ef74);
@@ -175,6 +135,54 @@ fn test_division() {
     run_division_test(0xdca981c1e1cb4c1e, 0xf9c9c0425b10334d, 0x0, 0xe226541f530d56041cd7834f878fe4fa);
     run_division_test(0x2c70aa99601005b4, 0xb2df598860e0ece4, 0x0, 0x3f9a241362c5996e29f7867cd85a8403);
 }
+
+#[test]
+fn test_division_by_fixed_point_and_rounding() {
+    let half = div_u64_by_u128(1_u64, 2_u128);
+    
+    assert_eq!(div_u64_by_fixed_point(0, half).round(), 0_u128);
+    assert_eq!(div_u64_by_fixed_point(1, half).round(), 2_u128);
+    assert_eq!(div_u64_by_fixed_point(50, half).round(), 100_u128);
+    
+    let one_over_thousand = div_u64_by_u128(1_u64, 1000_u128);
+    assert_eq!(div_u64_by_fixed_point(100, one_over_thousand).round(), 100000_u128);
+    assert_eq!(div_u64_by_fixed_point(200, one_over_thousand).round(), 200000_u128);
+    assert_eq!(div_u64_by_fixed_point(300, one_over_thousand).round(), 300000_u128);
+    assert_eq!(div_u64_by_fixed_point(400, one_over_thousand).round(), 400000_u128);
+    assert_eq!(div_u64_by_fixed_point(500, one_over_thousand).round(), 500000_u128);
+    assert_eq!(div_u64_by_fixed_point(600, one_over_thousand).round(), 600000_u128);
+    assert_eq!(div_u64_by_fixed_point(700, one_over_thousand).round(), 700000_u128);
+    assert_eq!(div_u64_by_fixed_point(800, one_over_thousand).round(), 800000_u128);
+    assert_eq!(div_u64_by_fixed_point(900, one_over_thousand).round(), 900000_u128);
+
+    let one_over_four = div_u64_by_u128(1_u64, 4_u128);
+    assert_eq!(div_u64_by_fixed_point(1, one_over_four).round(), 4_u128);
+    assert_eq!(div_u64_by_fixed_point(2, one_over_four).round(), 8_u128);
+    assert_eq!(div_u64_by_fixed_point(3, one_over_four).round(), 12_u128);
+    assert_eq!(div_u64_by_fixed_point(4, one_over_four).round(), 16_u128);
+
+    let six = div_u64_by_u128(6_u64, 1_u128);
+
+    assert_eq!(div_u64_by_fixed_point(1, six).round(), 0_u128);
+    assert_eq!(div_u64_by_fixed_point(2, six).round(), 0_u128);
+    assert_eq!(div_u64_by_fixed_point(3, six).round(), 1_u128);
+    assert_eq!(div_u64_by_fixed_point(4, six).round(), 1_u128);
+    assert_eq!(div_u64_by_fixed_point(5, six).round(), 1_u128);
+    assert_eq!(div_u64_by_fixed_point(6, six).round(), 1_u128);
+    assert_eq!(div_u64_by_fixed_point(7, six).round(), 1_u128);
+    assert_eq!(div_u64_by_fixed_point(8, six).round(), 1_u128);
+    assert_eq!(div_u64_by_fixed_point(9, six).round(), 2_u128);
+    assert_eq!(div_u64_by_fixed_point(10, six).round(), 2_u128);
+}
+
+#[test]
+fn test_substraction() {
+    let one_over_four = div_u64_by_u128(1_u64, 4_u128);
+    let one_over_two = div_u64_by_u128(1_u64, 2_u128);
+
+    assert_eq!(one_over_two - one_over_four, one_over_four);
+}
+
 
 #[test]
 fn test_division_and_multiplication_by() {
