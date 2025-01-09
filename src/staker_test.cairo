@@ -17,11 +17,8 @@ use starknet::{
 
 pub(crate) fn setup(amount: u256) -> (IStakerDispatcher, IERC20Dispatcher) {
     let token = deploy_token(get_contract_address(), amount);
-    
-    let class_hash: ClassHash = Staker::TEST_CLASS_HASH.try_into().unwrap();
-
     let (staker_address, _) = deploy_syscall(
-        class_hash,
+        Staker::TEST_CLASS_HASH.try_into().unwrap(),
         0,
         array![token.contract_address.into()].span(),
         true,
@@ -412,7 +409,6 @@ mod staker_staked_seconds_per_total_staked_calculation {
         IERC20DispatcherTrait, IStakerDispatcherTrait, 
     };
 
-
     #[test]
     fn test_should_return_0_if_no_data_found() {
         let (staker, _) = setup(10000);
@@ -420,7 +416,6 @@ mod staker_staked_seconds_per_total_staked_calculation {
         assert_fp(staker.get_cumulative_seconds_per_total_staked_at(1000), 0, 0_u128.into());
     }
 
-    
     #[test]
     #[should_panic(expected: ('INSUFFICIENT_AMOUNT_STAKED', 'ENTRYPOINT_FAILED'))]
     fn test_raises_error_if_no_history_exists_and_withdrawal_happens() {
@@ -446,7 +441,6 @@ mod staker_staked_seconds_per_total_staked_calculation {
         set_block_timestamp(4000);
         staker.withdraw_amount(delegatee, token_owner, 2000);
     }
-    
 
     fn assert_fp(value: UFixedPoint124x128, integer: u128, fractional: u128) {
         assert_eq!(value.get_integer(), integer);
@@ -500,5 +494,4 @@ mod staker_staked_seconds_per_total_staked_calculation {
         assert_fp(staker.get_cumulative_seconds_per_total_staked_at(17000), 3, 0x80000000000000000000000000000000_u128);
         assert_fp(staker.get_cumulative_seconds_per_total_staked_at(24000), 4, 0x80000000000000000000000000000000_u128);
     }
-
 }

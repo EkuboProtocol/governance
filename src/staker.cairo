@@ -1,7 +1,6 @@
 use starknet::{ContractAddress};
 use crate::utils::fp::{UFixedPoint124x128};
 
-
 #[starknet::interface]
 pub trait IStaker<TContractState> {
     // Returns the token this staker references.
@@ -57,14 +56,11 @@ pub trait IStaker<TContractState> {
 
     // Gets the cumulative staked amount * per second staked for the given timestamp and account.
     fn get_cumulative_seconds_per_total_staked_at(self: @TContractState, timestamp: u64) -> UFixedPoint124x128;
-
 }
-
 
 #[starknet::contract]
 pub mod Staker {
     use starknet::storage::VecTrait;
-use super::super::staker_log::LogOperations;
     use core::num::traits::zero::{Zero};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::{
@@ -75,7 +71,7 @@ use super::super::staker_log::LogOperations;
         UFixedPoint124x128, UFixedPoint124x128Zero, div_u64_by_u128, div_u64_by_fixed_point,
         UFixedPoint124x128Impl,
     };
-    use crate::staker_log::{StakingLog};
+    use crate::staker_log::{StakingLog, LogOperations};
 
     use starknet::{
         get_block_timestamp, get_caller_address, get_contract_address,
@@ -114,13 +110,11 @@ use super::super::staker_log::LogOperations;
     #[storage]
     struct Storage {
         token: IERC20Dispatcher,
-        
         // owner, delegate => amount
         staked: Map<(ContractAddress, ContractAddress), u128>,
         amount_delegated: Map<ContractAddress, u128>,
         delegated_cumulative_num_snapshots: Map<ContractAddress, u64>,
         delegated_cumulative_snapshot: Map<ContractAddress, Map<u64, DelegatedSnapshot>>,
-        
         total_staked: u128,
         staking_log: StakingLog,
     }
@@ -231,12 +225,10 @@ use super::super::staker_log::LogOperations;
                 self.find_delegated_cumulative(delegate, mid, max_index_exclusive, timestamp)
             }
         }
-
     }
 
-
     #[abi(embed_v0)]
-    impl StakerImpl of IStaker<ContractState> {        
+    impl StakerImpl of IStaker<ContractState> {
         fn get_token(self: @ContractState) -> ContractAddress {
             self.token.read().contract_address
         }
