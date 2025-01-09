@@ -56,7 +56,7 @@ pub trait IStaker<TContractState> {
     ) -> u128;
 
     // Gets the cumulative staked amount * per second staked for the given timestamp and account.
-    fn get_cumulative_seconds_per_total_staked_at(self: @TContractState, timestamp: u64) -> Option<UFixedPoint124x128>;
+    fn get_cumulative_seconds_per_total_staked_at(self: @TContractState, timestamp: u64) -> UFixedPoint124x128;
 
 }
 
@@ -368,10 +368,10 @@ use super::super::staker_log::LogOperations;
             self.get_average_delegated(delegate, now - period, now)
         }
 
-        fn get_cumulative_seconds_per_total_staked_at(self: @ContractState, timestamp: u64) -> Option<UFixedPoint124x128> {
+        fn get_cumulative_seconds_per_total_staked_at(self: @ContractState, timestamp: u64) -> UFixedPoint124x128 {
             if let Option::Some((log_record, idx)) = self.staking_log.find_in_change_log(timestamp) {
 
-                let total_staked = if (idx == self.staking_log.len()) {
+                let total_staked = if (idx == self.staking_log.len() - 1) {
                     // if last rescord found
                     self.total_staked.read()
                 } else {
@@ -381,7 +381,7 @@ use super::super::staker_log::LogOperations;
                     let divisor = next_log_record.cumulative_seconds_per_total_staked - log_record.cumulative_seconds_per_total_staked;
 
                     if divisor.is_zero() {
-                        return Option::None;
+                        return 0_u64.into();
                     }
 
                     let total_staked_fp = div_u64_by_fixed_point(
@@ -393,7 +393,6 @@ use super::super::staker_log::LogOperations;
                     total_staked_fp.round()
                 };
                 
-                
                 let seconds_diff = (timestamp - log_record.timestamp) / 1000;
                 
                 let staked_seconds: UFixedPoint124x128 = if total_staked == 0 {
@@ -402,10 +401,10 @@ use super::super::staker_log::LogOperations;
                     div_u64_by_u128(seconds_diff, total_staked)
                 };
 
-                return Option::Some(log_record.cumulative_seconds_per_total_staked + staked_seconds);
-            } else {
-                return Option::Some(0_u64.into());
-            }
+                return log_record.cumulative_seconds_per_total_staked + staked_seconds;
+            } 
+
+            return 0_u64.into();
         }
     }
 }

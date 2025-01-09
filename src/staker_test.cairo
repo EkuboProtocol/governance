@@ -415,8 +415,8 @@ mod staker_staked_seconds_per_total_staked_calculation {
     #[test]
     fn test_should_return_0_if_no_data_found() {
         let (staker, _) = setup(10000);
-        assert(staker.get_cumulative_seconds_per_total_staked_at(0) == 0_u64.into(), 'At 0 should be 0');
-        assert(staker.get_cumulative_seconds_per_total_staked_at(1000) == 0_u64.into(), 'At 1000 should be 0');
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(0),    0, 0_u128.into());
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(1000), 0, 0_u128.into());
     }
 
     
@@ -480,25 +480,24 @@ mod staker_staked_seconds_per_total_staked_calculation {
         token.approve(staker.contract_address, 7);  
         staker.stake(delegatee); // Will transfer 7 token to contract account and setup delegatee
         
-        assert(staker.get_cumulative_seconds_per_total_staked_at(0) == 0_u64.into(), 'At 0 should be 0');
-        assert(staker.get_cumulative_seconds_per_total_staked_at(500) == 0_u64.into(), 'At 500 should be 0');
-        assert(staker.get_cumulative_seconds_per_total_staked_at(999) == 0_u64.into(), 'At 999 should be 0');
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(0),   0, 0_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(500), 0, 0_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(999), 0, 0_u128);
         
         assert_fp(staker.get_cumulative_seconds_per_total_staked_at(1000), 0, 0x80000000000000000000000000000000_u128);
         assert_fp(staker.get_cumulative_seconds_per_total_staked_at(2000), 1, 0_u128);
         assert_fp(staker.get_cumulative_seconds_per_total_staked_at(3000), 1, 0x80000000000000000000000000000000_u128);
         assert_fp(staker.get_cumulative_seconds_per_total_staked_at(4000), 2, 0_u128);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(5000), 2, 0x80000000000000000000000000000000_u128);
         
-        // // NOTE: After 5s value stops changing as nothing is staked. @Moody is that a desired behaviour?
-        // assert_fp(staker.get_cumulative_seconds_per_total_staked_at(6000), 2, 0x80000000000000000000000000000000_u128);
-        // assert_fp(staker.get_cumulative_seconds_per_total_staked_at(7000), 2, 0x80000000000000000000000000000000_u128);
-        // assert_fp(staker.get_cumulative_seconds_per_total_staked_at(8000), 2, 0x80000000000000000000000000000000_u128);
-        // assert_fp(staker.get_cumulative_seconds_per_total_staked_at(9000), 2, 0x80000000000000000000000000000000_u128);
-        // assert_fp(staker.get_cumulative_seconds_per_total_staked_at(10000), 2, 0x80000000000000000000000000000000_u128);
-        // // 7 were staked here
-        // assert_fp(staker.get_cumulative_seconds_per_total_staked_at(17000), 3, 0x80000000000000000000000000000000_u128);
-        // assert_fp(staker.get_cumulative_seconds_per_total_staked_at(24000), 4, 0x80000000000000000000000000000000_u128);
+        // here value is undefined as nothing was staked.
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(5000), 0, 0_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(6000), 0, 0_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(7000), 0, 0_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(8000), 0, 0_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(9000), 0, 0_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(10000), 2, 0x80000000000000000000000000000000_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(17000), 3, 0x80000000000000000000000000000000_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(24000), 4, 0x80000000000000000000000000000000_u128);
     }
 
 }
