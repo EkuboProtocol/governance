@@ -47,6 +47,14 @@ Contracts in this repository are designed so that they may be used together _or_
 - Proposers may only have one active proposal at any time
 - The contract can be upgraded via calls to self
 
+#### StarknetOwnerProxy.sol: L1 Proxy
+
+`StarknetOwnerProxy` enables the L2 governor contract to perform actions on L1 via proposals that call `self#send_message_to_l1`.
+
+- The `EthAddress` should be the address of a `StarknetOwnerProxy` referencing the Governor L2 address
+- The payload can be computed by calling the `getPayload` view function on the deployed `StarknetOwnerProxy`
+- Once the message is accepted on L1, anyone can call `StarknetOwnerProxy#execute` with the proposal's specified `target`, `value` and `data`.
+
 ## Testing
 
 Make sure you have [Scarb with asdf](https://docs.swmansion.com/scarb/download#install-via-asdf) installed. You can look at the _.tool-versions_ file to know which version of Scarb is currently used.
