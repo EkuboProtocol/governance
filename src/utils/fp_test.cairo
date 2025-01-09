@@ -22,13 +22,13 @@ pub(crate) impl U64IntoUFixedPoint of Into<u128, UFixedPoint124x128> {
 
 
 #[test]
-fn test_add() {
+fn test_add() {                  
     let f1 : UFixedPoint124x128 = 0xFFFFFFFFFFFFFFFF_u64.into();
     let f2 : UFixedPoint124x128 = 1_u64.into();
     let res = f1 + f2;
     let z: u256 = res.into();
     assert_eq!(z.low, 0);
-    assert_eq!(z.high, 18446744073709551616);
+    assert_eq!(z.high, 0x10000000000000000);
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn test_mul() {
 }
 
 #[test]
-#[should_panic(expected: 'INTEGER_OVERFLOW')]
+#[should_panic(expected: 'FP_MUL_OVERFLOW')]
 fn test_multiplication_overflow() {
     let f1 = MAX_INT - 1;
     let f2 = MAX_INT - 1;
@@ -199,7 +199,33 @@ fn test_division_and_multiplication_by() {
 }
 
 #[test]
+#[should_panic(expected: 'FP_DIV_OVERFLOW')]
+fn test_division_overflow() {
+    // 1 / 2**124
+    let fp1 = div_u64_by_u128(1, MAX_INT);
+    div_u64_by_fixed_point(1, fp1);
+}
+
+#[test]
 #[should_panic(expected: 'DIVISION_BY_ZERO')]
 fn test_division_by_zero() {
     run_division_test(56, 0, 0, 0);
+}
+
+#[test]
+fn test_should_work_fine_with_zeroes() {
+    let f1 = div_u64_by_u128(5_u64, 2_u128).into();
+    let f2: UFixedPoint124x128 = 0.into();
+
+    let res = f1 + f2;
+    assert_eq!(res, f1);
+
+    let res = f1 - f2;
+    assert_eq!(res, f1);
+
+    let res = f1 - f1;
+    assert_eq!(res, 0.into());
+
+    let res = f2 - f2;
+    assert_eq!(res, 0.into());
 }

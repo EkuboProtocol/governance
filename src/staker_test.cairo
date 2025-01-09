@@ -5,6 +5,7 @@ use governance::staker::{
     IStakerDispatcher, IStakerDispatcherTrait, Staker,
     Staker::{DelegatedSnapshot, DelegatedSnapshotStorePacking},
 };
+
 use governance::test::test_token::{TestToken, deploy as deploy_token};
 use starknet::testing::{pop_log, set_block_timestamp};
 use starknet::{
@@ -452,7 +453,6 @@ mod staker_staked_seconds_per_total_staked_calculation {
         assert_eq!(value.get_fractional(), fractional);
     }
 
-
     #[test]
     fn test_should_stake_10000_tokens_for_5_seconds_adding_10000_every_second_to_staked_seconds() {
         let (staker, token) = setup(1000);
@@ -474,6 +474,7 @@ mod staker_staked_seconds_per_total_staked_calculation {
         assert(staker.get_staked(token_owner, delegatee) == 2, 'Something went wrong');
 
         staker.withdraw(delegatee, token_owner); // Will withdraw all 10 tokens back to owner
+
         assert(staker.get_staked(delegatee, token_owner) == 0, 'Not all tokens were withdrawn');
         
         set_block_timestamp(10000);

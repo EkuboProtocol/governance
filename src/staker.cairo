@@ -236,7 +236,7 @@ use super::super::staker_log::LogOperations;
 
 
     #[abi(embed_v0)]
-    impl StakerImpl of IStaker<ContractState> {
+    impl StakerImpl of IStaker<ContractState> {        
         fn get_token(self: @ContractState) -> ContractAddress {
             self.token.read().contract_address
         }
@@ -276,9 +276,7 @@ use super::super::staker_log::LogOperations;
                 .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) + amount);
             
             let total_staked = self.total_staked.read();
-
             assert(total_staked + amount >= total_staked, 'BAD AMOUNT'); 
-
             self.total_staked.write(total_staked + amount);
             self.staking_log.log_change(amount, total_staked);                
             

@@ -6,7 +6,7 @@ pub const EPSILON: u256 = 0x10_u256;
 
 // 2^124
 pub const MAX_INT: u128 = 0x10000000000000000000000000000000_u128;
-pub const HALF: u128 = 0x80000000000000000000000000000000_u128;
+pub const HALF: u128    = 0x80000000000000000000000000000000_u128;
 
 // 124.128 (= 252 which 1 felt exactly) 
 #[derive(Debug, Drop, Copy, Serde)]
@@ -15,7 +15,12 @@ pub struct UFixedPoint124x128 {
 }
 
 pub mod Errors {
-    pub const INTEGER_OVERFLOW: felt252 = 'INTEGER_OVERFLOW';
+    pub const FP_ADD_OVERFLOW: felt252 = 'FP_ADD_OVERFLOW';
+    pub const FP_SUB_OVERFLOW: felt252 = 'FP_SUB_OVERFLOW';
+    pub const FP_MUL_OVERFLOW: felt252 = 'FP_MUL_OVERFLOW';
+    pub const FP_DIV_OVERFLOW: felt252 = 'FP_DIV_OVERFLOW';
+    pub const FP_SUB_UNDERFLOW: felt252 = 'FP_SUB_UNDERFLOW';
+    
     pub const DIVISION_BY_ZERO: felt252 = 'DIVISION_BY_ZERO';
 }
 
@@ -88,10 +93,6 @@ pub impl UFixedPoint124x128Impl of UFixedPointTrait {
             0
         }
     }
-
-    fn validate(self: UFixedPoint124x128) { 
-        assert(self.value.high < MAX_INT, Errors::INTEGER_OVERFLOW);
-    }
 }
 
 pub(crate) impl UFixedPoint124x128IntoFelt252 of TryInto<UFixedPoint124x128, felt252> {
@@ -102,10 +103,13 @@ pub(crate) impl UFixedPoint124x128IntoFelt252 of TryInto<UFixedPoint124x128, fel
 
 pub impl UFixedPoint124x128ImplAdd of Add<UFixedPoint124x128> {
     fn add(lhs: UFixedPoint124x128, rhs: UFixedPoint124x128) -> UFixedPoint124x128 {
+        assert(rhs.value <= (rhs.value + lhs.value), Errors::FP_ADD_OVERFLOW);
+        assert(lhs.value <= rhs.value + lhs.value, Errors::FP_ADD_OVERFLOW);
+        
         let res = UFixedPoint124x128 {
             value: rhs.value + lhs.value
         };
-        res.validate();
+        assert(res.value.high < MAX_INT, Errors::FP_ADD_OVERFLOW);
         
         res
     }
@@ -113,12 +117,13 @@ pub impl UFixedPoint124x128ImplAdd of Add<UFixedPoint124x128> {
 
 pub impl UFixedPoint124x128ImplSub of Sub<UFixedPoint124x128> {
     fn sub(lhs: UFixedPoint124x128, rhs: UFixedPoint124x128) -> UFixedPoint124x128 {
+        assert(lhs.value >= rhs.value, Errors::FP_SUB_UNDERFLOW);
         // TODO: underflow checking
         let res = UFixedPoint124x128 {
             value: lhs.value - rhs.value
         };
-        res.validate();
-        
+        assert(res.value.high < MAX_INT, Errors::FP_SUB_OVERFLOW);
+
         res
     }
 }
@@ -146,7 +151,7 @@ pub impl UFixedPoint124x128ImplDiv of Div<UFixedPoint124x128> {
             }
         };
         
-        res.validate();
+        assert(res.value.high < MAX_INT, Errors::FP_DIV_OVERFLOW);
 
         res
     }
@@ -165,7 +170,7 @@ pub fn div_u64_by_u128(lhs: u64, rhs: u128) -> UFixedPoint124x128 {
         value: left / rhs.into()
     };
 
-    res.validate();
+    assert(res.value.high < MAX_INT, Errors::FP_DIV_OVERFLOW);
 
     res
 }
@@ -178,8 +183,6 @@ pub fn div_u64_by_fixed_point(lhs: u64, rhs: UFixedPoint124x128) -> UFixedPoint1
 
 pub fn mul_fp_by_u128(lhs: UFixedPoint124x128, rhs: u128) -> UFixedPoint124x128 {
     let mult_res = lhs.value.wide_mul(rhs.into());
-    
-    // TODO: add overflow check
 
     let res = UFixedPoint124x128 {
         value: u256 {
@@ -188,7 +191,7 @@ pub fn mul_fp_by_u128(lhs: UFixedPoint124x128, rhs: u128) -> UFixedPoint124x128 
         }
     };
 
-    res.validate();
+    assert(res.value.high < MAX_INT, Errors::FP_MUL_OVERFLOW);
 
     res
 }

@@ -19,6 +19,7 @@ pub type StakingLog = Vec<StakingLogRecord>;
 
 const TWO_POW_32: u64 = 0x100000000_u64;
 const MASK_32_BITS: u128 = 0x100000000_u128 - 1;
+const TWO_POW_160: u256 = 0x10000000000000000000000000000000000000000;
 
 #[derive(Drop, Serde, Copy)]
 pub(crate) struct StakingLogRecord {
@@ -107,6 +108,8 @@ pub impl StakingLogOperations of LogOperations {
         } else {
             div_u64_by_u128(seconds_diff, total_staked)
         };
+
+        // assert(last_record.cumulative_total_staked + total_staked_by_elapsed_seconds < TWO_POW_160, 'TOTAL_STAKED_OVERFLOW');
 
         // Add a new record.
         record.write(
