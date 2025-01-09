@@ -47,16 +47,19 @@ jobs:
           forge --version
 
       - name: Run Forge fmt
+        working-directory: l1_proxy
         run: |
           forge fmt --check
         id: fmt
 
       - name: Run Forge build
+        working-directory: l1_proxy
         run: |
           forge build --sizes
         id: build
 
       - name: Run Forge tests
+        working-directory: l1_proxy
         run: |
           forge test -vvv
         id: test
