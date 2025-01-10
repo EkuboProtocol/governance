@@ -9,7 +9,6 @@ use governance::staker::{
 use governance::test::test_token::{TestToken, deploy as deploy_token};
 use starknet::testing::{pop_log, set_block_timestamp};
 use starknet::{
-    ClassHash, 
     contract_address_const, 
     get_contract_address, 
     syscalls::deploy_syscall

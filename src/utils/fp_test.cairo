@@ -3,7 +3,8 @@ use super::fp::UFixedPointTrait;
 
 use crate::utils::fp::{
     UFixedPoint124x128, 
-    div_u64_by_u128, mul_fp_by_u128, div_u64_by_fixed_point,
+    UFixedPoint124x128Impl,
+    div_u64_by_u128, mul_fixed_point_by_u128, div_u64_by_fixed_point,
     MAX_INT
 };
 
@@ -23,22 +24,22 @@ pub(crate) impl U64IntoUFixedPoint of Into<u128, UFixedPoint124x128> {
 
 #[test]
 fn test_add() {                  
-    let f1 : UFixedPoint124x128 = 0xFFFFFFFFFFFFFFFF_u64.into();
-    let f2 : UFixedPoint124x128 = 1_u64.into();
+    let f1 : UFixedPoint124x128 = UFixedPoint124x128Impl::from_u64(0xFFFFFFFFFFFFFFFF_u64);
+    let f2 : UFixedPoint124x128 = UFixedPoint124x128Impl::from_u64(1_u64);
+    
     let res = f1 + f2;
-    let z: u256 = res.into();
-    assert_eq!(z.low, 0);
-    assert_eq!(z.high, 0x10000000000000000);
+    
+    assert_eq!(res.low, 0);
+    assert_eq!(res.high, 0x10000000000000000);
 }
 
 #[test]
 fn test_fp_value_mapping() {
-    let f1 : UFixedPoint124x128 = 7_u64.into();
+    let f1 : UFixedPoint124x128 = UFixedPoint124x128Impl::from_u64(7_u64);
     assert_eq!(f1.get_fractional(), 0x0);
     assert_eq!(f1.get_integer(), 0x7);
 
-    let val: u256 = f1.into();
-    assert_eq!(val, 7_u256*0x100000000000000000000000000000000);
+    assert_eq!(f1, 7_u256*0x100000000000000000000000000000000);
 }
 
 
@@ -54,7 +55,11 @@ fn test_mul() {
     assert_eq!(expected.limb2, 49);
     assert_eq!(expected.limb3, 0);
     
-    let res: u256 = mul_fp_by_u128(f1.into(), f2.try_into().unwrap()).into();
+    let res: u256 = mul_fixed_point_by_u128(
+        UFixedPoint124x128Impl::from_u64(f1), 
+        f2.try_into().unwrap()
+    ).into();
+
     assert_eq!(res.high, 49);
     assert_eq!(res.low, 0);
 }
@@ -64,7 +69,10 @@ fn test_mul() {
 fn test_multiplication_overflow() {
     let f1 = MAX_INT - 1;
     let f2 = MAX_INT - 1;
-    let _ = mul_fp_by_u128(f1.into(), f2.try_into().unwrap());
+    let _ = mul_fixed_point_by_u128(
+        UFixedPoint124x128Impl::from_u128(f1), 
+        f2.try_into().unwrap()
+    );
 }
 
 #[test]
@@ -74,7 +82,8 @@ fn test_u256_conversion() {
     assert_eq!(f.low, 0x00112233445566778899AABBCCDDEEFF);
     assert_eq!(f.high, 0x0123456789ABCDEFFEDCBA9876543210);
 
-    let fp: UFixedPoint124x128 = f.into();
+    let fp: UFixedPoint124x128 = f;
+
     assert_eq!(fp.get_integer(), f.high);
     assert_eq!(fp.get_fractional(), f.low);
 }
@@ -88,7 +97,7 @@ fn run_division_test(left: u64, right: u128, expected_int: u128, expected_frac: 
 
 fn run_division_and_multiplication_test(numenator: u64, divisor: u128, mult: u128, expected_int: u128, expected_frac: u128) {
     let divided = div_u64_by_u128(numenator, divisor);
-    let res = mul_fp_by_u128(divided, mult);
+    let res = mul_fixed_point_by_u128(divided, mult);
 
     assert_eq!(res.get_integer(), expected_int);
     assert_eq!(res.get_fractional(), expected_frac);

@@ -68,8 +68,8 @@ pub mod Staker {
         StoragePointerReadAccess, StoragePointerWriteAccess,
     };
     use crate::utils::fp::{
-        UFixedPoint124x128, UFixedPoint124x128Zero, div_u64_by_u128, div_u64_by_fixed_point,
-        UFixedPoint124x128Impl,
+        UFixedPoint124x128, div_u64_by_u128, div_u64_by_fixed_point,
+        UFixedPoint124x128Impl, sub_fixed_points, add_fixed_points
     };
     use crate::staker_log::{StakingLog, LogOperations};
 
@@ -368,7 +368,10 @@ pub mod Staker {
                     // otherwise calculate using cumulative_seconds_per_total_staked difference
                     let next_log_record = self.staking_log.at(idx+1).read();
 
-                    let divisor = next_log_record.cumulative_seconds_per_total_staked - log_record.cumulative_seconds_per_total_staked;
+                    let divisor = sub_fixed_points(
+                        next_log_record.cumulative_seconds_per_total_staked,
+                        log_record.cumulative_seconds_per_total_staked
+                    );
 
                     if divisor.is_zero() {
                         return 0_u64.into();
@@ -391,7 +394,10 @@ pub mod Staker {
                     div_u64_by_u128(seconds_diff, total_staked)
                 };
 
-                return log_record.cumulative_seconds_per_total_staked + staked_seconds;
+                return add_fixed_points(
+                    log_record.cumulative_seconds_per_total_staked, 
+                    staked_seconds
+                );
             } 
 
             return 0_u64.into();
