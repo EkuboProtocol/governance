@@ -1,5 +1,4 @@
 use starknet::{ContractAddress};
-use crate::utils::fp::{UFixedPoint124x128};
 
 #[starknet::interface]
 pub trait IStaker<TContractState> {
@@ -55,29 +54,27 @@ pub trait IStaker<TContractState> {
     ) -> u128;
 
     // Gets the cumulative staked amount * per second staked for the given timestamp and account.
-    fn get_cumulative_seconds_per_total_staked_at(self: @TContractState, timestamp: u64) -> UFixedPoint124x128;
+    fn get_cumulative_seconds_per_total_staked_at(self: @TContractState, timestamp: u64) -> u256;
 }
 
 #[starknet::contract]
 pub mod Staker {
     use starknet::storage::VecTrait;
     use core::num::traits::zero::{Zero};
+    use core::integer::{u512, u512_safe_div_rem_by_u256};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::{
         Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry,
         StoragePointerReadAccess, StoragePointerWriteAccess,
     };
-    use crate::utils::fp::{
-        UFixedPoint124x128, div_u64_by_u128, div_u64_by_fixed_point,
-        UFixedPoint124x128Impl, sub_fixed_points, add_fixed_points
-    };
-    use crate::staker_log::{StakingLog, LogOperations};
+    use crate::staker_log::{StakingLog, LogOperations, MAX_FP};
 
     use starknet::{
         get_block_timestamp, get_caller_address, get_contract_address,
         storage_access::{StorePacking}, ContractAddress,
     };
     use super::{IStaker};
+
 
 
     #[derive(Copy, Drop, PartialEq, Debug)]
@@ -89,6 +86,7 @@ pub mod Staker {
     const TWO_POW_64: u128 = 0x10000000000000000;
     const TWO_POW_192: u256 = 0x1000000000000000000000000000000000000000000000000;
     const TWO_POW_192_DIVISOR: NonZero<u256> = 0x1000000000000000000000000000000000000000000000000;
+    const HALF: u128    = 0x80000000000000000000000000000000_u128;
 
     pub(crate) impl DelegatedSnapshotStorePacking of StorePacking<DelegatedSnapshot, felt252> {
         fn pack(value: DelegatedSnapshot) -> felt252 {
@@ -358,49 +356,65 @@ pub mod Staker {
             self.get_average_delegated(delegate, now - period, now)
         }
 
-        fn get_cumulative_seconds_per_total_staked_at(self: @ContractState, timestamp: u64) -> UFixedPoint124x128 {
+        fn get_cumulative_seconds_per_total_staked_at(self: @ContractState, timestamp: u64) -> u256 {
             if let Option::Some((log_record, idx)) = self.staking_log.find_in_change_log(timestamp) {
-
                 let total_staked = if (idx == self.staking_log.len() - 1) {
                     // if last rescord found
                     self.total_staked.read()
                 } else {
                     // otherwise calculate using cumulative_seconds_per_total_staked difference
                     let next_log_record = self.staking_log.at(idx+1).read();
-
-                    let divisor = sub_fixed_points(
-                        next_log_record.cumulative_seconds_per_total_staked,
-                        log_record.cumulative_seconds_per_total_staked
-                    );
-
+                    
+                    // substract fixed point values
+                    let divisor = next_log_record.cumulative_seconds_per_total_staked - log_record.cumulative_seconds_per_total_staked;
+                    assert(divisor.high < MAX_FP, 'FP_OVERFLOW');
+                    
                     if divisor.is_zero() {
                         return 0_u64.into();
                     }
 
-                    let total_staked_fp = div_u64_by_fixed_point(
-                        (next_log_record.timestamp - log_record.timestamp) / 1000, 
-                        divisor
-                    );
+                    let diff_seconds: u128 = ((next_log_record.timestamp - log_record.timestamp) / 1000).into();
 
-                    // value is not precise
-                    total_staked_fp.round()
+                    // Divide u64 by fixed point
+                    let (total_staked_fp_medium, _) = u512_safe_div_rem_by_u256(
+                        u512 { limb0: 0, limb1: 0, limb2: 0, limb3: diff_seconds },
+                        divisor.try_into().unwrap()
+                    );
+                        
+                    let total_staked_fp = u256 {
+                        low: total_staked_fp_medium.limb1,
+                        high: total_staked_fp_medium.limb2,
+                    };
+
+                    assert(total_staked_fp.high < MAX_FP, 'FP_OVERFLOW');
+
+                    // round value
+                    total_staked_fp.high + if (total_staked_fp.low >= HALF) {
+                        1
+                    } else {
+                        0
+                    }
                 };
                 
                 let seconds_diff = (timestamp - log_record.timestamp) / 1000;
                 
-                let staked_seconds: UFixedPoint124x128 = if total_staked == 0 {
-                    0_u64.into()
+                let staked_seconds: u256 = if total_staked == 0 {
+                    0_u256
                 } else {
-                    div_u64_by_u128(seconds_diff, total_staked)
+                    // Divide u64 by u128
+                    u256 {
+                        low: 0,
+                        high: seconds_diff.into()
+                    } / total_staked.into()
                 };
 
-                return add_fixed_points(
-                    log_record.cumulative_seconds_per_total_staked, 
-                    staked_seconds
-                );
+                // Sum fixed posits
+                let result = log_record.cumulative_seconds_per_total_staked + staked_seconds;
+                assert(result.high < MAX_FP, 'FP_OVERFLOW');
+                return result;
             } 
 
-            return 0_u64.into();
+            return 0_u256;
         }
     }
 }

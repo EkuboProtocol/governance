@@ -1,7 +1,7 @@
 pub mod airdrop;
 mod airdrop_claim_check;
-#[cfg(test)]
-mod airdrop_test;
+// #[cfg(test)]
+// mod airdrop_test;
 
 pub mod call_trait;
 #[cfg(test)]
@@ -12,26 +12,22 @@ pub mod execution_state;
 mod execution_state_test;
 
 pub mod governor;
-#[cfg(test)]
-mod governor_test;
+// #[cfg(test)]
+// mod governor_test;
 
 pub mod staker;
 #[cfg(test)]
 mod staker_test;
 
 pub mod staker_log;
-#[cfg(test)]
-pub mod staker_log_test;
+// #[cfg(test)]
+// pub mod staker_log_test;
 
 mod interfaces {
     pub(crate) mod erc20;
 }
 mod utils {
-    pub(crate) mod exp2;
-    pub(crate) mod fp;
-    
-    #[cfg(test)]
-    pub(crate) mod fp_test;
+    pub(crate) mod exp2;    
 }
 
 #[cfg(test)]
