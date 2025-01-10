@@ -5,7 +5,7 @@ use core::integer::{u512, u512_safe_div_rem_by_u256 };
 pub const EPSILON: u256 = 0x10_u256;
 
 // 2^124
-pub const MAX_INT: u128 = 0x10000000000000000000000000000000_u128;
+pub const MAX_INT: u128 = 0x8000000000000110000000000000000_u128;
 pub const HALF: u128    = 0x80000000000000000000000000000000_u128;
 
 pub type UFixedPoint124x128 = u256;
@@ -18,6 +18,7 @@ pub mod Errors {
     pub const FP_SUB_UNDERFLOW: felt252 = 'FP_SUB_UNDERFLOW';
     
     pub const DIVISION_BY_ZERO: felt252 = 'DIVISION_BY_ZERO';
+    pub const MAX_OVERFLOW: felt252 = 'MAX_OVERFLOW';
 }
 
 pub impl UFixedPoint124x128StorePacking of StorePacking<UFixedPoint124x128, felt252> {
@@ -43,10 +44,14 @@ pub impl UFixedPoint124x128Impl of UFixedPointTrait {
     }
 
     fn from_u128(value: u128) -> UFixedPoint124x128 {
-        u256 {
+        let res = u256 {
             low: 0,
             high: value,
-        }
+        };
+
+        assert(res.high < MAX_INT, Errors::MAX_OVERFLOW);
+
+        res
     }
     
     fn round(self: UFixedPoint124x128) -> u128 {
