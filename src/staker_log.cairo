@@ -22,7 +22,6 @@ pub(crate) struct StakingLogRecord {
     pub(crate) timestamp: u64,
     
     // Only 128+32=160 bits are used
-    // TODO: add validation checks
     pub(crate) cumulative_total_staked: u256,    
     pub(crate) cumulative_seconds_per_total_staked: u256,   
 }
@@ -68,10 +67,12 @@ pub impl StakingLogOperations of LogOperations {
     fn log_change(self: StorageBase<Mutable<StakingLog>>, amount: u128, total_staked: u128) {
         let log = self.as_path();
 
+        let block_timestamp = get_block_timestamp() / 1000;
+
         if log.len() == 0 {
             log.append().write(
                 StakingLogRecord {
-                    timestamp: get_block_timestamp(),
+                    timestamp: block_timestamp,
                     cumulative_total_staked: 0_u256,
                     cumulative_seconds_per_total_staked: 0_u64.into(),
                 }
@@ -84,7 +85,7 @@ pub impl StakingLogOperations of LogOperations {
             
         let mut last_record = last_record_ptr.read();
 
-        let mut record = if last_record.timestamp == get_block_timestamp() {
+        let mut record = if last_record.timestamp == block_timestamp {
             // update record
             last_record_ptr 
         } else {
@@ -93,7 +94,7 @@ pub impl StakingLogOperations of LogOperations {
         };
 
         // Might be zero
-        let seconds_diff = (get_block_timestamp() - last_record.timestamp) / 1000;
+        let seconds_diff = block_timestamp - last_record.timestamp;
             
         let total_staked_by_elapsed_seconds = total_staked.into() * seconds_diff.into();
 
@@ -108,7 +109,7 @@ pub impl StakingLogOperations of LogOperations {
         // Add a new record.
         record.write(
             StakingLogRecord {
-                timestamp: get_block_timestamp(),
+                timestamp: block_timestamp,
                 
                 cumulative_total_staked: 
                     last_record.cumulative_total_staked + total_staked_by_elapsed_seconds,

@@ -75,8 +75,6 @@ pub mod Staker {
     };
     use super::{IStaker};
 
-
-
     #[derive(Copy, Drop, PartialEq, Debug)]
     pub struct DelegatedSnapshot {
         pub timestamp: u64,
@@ -86,7 +84,7 @@ pub mod Staker {
     const TWO_POW_64: u128 = 0x10000000000000000;
     const TWO_POW_192: u256 = 0x1000000000000000000000000000000000000000000000000;
     const TWO_POW_192_DIVISOR: NonZero<u256> = 0x1000000000000000000000000000000000000000000000000;
-    const HALF: u128    = 0x80000000000000000000000000000000_u128;
+    const TWO_POW_127: u128    = 0x80000000000000000000000000000000_u128;
 
     pub(crate) impl DelegatedSnapshotStorePacking of StorePacking<DelegatedSnapshot, felt252> {
         fn pack(value: DelegatedSnapshot) -> felt252 {
@@ -266,7 +264,7 @@ pub mod Staker {
                 .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) + amount);
             
             let total_staked = self.total_staked.read();
-            assert(total_staked + amount >= total_staked, 'BAD AMOUNT'); 
+
             self.total_staked.write(total_staked + amount);
             self.staking_log.log_change(amount, total_staked);                
             
@@ -357,7 +355,9 @@ pub mod Staker {
         }
 
         fn get_cumulative_seconds_per_total_staked_at(self: @ContractState, timestamp: u64) -> u256 {
-            if let Option::Some((log_record, idx)) = self.staking_log.find_in_change_log(timestamp) {
+            let timestamp_seconds = timestamp / 1000;
+
+            if let Option::Some((log_record, idx)) = self.staking_log.find_in_change_log(timestamp_seconds) {
                 let total_staked = if (idx == self.staking_log.len() - 1) {
                     // if last rescord found
                     self.total_staked.read()
@@ -373,7 +373,7 @@ pub mod Staker {
                         return 0_u64.into();
                     }
 
-                    let diff_seconds: u128 = ((next_log_record.timestamp - log_record.timestamp) / 1000).into();
+                    let diff_seconds: u128 = (next_log_record.timestamp - log_record.timestamp).into();
 
                     // Divide u64 by fixed point
                     let (total_staked_fp_medium, _) = u512_safe_div_rem_by_u256(
@@ -389,14 +389,14 @@ pub mod Staker {
                     assert(total_staked_fp.high < MAX_FP, 'FP_OVERFLOW');
 
                     // round value
-                    total_staked_fp.high + if (total_staked_fp.low >= HALF) {
+                    total_staked_fp.high + if (total_staked_fp.low >= TWO_POW_127) {
                         1
                     } else {
                         0
                     }
                 };
                 
-                let seconds_diff = (timestamp - log_record.timestamp) / 1000;
+                let seconds_diff = timestamp_seconds - log_record.timestamp;
                 
                 let staked_seconds: u256 = if total_staked == 0 {
                     0_u256

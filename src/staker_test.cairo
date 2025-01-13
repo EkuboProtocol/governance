@@ -411,8 +411,9 @@ mod staker_staked_seconds_per_total_staked_calculation {
     #[test]
     fn test_should_return_0_if_no_data_found() {
         let (staker, _) = setup(10000);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(0),    0, 0_u128.into());
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(1000), 0, 0_u128.into());
+
+        assert_eq!(staker.get_cumulative_seconds_per_total_staked_at(0), u256{ high: 0, low: 0_u128.into()});
+        assert_eq!(staker.get_cumulative_seconds_per_total_staked_at(1000), u256{ high: 0, low: 0_u128.into()});
     }
 
     #[test]
@@ -439,11 +440,6 @@ mod staker_staked_seconds_per_total_staked_calculation {
         staker.stake_amount(delegatee, 1000);
         set_block_timestamp(4000);
         staker.withdraw_amount(delegatee, token_owner, 2000);
-    }
-
-    fn assert_fp(value: u256, integer: u128, fractional: u128) {
-        assert_eq!(value.high, integer);
-        assert_eq!(value.low, fractional);
     }
 
     #[test]
@@ -474,23 +470,20 @@ mod staker_staked_seconds_per_total_staked_calculation {
         token.approve(staker.contract_address, 7);  
         staker.stake(delegatee); // Will transfer 7 token to contract account and setup delegatee
         
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(0),   0, 0_u128);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(500), 0, 0_u128);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(999), 0, 0_u128);
-        
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(1000), 0, 0x80000000000000000000000000000000_u128);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(2000), 1, 0_u128);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(3000), 1, 0x80000000000000000000000000000000_u128);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(4000), 2, 0_u128);
-        
-        // here value is undefined as nothing was staked.
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(5000), 0, 0_u128);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(6000), 0, 0_u128);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(7000), 0, 0_u128);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(8000), 0, 0_u128);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(9000), 0, 0_u128);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(10000), 2, 0x80000000000000000000000000000000_u128);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(17000), 3, 0x80000000000000000000000000000000_u128);
-        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(24000), 4, 0x80000000000000000000000000000000_u128);
+        assert_eq!(staker.get_cumulative_seconds_per_total_staked_at(0), u256 {high: 0, low: 0_u128});
+        assert_eq!(staker.get_cumulative_seconds_per_total_staked_at(500), u256 {high: 0, low: 0_u128});
+        assert_eq!(staker.get_cumulative_seconds_per_total_staked_at(999), u256 {high: 0, low: 0_u128});
+        assert_eq!(staker.get_cumulative_seconds_per_total_staked_at(1000), u256 {high: 0, low: 0x80000000000000000000000000000000_u128});
+        assert_eq!(staker.get_cumulative_seconds_per_total_staked_at(2000), u256 {high: 1, low: 0_u128});
+        assert_eq!(staker.get_cumulative_seconds_per_total_staked_at(3000), u256 {high: 1, low: 0x80000000000000000000000000000000_u128});
+        assert_eq!(staker.get_cumulative_seconds_per_total_staked_at(4000), u256 {high: 2, low: 0_u128});
+        assert_eq!(staker.get_cumulative_seconds_per_total_staked_at(5000), u256 {high: 0, low: 0_u128});
+        assert_eq!(staker.get_cumulative_seconds_per_total_staked_at(6000), u256 {high: 0, low: 0_u128});
+        assert_eq!(staker.get_cumulative_seconds_per_total_staked_at(7000), u256 {high: 0, low: 0_u128});
+        assert_eq!(staker.get_cumulative_seconds_per_total_staked_at(8000), u256 {high: 0, low: 0_u128});
+        assert_eq!(staker.get_cumulative_seconds_per_total_staked_at(9000), u256 {high: 0, low: 0_u128});
+        assert_eq!(staker.get_cumulative_seconds_per_total_staked_at(10000), u256 {high: 2, low: 0x80000000000000000000000000000000_u128});
+        assert_eq!(staker.get_cumulative_seconds_per_total_staked_at(17000), u256 {high: 3, low: 0x80000000000000000000000000000000_u128});
+        assert_eq!(staker.get_cumulative_seconds_per_total_staked_at(24000), u256 {high: 4, low: 0x80000000000000000000000000000000_u128});
     }
 }
