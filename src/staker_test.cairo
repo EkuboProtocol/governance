@@ -5,9 +5,14 @@ use governance::staker::{
     IStakerDispatcher, IStakerDispatcherTrait, Staker,
     Staker::{DelegatedSnapshot, DelegatedSnapshotStorePacking},
 };
+
 use governance::test::test_token::{TestToken, deploy as deploy_token};
 use starknet::testing::{pop_log, set_block_timestamp};
-use starknet::{contract_address_const, get_contract_address, syscalls::deploy_syscall};
+use starknet::{
+    contract_address_const, 
+    get_contract_address, 
+    syscalls::deploy_syscall
+};
 
 pub(crate) fn setup(amount: u256) -> (IStakerDispatcher, IERC20Dispatcher) {
     let token = deploy_token(get_contract_address(), amount);
@@ -393,4 +398,99 @@ fn test_delegate_undelegate() {
     assert(staker.get_delegated_at(delegatee, timestamp: 4) == 12345, 'at 4');
     assert(staker.get_delegated_at(delegatee, timestamp: 5) == 12345, 'at 5');
     assert(staker.get_delegated_at(delegatee, timestamp: 6) == 0, 'at 6');
+}
+
+mod staker_staked_seconds_per_total_staked_calculation {
+    use starknet::{get_caller_address};
+    use crate::utils::fp::{UFixedPoint124x128, UFixedPoint124x128Impl};
+    use super::{ 
+        setup, contract_address_const, set_block_timestamp,
+        IERC20DispatcherTrait, IStakerDispatcherTrait, 
+    };
+
+    #[test]
+    fn test_should_return_0_if_no_data_found() {
+        let (staker, _) = setup(10000);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(0),    0, 0_u128.into());
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(1000), 0, 0_u128.into());
+    }
+
+    #[test]
+    #[should_panic(expected: ('INSUFFICIENT_AMOUNT_STAKED', 'ENTRYPOINT_FAILED'))]
+    fn test_raises_error_if_no_history_exists_and_withdrawal_happens() {
+        // TODO(biatcode): This test accidentally tests other 
+        // functionality and should be refactored
+        
+        let (staker, token) = setup(10000);
+
+        // Caller is token owner
+        let token_owner = get_caller_address();
+        
+        // Adress to delegate tokens to
+        let delegatee = contract_address_const::<1234567890>();
+
+        token.approve(staker.contract_address, 10000);    
+        
+        set_block_timestamp(1000);
+        staker.stake_amount(delegatee, 1000);
+        set_block_timestamp(2000);
+        staker.withdraw_amount(delegatee, token_owner, 500);
+        set_block_timestamp(3000);
+        staker.stake_amount(delegatee, 1000);
+        set_block_timestamp(4000);
+        staker.withdraw_amount(delegatee, token_owner, 2000);
+    }
+
+    fn assert_fp(value: UFixedPoint124x128, integer: u128, fractional: u128) {
+        assert_eq!(value.get_integer(), integer);
+        assert_eq!(value.get_fractional(), fractional);
+    }
+
+    #[test]
+    fn test_should_stake_10000_tokens_for_5_seconds_adding_10000_every_second_to_staked_seconds() {
+        let (staker, token) = setup(1000);
+
+        // Caller is token owner
+        let token_owner = get_caller_address();
+
+        // Allow staker contract to spend 2 tokens from owner account
+        token.approve(staker.contract_address, 2);    
+
+        // Adress to delegate tokens to
+        let delegatee = contract_address_const::<1234567890>();
+        
+        set_block_timestamp(0);    
+        staker.stake(delegatee); // Will transfer 2 token to contract account and setup delegatee
+
+        set_block_timestamp(5000); // 5 seconds passed
+
+        assert(staker.get_staked(token_owner, delegatee) == 2, 'Something went wrong');
+
+        staker.withdraw(delegatee, token_owner); // Will withdraw all 10 tokens back to owner
+
+        assert(staker.get_staked(delegatee, token_owner) == 0, 'Not all tokens were withdrawn');
+        
+        set_block_timestamp(10000);
+        token.approve(staker.contract_address, 7);  
+        staker.stake(delegatee); // Will transfer 7 token to contract account and setup delegatee
+        
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(0),   0, 0_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(500), 0, 0_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(999), 0, 0_u128);
+        
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(1000), 0, 0x80000000000000000000000000000000_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(2000), 1, 0_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(3000), 1, 0x80000000000000000000000000000000_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(4000), 2, 0_u128);
+        
+        // here value is undefined as nothing was staked.
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(5000), 0, 0_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(6000), 0, 0_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(7000), 0, 0_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(8000), 0, 0_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(9000), 0, 0_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(10000), 2, 0x80000000000000000000000000000000_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(17000), 3, 0x80000000000000000000000000000000_u128);
+        assert_fp(staker.get_cumulative_seconds_per_total_staked_at(24000), 4, 0x80000000000000000000000000000000_u128);
+    }
 }
