@@ -357,7 +357,6 @@ pub mod Staker {
         fn get_cumulative_seconds_per_total_staked_at(
             self: @ContractState, timestamp: u64,
         ) -> u256 {
-
             if let Option::Some((log_record, idx)) = self
                 .staking_log
                 .find_in_change_log(timestamp) {

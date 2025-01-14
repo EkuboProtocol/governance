@@ -477,7 +477,7 @@ mod staker_staked_seconds_per_total_staked_calculation {
         );
         let z = staker.get_cumulative_seconds_per_total_staked_at(1);
         assert_eq!(z.high, 0_u128);
-        assert_eq!(z.low,  0x80000000000000000000000000000000_u128);
+        assert_eq!(z.low, 0x80000000000000000000000000000000_u128);
 
         assert_eq!(
             staker.get_cumulative_seconds_per_total_staked_at(1),
