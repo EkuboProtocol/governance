@@ -434,13 +434,13 @@ mod staker_staked_seconds_per_total_staked_calculation {
 
         token.approve(staker.contract_address, 10000);
 
-        set_block_timestamp(1000);
+        set_block_timestamp(1);
         staker.stake_amount(delegatee, 1000);
-        set_block_timestamp(2000);
+        set_block_timestamp(2);
         staker.withdraw_amount(delegatee, token_owner, 500);
-        set_block_timestamp(3000);
+        set_block_timestamp(3);
         staker.stake_amount(delegatee, 1000);
-        set_block_timestamp(4000);
+        set_block_timestamp(4);
         staker.withdraw_amount(delegatee, token_owner, 2000);
     }
 
@@ -460,7 +460,7 @@ mod staker_staked_seconds_per_total_staked_calculation {
         set_block_timestamp(0);
         staker.stake(delegatee); // Will transfer 2 token to contract account and setup delegatee
 
-        set_block_timestamp(5000); // 5 seconds passed
+        set_block_timestamp(5); // 5 seconds passed
 
         assert(staker.get_staked(token_owner, delegatee) == 2, 'Something went wrong');
 
@@ -468,58 +468,56 @@ mod staker_staked_seconds_per_total_staked_calculation {
 
         assert(staker.get_staked(delegatee, token_owner) == 0, 'Not all tokens were withdrawn');
 
-        set_block_timestamp(10000);
+        set_block_timestamp(10);
         token.approve(staker.contract_address, 7);
         staker.stake(delegatee); // Will transfer 7 token to contract account and setup delegatee
 
         assert_eq!(
             staker.get_cumulative_seconds_per_total_staked_at(0), u256 { high: 0, low: 0_u128 },
         );
+        let z = staker.get_cumulative_seconds_per_total_staked_at(1);
+        assert_eq!(z.high, 0_u128);
+        assert_eq!(z.low,  0x80000000000000000000000000000000_u128);
+
         assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(500), u256 { high: 0, low: 0_u128 },
-        );
-        assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(999), u256 { high: 0, low: 0_u128 },
-        );
-        assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(1000),
+            staker.get_cumulative_seconds_per_total_staked_at(1),
             u256 { high: 0, low: 0x80000000000000000000000000000000_u128 },
         );
         assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(2000), u256 { high: 1, low: 0_u128 },
+            staker.get_cumulative_seconds_per_total_staked_at(2), u256 { high: 1, low: 0_u128 },
         );
         assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(3000),
+            staker.get_cumulative_seconds_per_total_staked_at(3),
             u256 { high: 1, low: 0x80000000000000000000000000000000_u128 },
         );
         assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(4000), u256 { high: 2, low: 0_u128 },
+            staker.get_cumulative_seconds_per_total_staked_at(4), u256 { high: 2, low: 0_u128 },
         );
         assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(5000), u256 { high: 0, low: 0_u128 },
+            staker.get_cumulative_seconds_per_total_staked_at(5), u256 { high: 0, low: 0_u128 },
         );
         assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(6000), u256 { high: 0, low: 0_u128 },
+            staker.get_cumulative_seconds_per_total_staked_at(6), u256 { high: 0, low: 0_u128 },
         );
         assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(7000), u256 { high: 0, low: 0_u128 },
+            staker.get_cumulative_seconds_per_total_staked_at(7), u256 { high: 0, low: 0_u128 },
         );
         assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(8000), u256 { high: 0, low: 0_u128 },
+            staker.get_cumulative_seconds_per_total_staked_at(8), u256 { high: 0, low: 0_u128 },
         );
         assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(9000), u256 { high: 0, low: 0_u128 },
+            staker.get_cumulative_seconds_per_total_staked_at(9), u256 { high: 0, low: 0_u128 },
         );
         assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(10000),
+            staker.get_cumulative_seconds_per_total_staked_at(10),
             u256 { high: 2, low: 0x80000000000000000000000000000000_u128 },
         );
         assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(17000),
+            staker.get_cumulative_seconds_per_total_staked_at(17),
             u256 { high: 3, low: 0x80000000000000000000000000000000_u128 },
         );
         assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(24000),
+            staker.get_cumulative_seconds_per_total_staked_at(24),
             u256 { high: 4, low: 0x80000000000000000000000000000000_u128 },
         );
     }

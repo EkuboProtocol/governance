@@ -357,11 +357,10 @@ pub mod Staker {
         fn get_cumulative_seconds_per_total_staked_at(
             self: @ContractState, timestamp: u64,
         ) -> u256 {
-            let timestamp_seconds = timestamp / 1000;
 
             if let Option::Some((log_record, idx)) = self
                 .staking_log
-                .find_in_change_log(timestamp_seconds) {
+                .find_in_change_log(timestamp) {
                 let total_staked = if (idx == self.staking_log.len() - 1) {
                     // if last rescord found
                     self.total_staked.read()
@@ -372,7 +371,6 @@ pub mod Staker {
                     // substract fixed point values
                     let divisor = next_log_record.cumulative_seconds_per_total_staked
                         - log_record.cumulative_seconds_per_total_staked;
-                    assert(divisor.high < MAX_FP, 'FP_OVERFLOW');
 
                     if divisor.is_zero() {
                         return 0_u64.into();
@@ -401,7 +399,7 @@ pub mod Staker {
                     }
                 };
 
-                let seconds_diff = timestamp_seconds - log_record.timestamp;
+                let seconds_diff = timestamp - log_record.timestamp;
 
                 let staked_seconds: u256 = if total_staked == 0 {
                     0_u256

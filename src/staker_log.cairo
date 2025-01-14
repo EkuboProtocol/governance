@@ -64,7 +64,7 @@ pub impl StakingLogOperations of LogOperations {
     fn log_change(self: StorageBase<Mutable<StakingLog>>, amount: u128, total_staked: u128) {
         let log = self.as_path();
 
-        let block_timestamp = get_block_timestamp() / 1000;
+        let block_timestamp = get_block_timestamp();
 
         if log.len() == 0 {
             log
