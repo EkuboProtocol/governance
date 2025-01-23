@@ -12,7 +12,6 @@ pub type StakingLog = Vec<StakingLogRecord>;
 const TWO_POW_32: u64 = 0x100000000_u64;
 const MASK_32_BITS: u128 = 0x100000000_u128 - 1;
 const TWO_POW_160: u256 = 0x10000000000000000000000000000000000000000;
-pub const MAX_FP: u128 = 0x8000000000000110000000000000000_u128;
 
 #[derive(Drop, Serde, Copy)]
 pub(crate) struct StakingLogRecord {
@@ -28,7 +27,7 @@ pub impl StakingLogOperations of LogOperations {
         Option::Some(0)
     }
 
-    fn find_in_change_log(
+    fn find_change_log_on_or_before_timestamp(
         self: @StorageBase<StakingLog>, timestamp: u64,
     ) -> Option<(StakingLogRecord, u64)> {
         let log = self.as_path();
@@ -61,7 +60,7 @@ pub impl StakingLogOperations of LogOperations {
         return Option::None;
     }
 
-    fn log_change(self: StorageBase<Mutable<StakingLog>>, amount: u128, total_staked: u128) {
+    fn log_change(self: StorageBase<Mutable<StakingLog>>, amount: u128, total_staked_before_change: u128) {
         let log = self.as_path();
 
         let block_timestamp = get_block_timestamp();
@@ -95,13 +94,12 @@ pub impl StakingLogOperations of LogOperations {
         // Might be zero
         let seconds_diff = block_timestamp - last_record.timestamp;
 
-        let total_staked_by_elapsed_seconds = total_staked.into() * seconds_diff.into();
+        let total_staked_by_elapsed_seconds = total_staked_before_change.into() * seconds_diff.into();
 
-        let staked_seconds_per_total_staked: u256 = if total_staked == 0 {
+        let staked_seconds_per_total_staked: u256 = if total_staked_before_change == 0 {
             0_u64.into()
         } else {
-            let res = u256 { low: 0, high: seconds_diff.into() } / total_staked.into();
-            assert(res.high < MAX_FP, 'FP_OVERFLOW');
+            let res = u256 { low: 0, high: seconds_diff.into() } / total_staked_before_change.into();
             res
         };
 

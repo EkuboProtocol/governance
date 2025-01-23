@@ -61,7 +61,7 @@ pub trait IStaker<TContractState> {
 pub mod Staker {
     use core::integer::{u512, u512_safe_div_rem_by_u256};
     use core::num::traits::zero::{Zero};
-    use crate::staker_log::{LogOperations, MAX_FP, StakingLog};
+    use crate::staker_log::{LogOperations, StakingLog};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::VecTrait;
     use starknet::storage::{
@@ -263,10 +263,10 @@ pub mod Staker {
                 .amount_delegated
                 .write(delegate, self.insert_snapshot(delegate, get_block_timestamp()) + amount);
 
-            let total_staked = self.total_staked.read();
+            let current_total_staked = self.total_staked.read();
 
-            self.total_staked.write(total_staked + amount);
-            self.staking_log.log_change(amount, total_staked);
+            self.total_staked.write(current_total_staked + amount);
+            self.staking_log.log_change(amount, current_total_staked);
 
             self.emit(Staked { from, delegate, amount });
         }
@@ -359,7 +359,7 @@ pub mod Staker {
         ) -> u256 {
             if let Option::Some((log_record, idx)) = self
                 .staking_log
-                .find_in_change_log(timestamp) {
+                .find_change_log_on_or_before_timestamp(timestamp) {
                 let total_staked = if (idx == self.staking_log.len() - 1) {
                     // if last rescord found
                     self.total_staked.read()
@@ -388,8 +388,6 @@ pub mod Staker {
                         low: total_staked_fp_medium.limb1, high: total_staked_fp_medium.limb2,
                     };
 
-                    assert(total_staked_fp.high < MAX_FP, 'FP_OVERFLOW');
-
                     // round value
                     total_staked_fp.high + if (total_staked_fp.low >= TWO_POW_127) {
                         1
@@ -408,9 +406,7 @@ pub mod Staker {
                 };
 
                 // Sum fixed posits
-                let result = log_record.cumulative_seconds_per_total_staked + staked_seconds;
-                assert(result.high < MAX_FP, 'FP_OVERFLOW');
-                return result;
+                return log_record.cumulative_seconds_per_total_staked + staked_seconds;
             }
 
             return 0_u256;
