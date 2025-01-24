@@ -4,7 +4,7 @@ out = "out"
 libs = ["lib"]
 
 via_ir = true
-optimizer_runs = 4294967296
+optimizer_runs = 9999999
 solc-version = "0.8.28"
 
 
