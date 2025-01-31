@@ -55,10 +55,10 @@ pub trait IStaker<TContractState> {
 
     // Calculates snapshot for seconds_per_total_staked_sum (val) at given timestamp (ts).
     // If timestamp if before first record, returns 0.
-    // If timestamp is between records, calculates Δt = (ts - record.ts) where record is 
-    // first record in log before timestamp, then calculates total amount using the 
+    // If timestamp is between records, calculates Δt = (ts - record.ts) where record is
+    // first record in log before timestamp, then calculates total amount using the
     // weighted_total_staked diff diveded by time diff.
-    // If timestamp is after last record, calculates Δt = (ts - last_record.ts) and 
+    // If timestamp is after last record, calculates Δt = (ts - last_record.ts) and
     // takes total_staked from storage and adds Δt / total_staked to accumulator.
     // In case total_staked is 0 this method turns is to 1 to simplify calculations
     // TODO: this should be a part of StakingLog
@@ -71,9 +71,7 @@ pub trait IStaker<TContractState> {
 
     fn get_total_staked_at(self: @TContractState, timestamp: u64) -> u128;
 
-    fn get_average_total_staked_over_period(
-        self: @TContractState, start: u64, end: u64,
-    ) -> u128;
+    fn get_average_total_staked_over_period(self: @TContractState, start: u64, end: u64) -> u128;
 
     fn get_user_share_of_total_staked_over_period(
         self: @TContractState, staked: u128, start: u64, end: u64,
@@ -377,11 +375,9 @@ pub mod Staker {
         }
 
         // Check interface for detailed description.
-        fn get_seconds_per_total_staked_sum_at(
-            self: @ContractState, timestamp: u64,
-        ) -> u256 {
+        fn get_seconds_per_total_staked_sum_at(self: @ContractState, timestamp: u64) -> u256 {
             let record = self.staking_log.find_record_on_or_before_timestamp(timestamp);
-            
+
             if let Option::Some((record, idx)) = record {
                 let total_staked = if (idx == self.staking_log.len() - 1) {
                     // if last record found
@@ -389,9 +385,13 @@ pub mod Staker {
                 } else {
                     // This helps to avoid couple of FP divisions.
                     let next_record = self.staking_log.at(idx + 1).read();
-                    let time_weighted_total_staked_sum_diff = next_record.time_weighted_total_staked_sum - record.time_weighted_total_staked_sum;
+                    let time_weighted_total_staked_sum_diff = next_record
+                        .time_weighted_total_staked_sum
+                        - record.time_weighted_total_staked_sum;
                     let timestamp_diff = next_record.timestamp - record.timestamp;
-                    (time_weighted_total_staked_sum_diff / timestamp_diff.into()).try_into().unwrap()
+                    (time_weighted_total_staked_sum_diff / timestamp_diff.into())
+                        .try_into()
+                        .unwrap()
                 };
 
                 let seconds_diff = timestamp - record.timestamp;
@@ -412,21 +412,25 @@ pub mod Staker {
 
         fn get_time_weighted_total_staked_sum_at(self: @ContractState, timestamp: u64) -> u256 {
             let record = self.staking_log.find_record_on_or_before_timestamp(timestamp);
-            
+
             if let Option::Some((record, idx)) = record {
                 let total_staked = if (idx == self.staking_log.len() - 1) {
                     // if last rescord found
                     self.total_staked.read()
                 } else {
                     let next_record = self.staking_log.at(idx + 1).read();
-                    let time_weighted_total_staked_sum_diff = next_record.time_weighted_total_staked_sum - record.time_weighted_total_staked_sum;
+                    let time_weighted_total_staked_sum_diff = next_record
+                        .time_weighted_total_staked_sum
+                        - record.time_weighted_total_staked_sum;
                     let timestamp_diff = next_record.timestamp - record.timestamp;
-                    (time_weighted_total_staked_sum_diff / timestamp_diff.into()).try_into().unwrap()
+                    (time_weighted_total_staked_sum_diff / timestamp_diff.into())
+                        .try_into()
+                        .unwrap()
                 };
 
                 let seconds_diff = timestamp - record.timestamp;
                 let time_weighted_total_staked: u256 = total_staked.into() * seconds_diff.into();
-                
+
                 return record.time_weighted_total_staked_sum + time_weighted_total_staked;
             }
 
@@ -440,9 +444,13 @@ pub mod Staker {
                     self.total_staked.read()
                 } else {
                     let next_record = self.staking_log.at(idx + 1).read();
-                    let time_weighted_total_staked_sum_diff = next_record.time_weighted_total_staked_sum - record.time_weighted_total_staked_sum;
+                    let time_weighted_total_staked_sum_diff = next_record
+                        .time_weighted_total_staked_sum
+                        - record.time_weighted_total_staked_sum;
                     let timestamp_diff = next_record.timestamp - record.timestamp;
-                    (time_weighted_total_staked_sum_diff / timestamp_diff.into()).try_into().unwrap()
+                    (time_weighted_total_staked_sum_diff / timestamp_diff.into())
+                        .try_into()
+                        .unwrap()
                 }
             } else {
                 0_u128
@@ -470,6 +478,6 @@ pub mod Staker {
             let end_snapshot = self.get_seconds_per_total_staked_sum_at(end);
 
             staked * ((end_snapshot - start_snapshot) * 100).high / (end - start).into()
-        }   
+        }
     }
 }

@@ -24,7 +24,6 @@ pub(crate) struct StakingLogRecord {
 
 #[generate_trait]
 pub impl StakingLogOperations of LogOperations {
-
     fn find_record_on_or_before_timestamp(
         self: @StorageBase<StakingLog>, timestamp: u64,
     ) -> Option<(StakingLogRecord, u64)> {
@@ -63,7 +62,9 @@ pub impl StakingLogOperations of LogOperations {
         return Option::None;
     }
 
-    fn log_change(self: StorageBase<Mutable<StakingLog>>, amount: u128, total_staked_before_change: u128) {
+    fn log_change(
+        self: StorageBase<Mutable<StakingLog>>, amount: u128, total_staked_before_change: u128,
+    ) {
         let log = self.as_path();
 
         let block_timestamp = get_block_timestamp();
@@ -102,7 +103,8 @@ pub impl StakingLogOperations of LogOperations {
         let staked_seconds_per_total_staked: u256 = if total_staked_before_change == 0 {
             0_u64.into()
         } else {
-            let res = u256 { low: 0, high: seconds_diff.into() } / total_staked_before_change.into();
+            let res = u256 { low: 0, high: seconds_diff.into() }
+                / total_staked_before_change.into();
             res
         };
 
@@ -130,10 +132,7 @@ pub(crate) impl StakingLogRecordStorePacking of StorePacking<StakingLogRecord, (
             value.timestamp, value.time_weighted_total_staked_sum,
         );
 
-        let val2: felt252 = value
-            .seconds_per_total_staked_sum
-            .try_into()
-            .unwrap();
+        let val2: felt252 = value.seconds_per_total_staked_sum.try_into().unwrap();
 
         (val1, val2)
     }
@@ -147,9 +146,7 @@ pub(crate) impl StakingLogRecordStorePacking of StorePacking<StakingLogRecord, (
         StakingLogRecord {
             timestamp: timestamp,
             time_weighted_total_staked_sum: time_weighted_total_staked_sum,
-            seconds_per_total_staked_sum: seconds_per_total_staked_sum
-                .try_into()
-                .unwrap(),
+            seconds_per_total_staked_sum: seconds_per_total_staked_sum.try_into().unwrap(),
         }
     }
 }
