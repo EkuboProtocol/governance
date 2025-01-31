@@ -409,11 +409,11 @@ mod staker_staked_seconds_per_total_staked_calculation {
         let (staker, _) = setup(10000);
 
         assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(0),
+            staker.get_seconds_per_total_staked_sum_at(0),
             u256 { high: 0, low: 0_u128.into() },
         );
         assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(1000),
+            staker.get_seconds_per_total_staked_sum_at(1000),
             u256 { high: 0, low: 0_u128.into() },
         );
     }
@@ -445,80 +445,163 @@ mod staker_staked_seconds_per_total_staked_calculation {
     }
 
     #[test]
+    fn test_check_total_staked_calculations() {
+        let (staker, token) = setup(1000);
+
+        // Caller is token owner
+        let delegatee = contract_address_const::<1234567890>();
+
+        assert_eq!(staker.get_total_staked_at(0), 0);
+        assert_eq!(staker.get_total_staked_at(100), 0);
+
+        set_block_timestamp(10);
+        token.approve(staker.contract_address, 100);
+        staker.stake(delegatee); 
+        
+        set_block_timestamp(15);
+        token.approve(staker.contract_address, 300);
+        staker.stake(delegatee); 
+
+        set_block_timestamp(20);
+        token.approve(staker.contract_address, 200);
+        staker.stake(delegatee); 
+
+        set_block_timestamp(40);
+        token.approve(staker.contract_address, 100);
+        staker.stake(delegatee); 
+
+        set_block_timestamp(65);
+        token.approve(staker.contract_address, 300);
+        staker.stake(delegatee); 
+
+        assert_eq!(staker.get_total_staked_at(0), 0);
+        assert_eq!(staker.get_total_staked_at(5), 0);
+        assert_eq!(staker.get_total_staked_at(9), 0);
+        assert_eq!(staker.get_total_staked_at(10), 100);
+        assert_eq!(staker.get_total_staked_at(11), 100);
+        assert_eq!(staker.get_total_staked_at(14), 100);
+        assert_eq!(staker.get_total_staked_at(15), 400);
+        assert_eq!(staker.get_total_staked_at(19), 400);
+        assert_eq!(staker.get_total_staked_at(20), 600);
+        assert_eq!(staker.get_total_staked_at(30), 600);
+        assert_eq!(staker.get_total_staked_at(39), 600);
+        assert_eq!(staker.get_total_staked_at(40), 700);
+        assert_eq!(staker.get_total_staked_at(64), 700);
+        assert_eq!(staker.get_total_staked_at(65), 1000);
+        assert_eq!(staker.get_total_staked_at(100), 1000);
+    }
+
+    #[test]
+    fn test_get_time_weighted_total_staked_sum_at() {
+        let (staker, token) = setup(1000);
+
+        // Caller is token owner
+        let token_owner = get_caller_address();
+        let delegatee = contract_address_const::<1234567890>();
+
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(0), 0);
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(100), 0);
+
+        set_block_timestamp(10);
+        token.approve(staker.contract_address, 100);
+        staker.stake(delegatee); 
+        
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(0), 0);
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(9), 0);
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(10), 0);
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(11), 100);
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(12), 200);
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(13), 300);
+
+        set_block_timestamp(15);
+        token.approve(staker.contract_address, 300);
+        staker.stake(delegatee); 
+
+        set_block_timestamp(20);
+        token.approve(staker.contract_address, 200);
+        staker.stake(delegatee); 
+
+        set_block_timestamp(40);
+        token.approve(staker.contract_address, 100);
+        staker.stake(delegatee); 
+
+        set_block_timestamp(65);
+        token.approve(staker.contract_address, 300);
+        staker.stake(delegatee);
+
+        set_block_timestamp(70); 
+
+        staker.withdraw(delegatee, token_owner);
+
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(0), 0);
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(5), 0);
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(9), 0);
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(10), 0);    // 100/s
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(11), 100);
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(14), 400);
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(15), 500);  // 400/s
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(19), 2100);
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(20), 2500); // 600/s
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(30), 8500);
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(39), 13900);
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(40), 14500);  // 700/s
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(64), 31300);
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(65), 32000); // 1000/s
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(70), 37000); // 0/s
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(100), 37000); // 0/s
+        assert_eq!(staker.get_time_weighted_total_staked_sum_at(200), 37000); // 0/s
+    }
+    
+    #[test]
     fn test_should_stake_10000_tokens_for_5_seconds_adding_10000_every_second_to_staked_seconds() {
         let (staker, token) = setup(1000);
 
         // Caller is token owner
         let token_owner = get_caller_address();
-
-        // Allow staker contract to spend 2 tokens from owner account
-        token.approve(staker.contract_address, 2);
-
-        // Adress to delegate tokens to
         let delegatee = contract_address_const::<1234567890>();
 
-        set_block_timestamp(0);
-        staker.stake(delegatee); // Will transfer 2 token to contract account and setup delegatee
-
-        set_block_timestamp(5); // 5 seconds passed
-
-        assert(staker.get_staked(token_owner, delegatee) == 2, 'Something went wrong');
-
-        staker.withdraw(delegatee, token_owner); // Will withdraw all 10 tokens back to owner
-
-        assert(staker.get_staked(delegatee, token_owner) == 0, 'Not all tokens were withdrawn');
-
         set_block_timestamp(10);
-        token.approve(staker.contract_address, 7);
-        staker.stake(delegatee); // Will transfer 7 token to contract account and setup delegatee
+        token.approve(staker.contract_address, 10);
+        staker.stake(delegatee); 
 
-        assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(0), u256 { high: 0, low: 0_u128 },
-        );
-        let z = staker.get_cumulative_seconds_per_total_staked_at(1);
-        assert_eq!(z.high, 0_u128);
-        assert_eq!(z.low, 0x80000000000000000000000000000000_u128);
+        set_block_timestamp(15); 
+        token.approve(staker.contract_address, 10);
+        staker.stake(delegatee); 
 
+        set_block_timestamp(20);
+        staker.withdraw(delegatee, token_owner); 
+
+        set_block_timestamp(30);
+        token.approve(staker.contract_address, 30);
+        staker.stake(delegatee);
+
+        set_block_timestamp(40); 
+        staker.withdraw(delegatee, token_owner); 
+
+        assert_eq!(staker.get_seconds_per_total_staked_sum_at(0), 0);
+        assert_eq!(staker.get_seconds_per_total_staked_sum_at(10), 0); 
+        assert_eq!(staker.get_seconds_per_total_staked_sum_at(15), u256 {
+            low: 0x80000000000000000000000000000000_u128,
+            high: 0_u128,
+        }); // 1/2
         assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(1),
-            u256 { high: 0, low: 0x80000000000000000000000000000000_u128 },
-        );
-        assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(2), u256 { high: 1, low: 0_u128 },
-        );
-        assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(3),
-            u256 { high: 1, low: 0x80000000000000000000000000000000_u128 },
-        );
-        assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(4), u256 { high: 2, low: 0_u128 },
-        );
-        assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(5), u256 { high: 0, low: 0_u128 },
-        );
-        assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(6), u256 { high: 0, low: 0_u128 },
-        );
-        assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(7), u256 { high: 0, low: 0_u128 },
-        );
-        assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(8), u256 { high: 0, low: 0_u128 },
-        );
-        assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(9), u256 { high: 0, low: 0_u128 },
-        );
-        assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(10),
-            u256 { high: 2, low: 0x80000000000000000000000000000000_u128 },
-        );
-        assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(17),
-            u256 { high: 3, low: 0x80000000000000000000000000000000_u128 },
-        );
-        assert_eq!(
-            staker.get_cumulative_seconds_per_total_staked_at(24),
-            u256 { high: 4, low: 0x80000000000000000000000000000000_u128 },
-        );
+            staker.get_seconds_per_total_staked_sum_at(20), 
+            u256 {
+                low: 0xC0000000000000000000000000000000,
+                high: 0_u128,
+            }
+        ); // 3/4
+        assert_eq!(staker.get_seconds_per_total_staked_sum_at(30), 
+            u256 {
+                low: 0xC0000000000000000000000000000000,
+                high: 0_u128,
+            }
+        ); // 3/4
+        assert_eq!(staker.get_seconds_per_total_staked_sum_at(40), 
+            u256 {
+                low: 0x15555555555555555555555555555555,
+                high: 1_u128,
+            }
+        ); // 1 + 1/12
     }
 }

@@ -53,13 +53,35 @@ pub trait IStaker<TContractState> {
         self: @TContractState, delegate: ContractAddress, period: u64,
     ) -> u128;
 
-    // Gets the cumulative staked amount * per second staked for the given timestamp and account.
-    fn get_cumulative_seconds_per_total_staked_at(self: @TContractState, timestamp: u64) -> u256;
+    // Calculates snapshot for seconds_per_total_staked_sum (val) at given timestamp (ts).
+    // If timestamp if before first record, returns 0.
+    // If timestamp is between records, calculates Δt = (ts - record.ts) where record is 
+    // first record in log before timestamp, then calculates total amount using the 
+    // weighted_total_staked diff diveded by time diff.
+    // If timestamp is after last record, calculates Δt = (ts - last_record.ts) and 
+    // takes total_staked from storage and adds Δt / total_staked to accumulator.
+    // In case total_staked is 0 this method turns is to 1 to simplify calculations
+    // TODO: this should be a part of StakingLog
+    fn get_seconds_per_total_staked_sum_at(self: @TContractState, timestamp: u64) -> u256;
+
+    // Calculates snapshot for time_weighted_total_staked (val) at given timestamp (ts).
+    // Does pretty much the same as `get_seconds_per_total_staked_sum_at` but simpler due to
+    // absence of FP division.
+    fn get_time_weighted_total_staked_sum_at(self: @TContractState, timestamp: u64) -> u256;
+
+    fn get_total_staked_at(self: @TContractState, timestamp: u64) -> u128;
+
+    fn get_average_total_staked_over_period(
+        self: @TContractState, start: u64, end: u64,
+    ) -> u128;
+
+    fn get_user_share_of_total_staked_over_period(
+        self: @TContractState, staked: u128, start: u64, end: u64,
+    ) -> u128;
 }
 
 #[starknet::contract]
 pub mod Staker {
-    use core::integer::{u512, u512_safe_div_rem_by_u256};
     use core::num::traits::zero::{Zero};
     use crate::staker_log::{LogOperations, StakingLog};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
@@ -354,62 +376,100 @@ pub mod Staker {
             self.get_average_delegated(delegate, now - period, now)
         }
 
-        fn get_cumulative_seconds_per_total_staked_at(
+        // Check interface for detailed description.
+        fn get_seconds_per_total_staked_sum_at(
             self: @ContractState, timestamp: u64,
         ) -> u256 {
-            if let Option::Some((log_record, idx)) = self
-                .staking_log
-                .find_change_log_on_or_before_timestamp(timestamp) {
+            let record = self.staking_log.find_record_on_or_before_timestamp(timestamp);
+            
+            if let Option::Some((record, idx)) = record {
                 let total_staked = if (idx == self.staking_log.len() - 1) {
-                    // if last rescord found
+                    // if last record found
                     self.total_staked.read()
                 } else {
-                    // otherwise calculate using cumulative_seconds_per_total_staked difference
-                    let next_log_record = self.staking_log.at(idx + 1).read();
-
-                    // substract fixed point values
-                    let divisor = next_log_record.cumulative_seconds_per_total_staked
-                        - log_record.cumulative_seconds_per_total_staked;
-
-                    if divisor.is_zero() {
-                        return 0_u64.into();
-                    }
-
-                    let diff_seconds: u128 = (next_log_record.timestamp - log_record.timestamp)
-                        .into();
-
-                    // Divide u64 by fixed point
-                    let (total_staked_fp_medium, _) = u512_safe_div_rem_by_u256(
-                        u512 { limb0: 0, limb1: 0, limb2: 0, limb3: diff_seconds },
-                        divisor.try_into().unwrap(),
-                    );
-
-                    let total_staked_fp = u256 {
-                        low: total_staked_fp_medium.limb1, high: total_staked_fp_medium.limb2,
-                    };
-
-                    // round value
-                    total_staked_fp.high + if (total_staked_fp.low >= TWO_POW_127) {
-                        1
-                    } else {
-                        0
-                    }
+                    // This helps to avoid couple of FP divisions.
+                    let next_record = self.staking_log.at(idx + 1).read();
+                    let time_weighted_total_staked_sum_diff = next_record.time_weighted_total_staked_sum - record.time_weighted_total_staked_sum;
+                    let timestamp_diff = next_record.timestamp - record.timestamp;
+                    (time_weighted_total_staked_sum_diff / timestamp_diff.into()).try_into().unwrap()
                 };
 
-                let seconds_diff = timestamp - log_record.timestamp;
+                let seconds_diff = timestamp - record.timestamp;
 
-                let staked_seconds: u256 = if total_staked == 0 {
-                    0_u256
+                let seconds_per_total_staked: u256 = if total_staked == 0 {
+                    seconds_diff.into() // as if total_staked is 1
                 } else {
                     // Divide u64 by u128
                     u256 { low: 0, high: seconds_diff.into() } / total_staked.into()
                 };
 
                 // Sum fixed posits
-                return log_record.cumulative_seconds_per_total_staked + staked_seconds;
+                return record.seconds_per_total_staked_sum + seconds_per_total_staked;
             }
 
             return 0_u256;
         }
+
+        fn get_time_weighted_total_staked_sum_at(self: @ContractState, timestamp: u64) -> u256 {
+            let record = self.staking_log.find_record_on_or_before_timestamp(timestamp);
+            
+            if let Option::Some((record, idx)) = record {
+                let total_staked = if (idx == self.staking_log.len() - 1) {
+                    // if last rescord found
+                    self.total_staked.read()
+                } else {
+                    let next_record = self.staking_log.at(idx + 1).read();
+                    let time_weighted_total_staked_sum_diff = next_record.time_weighted_total_staked_sum - record.time_weighted_total_staked_sum;
+                    let timestamp_diff = next_record.timestamp - record.timestamp;
+                    (time_weighted_total_staked_sum_diff / timestamp_diff.into()).try_into().unwrap()
+                };
+
+                let seconds_diff = timestamp - record.timestamp;
+                let time_weighted_total_staked: u256 = total_staked.into() * seconds_diff.into();
+                
+                return record.time_weighted_total_staked_sum + time_weighted_total_staked;
+            }
+
+            return 0_u256;
+        }
+
+        fn get_total_staked_at(self: @ContractState, timestamp: u64) -> u128 {
+            let record = self.staking_log.find_record_on_or_before_timestamp(timestamp);
+            if let Option::Some((record, idx)) = record {
+                if (idx == self.staking_log.len() - 1) {
+                    self.total_staked.read()
+                } else {
+                    let next_record = self.staking_log.at(idx + 1).read();
+                    let time_weighted_total_staked_sum_diff = next_record.time_weighted_total_staked_sum - record.time_weighted_total_staked_sum;
+                    let timestamp_diff = next_record.timestamp - record.timestamp;
+                    (time_weighted_total_staked_sum_diff / timestamp_diff.into()).try_into().unwrap()
+                }
+            } else {
+                0_u128
+            }
+        }
+
+        fn get_average_total_staked_over_period(
+            self: @ContractState, start: u64, end: u64,
+        ) -> u128 {
+            assert(end > start, 'ORDER');
+
+            let start_snapshot = self.get_time_weighted_total_staked_sum_at(start);
+            let end_snapshot = self.get_time_weighted_total_staked_sum_at(end);
+            let period_length = end - start;
+
+            ((end_snapshot - start_snapshot) / period_length.into()).try_into().unwrap()
+        }
+
+        fn get_user_share_of_total_staked_over_period(
+            self: @ContractState, staked: u128, start: u64, end: u64,
+        ) -> u128 {
+            assert(end > start, 'ORDER');
+
+            let start_snapshot = self.get_seconds_per_total_staked_sum_at(start);
+            let end_snapshot = self.get_seconds_per_total_staked_sum_at(end);
+
+            staked * ((end_snapshot - start_snapshot) * 100).high / (end - start).into()
+        }   
     }
 }

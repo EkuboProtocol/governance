@@ -7,6 +7,7 @@ use starknet::storage::{Vec, VecTrait};
 use starknet::storage_access::{StorePacking};
 use starknet::{get_block_timestamp};
 
+
 pub type StakingLog = Vec<StakingLogRecord>;
 
 const TWO_POW_32: u64 = 0x100000000_u64;
@@ -17,23 +18,25 @@ const TWO_POW_160: u256 = 0x10000000000000000000000000000000000000000;
 pub(crate) struct StakingLogRecord {
     pub(crate) timestamp: u64,
     // Only 128+32=160 bits are used
-    pub(crate) cumulative_total_staked: u256,
-    pub(crate) cumulative_seconds_per_total_staked: u256,
+    pub(crate) time_weighted_total_staked_sum: u256,
+    pub(crate) seconds_per_total_staked_sum: u256,
 }
 
 #[generate_trait]
 pub impl StakingLogOperations of LogOperations {
-    fn get_total_staked(self: @StorageBase<StakingLog>, timestamp: u64) -> Option<u128> {
-        Option::Some(0)
-    }
 
-    fn find_change_log_on_or_before_timestamp(
+    fn find_record_on_or_before_timestamp(
         self: @StorageBase<StakingLog>, timestamp: u64,
     ) -> Option<(StakingLogRecord, u64)> {
         let log = self.as_path();
         if log.len() == 0 {
             return Option::None;
         }
+        // TODO: Discuss with Moody, maybe it's worth to store that one globally
+        if log.at(0).read().timestamp > timestamp {
+            return Option::None;
+        }
+
         let mut left = 0;
         let mut right = log.len() - 1;
 
@@ -71,8 +74,8 @@ pub impl StakingLogOperations of LogOperations {
                 .write(
                     StakingLogRecord {
                         timestamp: block_timestamp,
-                        cumulative_total_staked: 0_u256,
-                        cumulative_seconds_per_total_staked: 0_u64.into(),
+                        time_weighted_total_staked_sum: 0_u256,
+                        seconds_per_total_staked_sum: 0_u64.into(),
                     },
                 );
 
@@ -94,7 +97,7 @@ pub impl StakingLogOperations of LogOperations {
         // Might be zero
         let seconds_diff = block_timestamp - last_record.timestamp;
 
-        let total_staked_by_elapsed_seconds = total_staked_before_change.into() * seconds_diff.into();
+        let time_weighted_total_staked = total_staked_before_change.into() * seconds_diff.into();
 
         let staked_seconds_per_total_staked: u256 = if total_staked_before_change == 0 {
             0_u64.into()
@@ -108,10 +111,9 @@ pub impl StakingLogOperations of LogOperations {
             .write(
                 StakingLogRecord {
                     timestamp: block_timestamp,
-                    cumulative_total_staked: last_record.cumulative_total_staked
-                        + total_staked_by_elapsed_seconds,
-                    cumulative_seconds_per_total_staked: last_record
-                        .cumulative_seconds_per_total_staked
+                    time_weighted_total_staked_sum: last_record.time_weighted_total_staked_sum
+                        + time_weighted_total_staked,
+                    seconds_per_total_staked_sum: last_record.seconds_per_total_staked_sum
                         + staked_seconds_per_total_staked,
                 },
             );
@@ -124,28 +126,28 @@ pub impl StakingLogOperations of LogOperations {
 
 pub(crate) impl StakingLogRecordStorePacking of StorePacking<StakingLogRecord, (felt252, felt252)> {
     fn pack(value: StakingLogRecord) -> (felt252, felt252) {
-        let packed_ts_cumulative_total_staked: felt252 = pack_u64_u256_tuple(
-            value.timestamp, value.cumulative_total_staked,
+        let val1: felt252 = pack_u64_u256_tuple(
+            value.timestamp, value.time_weighted_total_staked_sum,
         );
 
-        let cumulative_seconds_per_total_staked: felt252 = value
-            .cumulative_seconds_per_total_staked
+        let val2: felt252 = value
+            .seconds_per_total_staked_sum
             .try_into()
             .unwrap();
 
-        (packed_ts_cumulative_total_staked, cumulative_seconds_per_total_staked)
+        (val1, val2)
     }
 
     fn unpack(value: (felt252, felt252)) -> StakingLogRecord {
-        let (packed_ts_cumulative_total_staked, cumulative_seconds_per_total_staked) = value;
-        let (timestamp, cumulative_total_staked) = unpack_u64_u256_tuple(
-            packed_ts_cumulative_total_staked,
+        let (packed_ts_time_weighted_total_staked, seconds_per_total_staked_sum) = value;
+        let (timestamp, time_weighted_total_staked_sum) = unpack_u64_u256_tuple(
+            packed_ts_time_weighted_total_staked,
         );
 
         StakingLogRecord {
             timestamp: timestamp,
-            cumulative_total_staked: cumulative_total_staked,
-            cumulative_seconds_per_total_staked: cumulative_seconds_per_total_staked
+            time_weighted_total_staked_sum: time_weighted_total_staked_sum,
+            seconds_per_total_staked_sum: seconds_per_total_staked_sum
                 .try_into()
                 .unwrap(),
         }
