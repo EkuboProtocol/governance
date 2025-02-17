@@ -61,7 +61,6 @@ pub trait IStakerV2<TContractState> {
     // If timestamp is after last record, calculates Δt = (ts - last_record.ts) and
     // takes total_staked from storage and adds Δt / total_staked to accumulator.
     // In case total_staked is 0 this method turns is to 1 to simplify calculations
-    // TODO: this should be a part of StakingLog
     fn get_seconds_per_total_staked_sum_at(self: @TContractState, timestamp: u64) -> u256;
 
     // Calculates snapshot for time_weighted_total_staked (val) at given timestamp (ts).

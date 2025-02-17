@@ -30,7 +30,7 @@ pub impl StakingLogOperations of LogOperations {
         if log.len() == 0 {
             return Option::None;
         }
-        // TODO: Discuss with Moody, maybe it's worth to store that one globally
+
         if log.at(0).read().timestamp > timestamp {
             return Option::None;
         }
