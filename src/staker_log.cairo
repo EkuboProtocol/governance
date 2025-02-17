@@ -23,6 +23,30 @@ pub(crate) struct StakingLogRecord {
 
 #[generate_trait]
 pub impl StakingLogOperations of LogOperations {
+    
+    fn search_recursive(
+        self: @StorageBase<StakingLog>, timestamp: u64, left: u64, right: u64,
+    ) -> Option<(StakingLogRecord, u64)> {
+        let log = self.as_path();
+
+        if left > right {
+            return Option::None;
+        }
+
+        let center = (right + left) / 2;
+        let record = log.at(center).read();
+
+        if record.timestamp <= timestamp {
+            let res = self
+                .search_recursive(timestamp, center + 1, right)
+                .unwrap_or((record, center));
+            
+            Option::Some(res)            
+        } else {
+            self.search_recursive(timestamp, left, center - 1)
+        }
+    }
+    
     fn find_record_on_or_before_timestamp(
         self: @StorageBase<StakingLog>, timestamp: u64,
     ) -> Option<(StakingLogRecord, u64)> {
@@ -35,29 +59,7 @@ pub impl StakingLogOperations of LogOperations {
             return Option::None;
         }
 
-        let mut left = 0;
-        let mut right = log.len() - 1;
-
-        let mut result_ptr: Option<(StakingLogRecord, u64)> = Option::None;
-
-        while (left <= right) {
-            let center = (right + left) / 2;
-            let record_ptr = log.at(center);
-            let record = record_ptr.read();
-
-            if record.timestamp <= timestamp {
-                result_ptr = Option::Some((record, center));
-                left = center + 1;
-            } else {
-                right = center - 1;
-            };
-        };
-
-        if let Option::Some((result, idx)) = result_ptr {
-            return Option::Some((result, idx));
-        }
-
-        return Option::None;
+        return self.search_recursive(timestamp, 0, log.len() - 1);
     }
 
     fn log_change(
