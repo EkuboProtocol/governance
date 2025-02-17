@@ -21,10 +21,6 @@ pub(crate) struct StakingLogRecord {
     pub(crate) seconds_per_total_staked_sum: u256,
 }
 
-trait TTimestamped<TSelf> {
-    fn timestamp(self: TSelf) -> u64;
-}
-
 #[generate_trait]
 pub impl StakingLogOperations of LogOperations {
     fn find_record_on_or_before_timestamp(
