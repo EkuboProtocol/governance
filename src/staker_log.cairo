@@ -1,9 +1,8 @@
-use starknet::storage::MutableVecTrait;
 use starknet::storage::{
     Mutable, StorageAsPath, StorageBase, StoragePointerReadAccess, StoragePointerWriteAccess,
+    Vec, VecTrait, MutableVecTrait
 };
 
-use starknet::storage::{Vec, VecTrait};
 use starknet::storage_access::{StorePacking};
 use starknet::{get_block_timestamp};
 
@@ -20,6 +19,10 @@ pub(crate) struct StakingLogRecord {
     // Only 128+32=160 bits are used
     pub(crate) time_weighted_total_staked_sum: u256,
     pub(crate) seconds_per_total_staked_sum: u256,
+}
+
+trait TTimestamped<TSelf> {
+    fn timestamp(self: TSelf) -> u64;
 }
 
 #[generate_trait]
@@ -39,7 +42,6 @@ pub impl StakingLogOperations of LogOperations {
         let mut left = 0;
         let mut right = log.len() - 1;
 
-        // To avoid reading from the storage multiple times.
         let mut result_ptr: Option<(StakingLogRecord, u64)> = Option::None;
 
         while (left <= right) {
