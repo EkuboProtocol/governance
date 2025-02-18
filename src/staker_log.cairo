@@ -22,8 +22,7 @@ pub(crate) struct StakingLogRecord {
 }
 
 #[generate_trait]
-pub impl StakingLogOperations of LogOperations {
-    
+impl InternalStakingLogOperations of InternalLogOperations {
     fn search_recursive(
         self: @StorageBase<StakingLog>, timestamp: u64, left: u64, right: u64,
     ) -> Option<(StakingLogRecord, u64)> {
@@ -46,6 +45,10 @@ pub impl StakingLogOperations of LogOperations {
             self.search_recursive(timestamp, left, center - 1)
         }
     }
+}
+
+#[generate_trait]
+pub impl StakingLogOperations of LogOperations {
     
     fn find_record_on_or_before_timestamp(
         self: @StorageBase<StakingLog>, timestamp: u64,
