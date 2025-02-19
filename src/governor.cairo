@@ -1,7 +1,7 @@
 use governance::execution_state::{ExecutionState};
 use governance::staker::{IStakerDispatcher};
 use starknet::account::{Call};
-use starknet::{ClassHash, ContractAddress};
+use starknet::{ClassHash, ContractAddress, EthAddress};
 
 #[derive(Copy, Drop, Serde, starknet::Store, PartialEq, Debug)]
 pub struct ProposalInfo {
@@ -92,8 +92,8 @@ pub trait IGovernor<TContractState> {
     // Replaces the code at this address. This must be self-called via a proposal.
     fn upgrade(ref self: TContractState, class_hash: ClassHash);
 
-    // Migrates to the latest version of storage layout, from the version of storage before v2.1.0
-    fn _migrate_old_config_storage(ref self: TContractState);
+    // Sends a message to L1 via syscall
+    fn send_message_to_l1(self: @TContractState, to_address: EthAddress, payload: Span<felt252>);
 }
 
 #[starknet::contract(account)]
@@ -107,14 +107,13 @@ pub mod Governor {
         Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess,
         StoragePointerWriteAccess,
     };
-    use starknet::storage_access::{Store, storage_base_address_from_felt252};
     use starknet::{
         AccountContract, get_block_timestamp, get_caller_address, get_contract_address, get_tx_info,
-        syscalls::{replace_class_syscall},
+        syscalls::{replace_class_syscall, send_message_to_l1_syscall},
     };
     use super::{
         Call, ClassHash, Config, ContractAddress, ExecutionState, IGovernor, IStakerDispatcher,
-        ProposalInfo,
+        ProposalInfo, EthAddress,
     };
 
 
@@ -459,27 +458,12 @@ pub mod Governor {
             replace_class_syscall(class_hash).unwrap();
         }
 
-        fn _migrate_old_config_storage(ref self: ContractState) {
-            let old_config_storage_address = storage_base_address_from_felt252(selector!("config"));
-            let old_config: Config = Store::read(0, old_config_storage_address).unwrap();
-            // voting period of 0 is assumed to be invalid
-            assert(old_config.voting_period.is_non_zero(), 'NO_OLD_CONFIG');
-            self.config_versions.write(0, old_config);
-            self.emit(Reconfigured { version: 0, new_config: old_config });
-            Store::write(
-                0,
-                old_config_storage_address,
-                Config {
-                    voting_start_delay: 0,
-                    voting_period: 0,
-                    voting_weight_smoothing_duration: 0,
-                    quorum: 0,
-                    proposal_creation_threshold: 0,
-                    execution_delay: 0,
-                    execution_window: 0,
-                },
-            )
-                .expect('FAILED_TO_DELETE');
+        fn send_message_to_l1(
+            self: @ContractState, to_address: EthAddress, payload: Span<felt252>,
+        ) {
+            self.check_self_call();
+
+            send_message_to_l1_syscall(to_address.into(), payload).expect('SYSCALL_FAILED')
         }
     }
 
