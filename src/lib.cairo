@@ -19,6 +19,14 @@ pub mod staker;
 #[cfg(test)]
 mod staker_test;
 
+pub mod staker_v2;
+#[cfg(test)]
+mod staker_v2_test;
+
+pub mod staker_log;
+#[cfg(test)]
+pub mod staker_log_test;
+
 mod interfaces {
     pub(crate) mod erc20;
 }
