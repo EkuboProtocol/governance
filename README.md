@@ -55,6 +55,24 @@ Contracts in this repository are designed so that they may be used together _or_
 - The payload can be computed by calling the `getPayload` view function on the deployed `StarknetOwnerProxy`
 - Once the message is accepted on L1, anyone can call `StarknetOwnerProxy#execute` with the proposal's specified `target`, `value` and `data`.
 
+#### L1StakingProxy: L1-Controlled Staking
+
+`L1StakingProxy` enables Ethereum smart contracts (like Gnosis Safe multisigs) to control EKUBO token staking on Starknet.
+
+**L2 Component (`L1StakingProxy.cairo`)**:
+- Holds and manages staked EKUBO tokens on behalf of an L1 owner
+- Only accepts commands from a designated L1 Ethereum address
+- Supports staking, withdrawing, emergency transfers, and arbitrary calls
+- Upgradeable via L1 messages
+
+**L1 Component (`StarknetStakingProxy.sol`)**:
+- Provides easy-to-use interface for L1 contracts to control L2 staking
+- Automatically encodes messages for L2 consumption
+- Supports owner-based access control (compatible with multisigs)
+- Handles message fee payments
+
+See [L1_STAKING_PROXY.md](L1_STAKING_PROXY.md) for detailed usage instructions.
+
 ## Testing
 
 Make sure you have [Scarb with asdf](https://docs.swmansion.com/scarb/download#install-via-asdf) installed. You can look at the _.tool-versions_ file to know which version of Scarb is currently used.

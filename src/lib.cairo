@@ -27,6 +27,10 @@ pub mod staker_log;
 #[cfg(test)]
 pub mod staker_log_test;
 
+pub mod l1_staking_proxy;
+#[cfg(test)]
+mod l1_staking_proxy_test;
+
 mod interfaces {
     pub(crate) mod erc20;
 }
