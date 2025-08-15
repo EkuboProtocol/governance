@@ -2,7 +2,7 @@
 pragma solidity ^0.8.13;
 
 import {Script, console} from "forge-std/Script.sol";
-import {StarknetStakingProxy} from "../src/StarknetStakingProxy.sol";
+import {StarknetStakingProxy, IStarknetMessaging} from "../src/StarknetStakingProxy.sol";
 
 contract DeployStakingScript is Script {
     function setUp() public {}
@@ -10,7 +10,7 @@ contract DeployStakingScript is Script {
     function run() public {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
-        
+
         // Starknet messaging contract addresses
         address starknetMessaging;
         if (block.chainid == 1) {
@@ -22,20 +22,17 @@ contract DeployStakingScript is Script {
         } else {
             revert("Unsupported chain");
         }
-        
+
         // L2 staking proxy address (to be deployed on Starknet)
         uint256 l2StakingProxy = vm.envUint("L2_STAKING_PROXY_ADDRESS");
-        
+
         // Owner address (can be a multisig)
         address owner = vm.envOr("OWNER_ADDRESS", deployer);
-        
+
         vm.startBroadcast(deployerPrivateKey);
 
-        StarknetStakingProxy stakingProxy = new StarknetStakingProxy(
-            IStarknetMessaging(starknetMessaging),
-            l2StakingProxy,
-            owner
-        );
+        StarknetStakingProxy stakingProxy =
+            new StarknetStakingProxy(IStarknetMessaging(starknetMessaging), l2StakingProxy, owner);
 
         console.log("StarknetStakingProxy deployed at:", address(stakingProxy));
         console.log("L2 Staking Proxy:", l2StakingProxy);
