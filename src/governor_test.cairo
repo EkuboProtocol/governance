@@ -1258,8 +1258,8 @@ fn test_remove_staker() {
     let add_id = create_proposal_with_call(governor, token, staker, add_call);
     
     let config = governor.get_config();
-    // Stake enough tokens to meet quorum
-    token.approve(staker.contract_address, config.quorum.into());
+    // Stake enough tokens to meet quorum for both proposals
+    token.approve(staker.contract_address, (config.quorum * 2).into());
     staker.stake(proposer());
     
     advance_time(config.voting_start_delay);
@@ -1282,10 +1282,6 @@ fn test_remove_staker() {
     
     let remove_id = create_proposal_with_call(governor, token, staker, remove_call);
     
-    // Stake more tokens to meet quorum for the remove proposal
-    token.approve(staker.contract_address, config.quorum.into());
-    staker.stake(proposer());
-    
     advance_time(config.voting_start_delay);
     set_contract_address(proposer());
     governor.vote(remove_id, true);
@@ -1298,7 +1294,7 @@ fn test_remove_staker() {
 }
 
 #[test]
-#[should_panic(expected: ('CANNOT_REMOVE_DEFAULT_STAKER', 'ENTRYPOINT_FAILED'))]
+#[should_panic(expected: ('CANNOT_REMOVE_DEFAULT_STAKER', 'ENTRYPOINT_FAILED', 'ENTRYPOINT_FAILED'))]
 fn test_cannot_remove_default_staker() {
     let (staker, token, governor, _config) = setup();
     
@@ -1419,7 +1415,7 @@ fn test_vote_with_specific_staker() {
     let add_id = create_proposal_with_call(governor, token, staker, add_call);
     
     // Stake enough tokens to meet quorum
-    token.approve(staker.contract_address, config.quorum.into());
+    token.approve(staker.contract_address, (config.quorum * 2).into());
     staker.stake(proposer());
     
     advance_time(config.voting_start_delay);

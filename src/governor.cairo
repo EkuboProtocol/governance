@@ -336,7 +336,12 @@ pub mod Governor {
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
             assert(proposal.execution_state.canceled.is_zero(), 'PROPOSAL_CANCELED');
-            assert(self.allowed_stakers.read(staker), 'STAKER_NOT_ALLOWED');
+            // Allow default staker even if not explicitly in allowed_stakers (for upgrade compatibility)
+            let allowed = self.allowed_stakers.read(staker);
+            assert(
+                allowed || staker == self.get_staker().contract_address,
+                'STAKER_NOT_ALLOWED'
+            );
 
             let timestamp_current = get_block_timestamp();
             let voting_start_time = (proposal.execution_state.created + config.voting_start_delay);
@@ -499,7 +504,8 @@ pub mod Governor {
         }
 
         fn is_staker_allowed(self: @ContractState, staker: ContractAddress) -> bool {
-            self.allowed_stakers.read(staker)
+            // Default staker is always allowed (for upgrade compatibility)
+            self.allowed_stakers.read(staker) || staker == self.get_staker().contract_address
         }
 
         fn get_proposal(self: @ContractState, id: felt252) -> ProposalInfo {
