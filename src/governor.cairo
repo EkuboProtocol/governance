@@ -46,6 +46,9 @@ pub trait IGovernor<TContractState> {
     // Votes on the given proposal.
     fn vote(ref self: TContractState, id: felt252, yea: bool);
 
+    // Votes on the given proposal using a specific staker contract.
+    fn vote_with_staker(ref self: TContractState, id: felt252, yea: bool, staker: ContractAddress);
+
     // Cancels the proposal with the given ID. Only callable by the proposer.
     fn cancel(ref self: TContractState, id: felt252);
 
@@ -63,6 +66,15 @@ pub trait IGovernor<TContractState> {
 
     // Gets the staker that is used by this governor contract.
     fn get_staker(self: @TContractState) -> IStakerDispatcher;
+
+    // Adds a staker contract to the list of allowed stakers. Only callable by self.
+    fn add_staker(ref self: TContractState, staker: ContractAddress);
+
+    // Removes a staker contract from the list of allowed stakers. Only callable by self.
+    fn remove_staker(ref self: TContractState, staker: ContractAddress);
+
+    // Checks if a staker contract is allowed.
+    fn is_staker_allowed(self: @TContractState, staker: ContractAddress) -> bool;
 
     // Gets the latest configuration for this governor contract.
     fn get_config(self: @TContractState) -> Config;
@@ -137,6 +149,17 @@ pub mod Governor {
         pub voter: ContractAddress,
         pub weight: u128,
         pub yea: bool,
+        pub staker: ContractAddress,
+    }
+
+    #[derive(starknet::Event, Drop)]
+    pub struct StakerAdded {
+        pub staker: ContractAddress,
+    }
+
+    #[derive(starknet::Event, Drop)]
+    pub struct StakerRemoved {
+        pub staker: ContractAddress,
     }
 
     #[derive(starknet::Event, Drop)]
@@ -165,11 +188,14 @@ pub mod Governor {
         Canceled: Canceled,
         Executed: Executed,
         Reconfigured: Reconfigured,
+        StakerAdded: StakerAdded,
+        StakerRemoved: StakerRemoved,
     }
 
     #[storage]
     struct Storage {
         staker: IStakerDispatcher,
+        allowed_stakers: Map<ContractAddress, bool>,
         config_versions: Map<u64, Config>,
         latest_config_version: u64,
         nonce: u64,
@@ -181,6 +207,8 @@ pub mod Governor {
     #[constructor]
     fn constructor(ref self: ContractState, staker: IStakerDispatcher, config: Config) {
         self.staker.write(staker);
+        // The default staker is automatically allowed
+        self.allowed_stakers.write(staker.contract_address, true);
 
         self.config_versions.write(0, config);
         self.emit(Reconfigured { new_config: config, version: 0 });
@@ -235,6 +263,8 @@ pub mod Governor {
                 }
             }
 
+            // Check if proposer meets threshold using the default staker
+            // (maintains backwards compatibility)
             assert(
                 self
                     .get_staker()
@@ -289,10 +319,15 @@ pub mod Governor {
         }
 
         fn vote(ref self: ContractState, id: felt252, yea: bool) {
+            self.vote_with_staker(id, yea, self.get_staker().contract_address);
+        }
+
+        fn vote_with_staker(ref self: ContractState, id: felt252, yea: bool, staker: ContractAddress) {
             let (mut proposal, config) = self.get_proposal_with_config(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
             assert(proposal.execution_state.canceled.is_zero(), 'PROPOSAL_CANCELED');
+            assert(self.allowed_stakers.read(staker), 'STAKER_NOT_ALLOWED');
 
             let timestamp_current = get_block_timestamp();
             let voting_start_time = (proposal.execution_state.created + config.voting_start_delay);
@@ -303,8 +338,8 @@ pub mod Governor {
             assert(timestamp_current < (voting_start_time + config.voting_period), 'VOTING_ENDED');
             assert(past_vote.is_zero(), 'ALREADY_VOTED');
 
-            let weight = self
-                .get_staker()
+            let staker_dispatcher = IStakerDispatcher { contract_address: staker };
+            let weight = staker_dispatcher
                 .get_average_delegated(
                     delegate: voter,
                     start: voting_start_time - config.voting_weight_smoothing_duration,
@@ -323,7 +358,7 @@ pub mod Governor {
                 1
             });
 
-            self.emit(Voted { id, voter, weight, yea });
+            self.emit(Voted { id, voter, weight, yea, staker });
         }
 
         fn cancel(ref self: ContractState, id: felt252) {
@@ -424,6 +459,24 @@ pub mod Governor {
 
         fn get_staker(self: @ContractState) -> IStakerDispatcher {
             self.staker.read()
+        }
+
+        fn add_staker(ref self: ContractState, staker: ContractAddress) {
+            self.check_self_call();
+            self.allowed_stakers.write(staker, true);
+            self.emit(StakerAdded { staker });
+        }
+
+        fn remove_staker(ref self: ContractState, staker: ContractAddress) {
+            self.check_self_call();
+            // Cannot remove the default staker
+            assert(staker != self.get_staker().contract_address, 'CANNOT_REMOVE_DEFAULT_STAKER');
+            self.allowed_stakers.write(staker, false);
+            self.emit(StakerRemoved { staker });
+        }
+
+        fn is_staker_allowed(self: @ContractState, staker: ContractAddress) -> bool {
+            self.allowed_stakers.read(staker)
         }
 
         fn get_proposal(self: @ContractState, id: felt252) -> ProposalInfo {

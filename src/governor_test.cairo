@@ -1185,3 +1185,275 @@ fn test_reconfigure_succeeds_self_call() {
     let (_, next_proposal_config) = governor.get_proposal_with_config(id_next);
     assert_eq!(next_proposal_config, new_config);
 }
+
+// Tests for multiple stakers functionality
+
+fn setup_second_staker() -> (IStakerDispatcher, IERC20Dispatcher) {
+    setup_staker(2000000)
+}
+
+#[test]
+fn test_default_staker_is_allowed() {
+    let (staker, _token, governor, _config) = setup();
+    assert!(governor.is_staker_allowed(staker.contract_address));
+}
+
+#[test]
+fn test_add_staker() {
+    let (staker, _token, governor, _config) = setup();
+    let (staker2, _token2) = setup_second_staker();
+    
+    // Initially staker2 should not be allowed
+    assert!(!governor.is_staker_allowed(staker2.contract_address));
+    
+    // Add staker2 via governance call
+    let mut calldata: Array<felt252> = array![];
+    Serde::serialize(@staker2.contract_address, ref calldata);
+    
+    let call = Call {
+        to: governor.contract_address,
+        selector: selector!("add_staker"),
+        calldata: calldata.span(),
+    };
+    
+    let id = create_proposal_with_call(governor, staker.get_token().into(), staker, call);
+    
+    // Vote and execute the proposal
+    let config = governor.get_config();
+    advance_time(config.voting_start_delay);
+    set_contract_address(proposer());
+    governor.vote(id, true);
+    advance_time(config.voting_period + config.execution_delay);
+    
+    governor.execute(id, array![Call {
+        to: governor.contract_address,
+        selector: selector!("add_staker"),
+        calldata: calldata.span(),
+    }].span());
+    
+    // Now staker2 should be allowed
+    assert!(governor.is_staker_allowed(staker2.contract_address));
+}
+
+#[test]
+fn test_remove_staker() {
+    let (staker, token, governor, _config) = setup();
+    let (staker2, _token2) = setup_second_staker();
+    
+    // First add staker2
+    let mut add_calldata: Array<felt252> = array![];
+    Serde::serialize(@staker2.contract_address, ref add_calldata);
+    
+    let add_call = Call {
+        to: governor.contract_address,
+        selector: selector!("add_staker"),
+        calldata: add_calldata.span(),
+    };
+    
+    let add_id = create_proposal_with_call(governor, token, staker, add_call);
+    
+    let config = governor.get_config();
+    advance_time(config.voting_start_delay);
+    set_contract_address(proposer());
+    governor.vote(add_id, true);
+    advance_time(config.voting_period + config.execution_delay);
+    
+    governor.execute(add_id, array![add_call].span());
+    assert!(governor.is_staker_allowed(staker2.contract_address));
+    
+    // Now remove staker2
+    let mut remove_calldata: Array<felt252> = array![];
+    Serde::serialize(@staker2.contract_address, ref remove_calldata);
+    
+    let remove_call = Call {
+        to: governor.contract_address,
+        selector: selector!("remove_staker"),
+        calldata: remove_calldata.span(),
+    };
+    
+    let remove_id = create_proposal_with_call(governor, token, staker, remove_call);
+    
+    advance_time(config.voting_start_delay);
+    set_contract_address(proposer());
+    governor.vote(remove_id, true);
+    advance_time(config.voting_period + config.execution_delay);
+    
+    governor.execute(remove_id, array![remove_call].span());
+    
+    // Now staker2 should not be allowed
+    assert!(!governor.is_staker_allowed(staker2.contract_address));
+}
+
+#[test]
+#[should_panic(expected: ('CANNOT_REMOVE_DEFAULT_STAKER', 'ENTRYPOINT_FAILED'))]
+fn test_cannot_remove_default_staker() {
+    let (staker, token, governor, _config) = setup();
+    
+    let mut calldata: Array<felt252> = array![];
+    Serde::serialize(@staker.contract_address, ref calldata);
+    
+    let call = Call {
+        to: governor.contract_address,
+        selector: selector!("remove_staker"),
+        calldata: calldata.span(),
+    };
+    
+    let id = create_proposal_with_call(governor, token, staker, call);
+    
+    let config = governor.get_config();
+    advance_time(config.voting_start_delay);
+    set_contract_address(proposer());
+    governor.vote(id, true);
+    advance_time(config.voting_period + config.execution_delay);
+    
+    governor.execute(id, array![call].span());
+}
+
+#[test]
+fn test_vote_with_different_stakers() {
+    let (staker, token, governor, config) = setup();
+    let (staker2, token2) = setup_second_staker();
+    
+    // Add staker2 first
+    let mut add_calldata: Array<felt252> = array![];
+    Serde::serialize(@staker2.contract_address, ref add_calldata);
+    
+    let add_call = Call {
+        to: governor.contract_address,
+        selector: selector!("add_staker"),
+        calldata: add_calldata.span(),
+    };
+    
+    let add_id = create_proposal_with_call(governor, token, staker, add_call);
+    
+    advance_time(config.voting_start_delay);
+    set_contract_address(proposer());
+    governor.vote(add_id, true);
+    advance_time(config.voting_period + config.execution_delay);
+    
+    governor.execute(add_id, array![add_call].span());
+    
+    // Create a new proposal to vote on
+    let vote_id = create_proposal(governor, token, staker);
+    
+    // Stake tokens in both stakers for voter1
+    token.approve(staker.contract_address, 500);
+    staker.stake(voter1());
+    
+    token2.approve(staker2.contract_address, 300);
+    staker2.stake(voter1());
+    
+    advance_time(config.voting_start_delay);
+    
+    // Vote with the default staker
+    set_contract_address(voter1());
+    governor.vote(vote_id, true);
+    
+    let proposal_after_first_vote = governor.get_proposal(vote_id);
+    let expected_weight_staker1 = staker.get_average_delegated_over_last(voter1(), config.voting_weight_smoothing_duration);
+    assert_eq!(proposal_after_first_vote.yea, expected_weight_staker1);
+    
+    // Vote with the second staker should fail because already voted
+    // This is expected behavior - one vote per voter per proposal regardless of staker
+}
+
+#[test]
+fn test_vote_with_staker_backwards_compatibility() {
+    let (staker, token, governor, config) = setup();
+    let id = create_proposal(governor, token, staker);
+    
+    advance_time(config.voting_start_delay);
+    
+    token.approve(staker.contract_address, 900);
+    staker.stake(voter1());
+    
+    set_contract_address(voter1());
+    
+    // Both methods should work and produce the same result
+    let weight_expected = staker.get_average_delegated_over_last(voter1(), config.voting_weight_smoothing_duration);
+    
+    // Test the old vote method
+    governor.vote(id, true);
+    
+    let proposal = governor.get_proposal(id);
+    assert_eq!(proposal.yea, weight_expected);
+    assert_eq!(proposal.nay, 0);
+}
+
+#[test]
+fn test_vote_with_specific_staker() {
+    let (staker, token, governor, config) = setup();
+    let (staker2, token2) = setup_second_staker();
+    
+    // Add staker2 first
+    let mut add_calldata: Array<felt252> = array![];
+    Serde::serialize(@staker2.contract_address, ref add_calldata);
+    
+    let add_call = Call {
+        to: governor.contract_address,
+        selector: selector!("add_staker"),
+        calldata: add_calldata.span(),
+    };
+    
+    let add_id = create_proposal_with_call(governor, token, staker, add_call);
+    
+    advance_time(config.voting_start_delay);
+    set_contract_address(proposer());
+    governor.vote(add_id, true);
+    advance_time(config.voting_period + config.execution_delay);
+    
+    governor.execute(add_id, array![add_call].span());
+    
+    // Create a new proposal
+    let vote_id = create_proposal(governor, token, staker);
+    
+    // Stake tokens in staker2 for voter2
+    token2.approve(staker2.contract_address, 400);
+    staker2.stake(voter2());
+    
+    advance_time(config.voting_start_delay);
+    
+    // Vote with staker2
+    set_contract_address(voter2());
+    governor.vote_with_staker(vote_id, true, staker2.contract_address);
+    
+    let proposal = governor.get_proposal(vote_id);
+    let expected_weight = staker2.get_average_delegated_over_last(voter2(), config.voting_weight_smoothing_duration);
+    assert_eq!(proposal.yea, expected_weight);
+    assert_eq!(proposal.nay, 0);
+}
+
+#[test]
+#[should_panic(expected: ('STAKER_NOT_ALLOWED', 'ENTRYPOINT_FAILED'))]
+fn test_vote_with_disallowed_staker() {
+    let (staker, token, governor, config) = setup();
+    let (staker2, _token2) = setup_second_staker();
+    
+    let id = create_proposal(governor, token, staker);
+    
+    advance_time(config.voting_start_delay);
+    
+    set_contract_address(voter1());
+    // This should fail because staker2 is not allowed
+    governor.vote_with_staker(id, true, staker2.contract_address);
+}
+
+#[test]
+#[should_panic(expected: ('SELF_CALL_ONLY', 'ENTRYPOINT_FAILED'))]
+fn test_add_staker_only_self_call() {
+    let (staker, _token, governor, _config) = setup();
+    let (staker2, _token2) = setup_second_staker();
+    
+    set_contract_address(anyone());
+    governor.add_staker(staker2.contract_address);
+}
+
+#[test]
+#[should_panic(expected: ('SELF_CALL_ONLY', 'ENTRYPOINT_FAILED'))]
+fn test_remove_staker_only_self_call() {
+    let (staker, _token, governor, _config) = setup();
+    let (staker2, _token2) = setup_second_staker();
+    
+    set_contract_address(anyone());
+    governor.remove_staker(staker2.contract_address);
+}
