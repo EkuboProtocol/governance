@@ -1242,8 +1242,12 @@ fn test_add_staker() {
 
 #[test]
 fn test_remove_staker() {
-    let (staker, token, governor, _config) = setup();
+    let (staker, token, governor, config) = setup();
     let (staker2, _token2) = setup_second_staker();
+    
+    // Stake enough tokens for the proposer upfront to cover all operations
+    token.approve(staker.contract_address, (config.quorum * 2 + config.proposal_creation_threshold * 2).into());
+    staker.stake(proposer());
     
     // First add staker2
     let mut add_calldata: Array<felt252> = array![];
@@ -1255,12 +1259,11 @@ fn test_remove_staker() {
         calldata: add_calldata.span(),
     };
     
-    let add_id = create_proposal_with_call(governor, token, staker, add_call);
-    
-    let config = governor.get_config();
-    // Stake enough tokens to meet quorum for both proposals
-    token.approve(staker.contract_address, (config.quorum * 2).into());
-    staker.stake(proposer());
+    // Create first proposal without additional staking
+    advance_time(config.voting_weight_smoothing_duration);
+    set_contract_address(proposer());
+    let add_id = governor.propose(array![add_call].span());
+    set_contract_address(contract_address_const::<0>());
     
     advance_time(config.voting_start_delay);
     set_contract_address(proposer());
@@ -1280,7 +1283,11 @@ fn test_remove_staker() {
         calldata: remove_calldata.span(),
     };
     
-    let remove_id = create_proposal_with_call(governor, token, staker, remove_call);
+    // Create second proposal without additional staking
+    advance_time(config.voting_weight_smoothing_duration);
+    set_contract_address(proposer());
+    let remove_id = governor.propose(array![remove_call].span());
+    set_contract_address(contract_address_const::<0>());
     
     advance_time(config.voting_start_delay);
     set_contract_address(proposer());
@@ -1327,6 +1334,10 @@ fn test_vote_with_different_stakers() {
     let (staker, token, governor, config) = setup();
     let (staker2, token2) = setup_second_staker();
     
+    // Stake enough tokens for the proposer upfront to cover all operations
+    token.approve(staker.contract_address, (config.quorum + config.proposal_creation_threshold).into());
+    staker.stake(proposer());
+    
     // Add staker2 first
     let mut add_calldata: Array<felt252> = array![];
     Serde::serialize(@staker2.contract_address, ref add_calldata);
@@ -1337,7 +1348,11 @@ fn test_vote_with_different_stakers() {
         calldata: add_calldata.span(),
     };
     
-    let add_id = create_proposal_with_call(governor, token, staker, add_call);
+    // Create proposal without additional staking (already done above)
+    advance_time(config.voting_weight_smoothing_duration);
+    set_contract_address(proposer());
+    let add_id = governor.propose(array![add_call].span());
+    set_contract_address(contract_address_const::<0>());
     
     advance_time(config.voting_start_delay);
     set_contract_address(proposer());
@@ -1402,6 +1417,10 @@ fn test_vote_with_specific_staker() {
     let (staker, token, governor, config) = setup();
     let (staker2, token2) = setup_second_staker();
     
+    // Stake enough tokens for the proposer upfront to cover all operations
+    token.approve(staker.contract_address, (config.quorum + config.proposal_creation_threshold).into());
+    staker.stake(proposer());
+    
     // Add staker2 first
     let mut add_calldata: Array<felt252> = array![];
     Serde::serialize(@staker2.contract_address, ref add_calldata);
@@ -1412,11 +1431,11 @@ fn test_vote_with_specific_staker() {
         calldata: add_calldata.span(),
     };
     
-    let add_id = create_proposal_with_call(governor, token, staker, add_call);
-    
-    // Stake enough tokens to meet quorum
-    token.approve(staker.contract_address, (config.quorum * 2).into());
-    staker.stake(proposer());
+    // Create proposal without additional staking (already done above)
+    advance_time(config.voting_weight_smoothing_duration);
+    set_contract_address(proposer());
+    let add_id = governor.propose(array![add_call].span());
+    set_contract_address(contract_address_const::<0>());
     
     advance_time(config.voting_start_delay);
     set_contract_address(proposer());

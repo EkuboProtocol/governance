@@ -201,7 +201,7 @@ pub mod Governor {
     #[storage]
     struct Storage {
         staker: IStakerDispatcher,
-        allowed_stakers: Map<ContractAddress, bool>,
+        allowed_stakers: Map<ContractAddress, felt252>,
         config_versions: Map<u64, Config>,
         latest_config_version: u64,
         nonce: u64,
@@ -339,7 +339,7 @@ pub mod Governor {
             // Allow default staker even if not explicitly in allowed_stakers (for upgrade compatibility)
             let allowed = self.allowed_stakers.read(staker);
             assert(
-                allowed || staker == self.get_staker().contract_address,
+                allowed != 0 || staker == self.get_staker().contract_address,
                 'STAKER_NOT_ALLOWED'
             );
 
@@ -491,7 +491,7 @@ pub mod Governor {
 
         fn add_staker(ref self: ContractState, staker: ContractAddress) {
             self.check_self_call();
-            self.allowed_stakers.write(staker, true);
+            self.allowed_stakers.write(staker, 1);
             self.emit(StakerAdded { staker });
         }
 
@@ -499,13 +499,13 @@ pub mod Governor {
             self.check_self_call();
             // Cannot remove the default staker
             assert(staker != self.get_staker().contract_address, 'CANNOT_REMOVE_DEFAULT_STAKER');
-            self.allowed_stakers.write(staker, false);
+            self.allowed_stakers.write(staker, 0);
             self.emit(StakerRemoved { staker });
         }
 
         fn is_staker_allowed(self: @ContractState, staker: ContractAddress) -> bool {
             // Default staker is always allowed (for upgrade compatibility)
-            self.allowed_stakers.read(staker) || staker == self.get_staker().contract_address
+            self.allowed_stakers.read(staker) != 0 || staker == self.get_staker().contract_address
         }
 
         fn get_proposal(self: @ContractState, id: felt252) -> ProposalInfo {
