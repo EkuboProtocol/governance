@@ -1204,7 +1204,7 @@ fn test_add_staker() {
     let (staker2, _token2) = setup_second_staker();
     
     // Initially staker2 should not be allowed
-    assert(!governor.is_staker_allowed(staker2.contract_address), 'STAKER2_SHOULD_NOT_BE_ALLOWED');
+    assert(not governor.is_staker_allowed(staker2.contract_address), 'STAKER2_SHOULD_NOT_BE_ALLOWED');
     
     // Add staker2 via governance call
     let mut calldata: Array<felt252> = array![];
@@ -1290,7 +1290,7 @@ fn test_remove_staker() {
     governor.execute(remove_id, array![remove_call].span());
     
     // Now staker2 should not be allowed
-    assert(!governor.is_staker_allowed(staker2.contract_address), 'STAKER2_SHOULD_NOT_BE_ALLOWED');
+    assert(not governor.is_staker_allowed(staker2.contract_address), 'STAKER2_SHOULD_NOT_BE_ALLOWED');
 }
 
 #[test]
