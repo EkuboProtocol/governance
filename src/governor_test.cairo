@@ -1301,7 +1301,7 @@ fn test_remove_staker() {
 }
 
 #[test]
-#[should_panic(expected: ('CANNOT_REMOVE_DEFAULT_STAKER', 'ENTRYPOINT_FAILED'))]
+#[should_panic(expected: ('CANNOT_REMOVE_DEFAULT_STAKER', 'ENTRYPOINT_FAILED', 'ENTRYPOINT_FAILED'))]
 fn test_cannot_remove_default_staker() {
     let (staker, token, governor, _config) = setup();
     
@@ -1361,8 +1361,11 @@ fn test_vote_with_different_stakers() {
     
     governor.execute(add_id, array![add_call].span());
     
-    // Create a new proposal to vote on
-    let vote_id = create_proposal(governor, token, staker);
+    // Create a new proposal to vote on (without additional staking)
+    advance_time(config.voting_weight_smoothing_duration);
+    set_contract_address(proposer());
+    let vote_id = governor.propose(array![transfer_call(token, recipient(), amount: 100)].span());
+    set_contract_address(contract_address_const::<0>());
     
     // Stake tokens in both stakers for voter1
     token.approve(staker.contract_address, 500);
@@ -1444,8 +1447,11 @@ fn test_vote_with_specific_staker() {
     
     governor.execute(add_id, array![add_call].span());
     
-    // Create a new proposal
-    let vote_id = create_proposal(governor, token, staker);
+    // Create a new proposal (without additional staking)
+    advance_time(config.voting_weight_smoothing_duration);
+    set_contract_address(proposer());
+    let vote_id = governor.propose(array![transfer_call(token, recipient(), amount: 100)].span());
+    set_contract_address(contract_address_const::<0>());
     
     // Stake tokens in staker2 for voter2
     token2.approve(staker2.contract_address, 400);
