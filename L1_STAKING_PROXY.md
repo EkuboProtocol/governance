@@ -112,6 +112,24 @@ stakingProxy.upgrade{value: messageFee}(
 
 All L1→L2 operations require ETH to pay for Starknet message fees. The contract accepts ETH via the `{value: messageFee}` parameter.
 
+## Technical Details
+
+### Message Format
+
+The system uses a custom message format for L1→L2 communication:
+
+- **Stake**: `[0, delegate_address, amount_low, amount_high]`
+- **Withdraw**: `[1, delegate_address, recipient_address, amount_low, amount_high]`
+- **ExecuteCalls**: `[2, calls_data_length, chunk_count, ...data_chunks]` (simplified)
+- **Upgrade**: `[3, class_hash_low, class_hash_high]`
+- **EmergencyTransfer**: `[4, token_address, recipient_address, amount_low, amount_high, padding]`
+
+This manual encoding ensures compatibility between Solidity and Cairo without Serde overhead.
+
+### Token Approvals
+
+The L2 contract automatically approves the Staker contract to spend tokens on each stake operation. This ensures seamless integration with the existing staking infrastructure.
+
 ## Security Considerations
 
 ### Access Control

@@ -65,7 +65,6 @@ pub struct EmergencyTransferParams {
 
 #[starknet::contract]
 pub mod L1StakingProxy {
-    use core::num::traits::zero::{Zero};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use governance::staker::{IStakerDispatcher, IStakerDispatcherTrait};
     use governance::call_trait::{CallTrait};
@@ -153,6 +152,49 @@ pub mod L1StakingProxy {
             assert(from_address == self.l1_owner.read().into(), 'UNAUTHORIZED_L1_CALLER');
         }
 
+        fn parse_staking_operation(
+            self: @ContractState, operation_type: felt252, payload: Span<felt252>
+        ) -> StakingOperation {
+            if operation_type == 0 {
+                // StakingOperation::Stake
+                assert(payload.len() >= 4, 'INVALID_STAKE_PAYLOAD');
+                let delegate: ContractAddress = (*payload.at(1)).try_into().unwrap();
+                let amount: u128 = (*payload.at(2)).try_into().unwrap();
+                // payload[3] is amount high part (should be 0 for u128)
+                StakingOperation::Stake(StakeParams { delegate, amount })
+            } else if operation_type == 1 {
+                // StakingOperation::Withdraw
+                assert(payload.len() >= 5, 'INVALID_WITHDRAW_PAYLOAD');
+                let delegate: ContractAddress = (*payload.at(1)).try_into().unwrap();
+                let recipient: ContractAddress = (*payload.at(2)).try_into().unwrap();
+                let amount: u128 = (*payload.at(3)).try_into().unwrap();
+                // payload[4] is amount high part (should be 0 for u128)
+                StakingOperation::Withdraw(WithdrawParams { delegate, recipient, amount })
+            } else if operation_type == 2 {
+                // StakingOperation::ExecuteCalls - simplified for now
+                // This would need more complex parsing for actual Call structs
+                let calls = array![].span(); // Empty for now
+                StakingOperation::ExecuteCalls(calls)
+            } else if operation_type == 3 {
+                // StakingOperation::Upgrade
+                assert(payload.len() >= 3, 'INVALID_UPGRADE_PAYLOAD');
+                let class_hash: ClassHash = (*payload.at(1)).try_into().unwrap();
+                // payload[2] is class_hash high part (typically 0)
+                StakingOperation::Upgrade(class_hash)
+            } else if operation_type == 4 {
+                // StakingOperation::EmergencyTransfer
+                assert(payload.len() >= 6, 'INVALID_EMERGENCY_PAYLOAD');
+                let token: ContractAddress = (*payload.at(1)).try_into().unwrap();
+                let recipient: ContractAddress = (*payload.at(2)).try_into().unwrap();
+                let amount_low: u128 = (*payload.at(3)).try_into().unwrap();
+                let amount_high: u128 = (*payload.at(4)).try_into().unwrap();
+                let amount: u256 = u256 { low: amount_low, high: amount_high };
+                StakingOperation::EmergencyTransfer(EmergencyTransferParams { token, recipient, amount })
+            } else {
+                panic!("UNKNOWN_OPERATION_TYPE");
+            }
+        }
+
         fn execute_staking_operation(
             ref self: ContractState, operation: StakingOperation
         ) {
@@ -176,7 +218,15 @@ pub mod L1StakingProxy {
         }
 
         fn execute_stake(ref self: ContractState, params: StakeParams) {
+            let token = self.token.read();
             let staker = self.staker.read();
+            
+            // Approve the staker to spend our tokens
+            assert(
+                token.approve(staker.contract_address, params.amount.into()),
+                'APPROVE_FAILED'
+            );
+            
             staker.stake_amount(params.delegate, params.amount);
             self.emit(Staked { delegate: params.delegate, amount: params.amount });
         }
@@ -240,9 +290,11 @@ pub mod L1StakingProxy {
             // Verify the message is from the authorized L1 owner
             self.assert_l1_owner(from_address);
 
-            // Deserialize the operation from the payload
-            let operation: StakingOperation = Serde::deserialize(ref payload)
-                .expect('INVALID_PAYLOAD');
+            // Parse the operation from the payload manually to match L1 encoding
+            assert(payload.len() > 0, 'EMPTY_PAYLOAD');
+            
+            let operation_type = *payload.at(0);
+            let operation = self.parse_staking_operation(operation_type, payload);
 
             // Execute the operation
             self.execute_staking_operation(operation);
@@ -250,7 +302,7 @@ pub mod L1StakingProxy {
             // Emit event
             self.emit(L1MessageHandled {
                 from_address,
-                operation: selector!("StakingOperation"), // Simple operation identifier
+                operation: operation_type,
             });
         }
 

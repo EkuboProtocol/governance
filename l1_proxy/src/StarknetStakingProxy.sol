@@ -16,7 +16,9 @@ contract StarknetStakingProxy {
     uint256 public immutable l2StakingProxy;
     
     // L1 handler selector for the L2 contract
-    uint256 public constant L1_HANDLER_SELECTOR = 0x014093c40d95d0bdeb8d8b4b7b4b8b4b8b4b8b4b8b4b8b4b8b4b8b4b8b4b8b4b; // handle_l1_message_entry selector
+    // This should be computed as starknet_keccak("handle_l1_message_entry".as_bytes())
+    // TODO: Replace with actual computed selector from deployed L2 contract
+    uint256 public constant L1_HANDLER_SELECTOR = 0x02d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5;
     
     address public owner;
     uint64 public currentNonce;
