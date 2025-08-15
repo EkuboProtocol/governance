@@ -217,7 +217,7 @@ pub mod Governor {
     fn constructor(ref self: ContractState, staker: IStakerDispatcher, config: Config) {
         self.staker.write(staker);
         // The default staker is automatically allowed
-        self.allowed_stakers.write(staker.contract_address, true);
+        self.allowed_stakers.write(staker.contract_address, 1);
 
         self.config_versions.write(0, config);
         self.emit(Reconfigured { new_config: config, version: 0 });
