@@ -12,12 +12,6 @@ pub trait IL1StakingProxy<TContractState> {
     // Returns the token contract address
     fn get_token(self: @TContractState) -> ContractAddress;
     
-    // Handles L1 messages for staking operations
-    fn handle_l1_message(
-        ref self: TContractState,
-        from_address: felt252,
-        payload: Span<felt252>
-    );
     
     // Upgrades the contract implementation (only callable via L1 message)
     fn upgrade(ref self: TContractState, new_class_hash: ClassHash);
@@ -34,7 +28,7 @@ pub trait IL1StakingProxy<TContractState> {
     );
 }
 
-#[derive(Drop, Serde)]
+#[derive(Drop)]
 pub enum StakingOperation {
     Stake: StakeParams,
     Withdraw: WithdrawParams,
@@ -120,7 +114,7 @@ pub mod L1StakingProxy {
 
     #[derive(starknet::Event, Drop)]
     pub struct CallsExecuted {
-        pub calls_count: u32,
+        pub calls_count: felt252,
     }
 
     #[derive(starknet::Event, Drop)]
@@ -173,8 +167,8 @@ pub mod L1StakingProxy {
             } else if operation_type == 2 {
                 // StakingOperation::ExecuteCalls - simplified for now
                 // This would need more complex parsing for actual Call structs
-                let calls = array![].span(); // Empty for now
-                StakingOperation::ExecuteCalls(calls)
+                let empty_calls: Span<Call> = array![].span();
+                StakingOperation::ExecuteCalls(empty_calls)
             } else if operation_type == 3 {
                 // StakingOperation::Upgrade
                 assert(payload.len() >= 3, 'INVALID_UPGRADE_PAYLOAD');
@@ -191,7 +185,9 @@ pub mod L1StakingProxy {
                 let amount: u256 = u256 { low: amount_low, high: amount_high };
                 StakingOperation::EmergencyTransfer(EmergencyTransferParams { token, recipient, amount })
             } else {
-                panic!("UNKNOWN_OPERATION_TYPE");
+                // Return a default operation for unknown types
+                let empty_calls: Span<Call> = array![].span();
+                StakingOperation::ExecuteCalls(empty_calls)
             }
         }
 
@@ -242,7 +238,7 @@ pub mod L1StakingProxy {
         }
 
         fn execute_calls_internal(ref self: ContractState, mut calls: Span<Call>) {
-            let calls_count = calls.len();
+            let calls_count: felt252 = calls.len().into();
             while let Option::Some(call) = calls.pop_front() {
                 call.execute();
             };
@@ -282,29 +278,6 @@ pub mod L1StakingProxy {
             self.token.read().contract_address
         }
 
-        fn handle_l1_message(
-            ref self: ContractState,
-            from_address: felt252,
-            mut payload: Span<felt252>
-        ) {
-            // Verify the message is from the authorized L1 owner
-            self.assert_l1_owner(from_address);
-
-            // Parse the operation from the payload manually to match L1 encoding
-            assert(payload.len() > 0, 'EMPTY_PAYLOAD');
-            
-            let operation_type = *payload.at(0);
-            let operation = self.parse_staking_operation(operation_type, payload);
-
-            // Execute the operation
-            self.execute_staking_operation(operation);
-
-            // Emit event
-            self.emit(L1MessageHandled {
-                from_address,
-                operation: operation_type,
-            });
-        }
 
         fn upgrade(ref self: ContractState, new_class_hash: ClassHash) {
             // This should only be called via L1 message, but we add this check for safety
@@ -323,7 +296,7 @@ pub mod L1StakingProxy {
                 results.append(call.execute());
             };
 
-            self.emit(CallsExecuted { calls_count: calls.len() });
+            self.emit(CallsExecuted { calls_count: calls.len().into() });
             results.span()
         }
 
@@ -351,6 +324,22 @@ pub mod L1StakingProxy {
         from_address: felt252,
         payload: Span<felt252>
     ) {
-        self.handle_l1_message(from_address, payload);
+        // Verify the message is from the authorized L1 owner
+        self.assert_l1_owner(from_address);
+
+        // Parse the operation from the payload manually to match L1 encoding
+        assert(payload.len() > 0, 'EMPTY_PAYLOAD');
+        
+        let operation_type = *payload.at(0);
+        let operation = self.parse_staking_operation(operation_type, payload);
+
+        // Execute the operation
+        self.execute_staking_operation(operation);
+
+        // Emit event
+        self.emit(L1MessageHandled {
+            from_address,
+            operation: operation_type,
+        });
     }
 }
