@@ -1216,7 +1216,8 @@ fn test_add_staker() {
         calldata: calldata.span(),
     };
     
-    let id = create_proposal_with_call(governor, staker.get_token().into(), staker, call);
+    let token = IERC20Dispatcher { contract_address: staker.get_token() };
+    let id = create_proposal_with_call(governor, token, staker, call);
     
     // Vote and execute the proposal
     let config = governor.get_config();
@@ -1353,8 +1354,12 @@ fn test_vote_with_different_stakers() {
     let expected_weight_staker1 = staker.get_average_delegated_over_last(voter1(), config.voting_weight_smoothing_duration);
     assert_eq!(proposal_after_first_vote.yea, expected_weight_staker1);
     
-    // Vote with the second staker should fail because already voted
-    // This is expected behavior - one vote per voter per proposal regardless of staker
+    // Now vote with the second staker - this should work and accumulate weight
+    governor.vote_with_staker(vote_id, true, staker2.contract_address);
+    
+    let proposal_after_second_vote = governor.get_proposal(vote_id);
+    let expected_weight_staker2 = staker2.get_average_delegated_over_last(voter1(), config.voting_weight_smoothing_duration);
+    assert_eq!(proposal_after_second_vote.yea, expected_weight_staker1 + expected_weight_staker2);
 }
 
 #[test]
@@ -1441,7 +1446,7 @@ fn test_vote_with_disallowed_staker() {
 #[test]
 #[should_panic(expected: ('SELF_CALL_ONLY', 'ENTRYPOINT_FAILED'))]
 fn test_add_staker_only_self_call() {
-    let (staker, _token, governor, _config) = setup();
+    let (_staker, _token, governor, _config) = setup();
     let (staker2, _token2) = setup_second_staker();
     
     set_contract_address(anyone());
@@ -1451,7 +1456,7 @@ fn test_add_staker_only_self_call() {
 #[test]
 #[should_panic(expected: ('SELF_CALL_ONLY', 'ENTRYPOINT_FAILED'))]
 fn test_remove_staker_only_self_call() {
-    let (staker, _token, governor, _config) = setup();
+    let (_staker, _token, governor, _config) = setup();
     let (staker2, _token2) = setup_second_staker();
     
     set_contract_address(anyone());

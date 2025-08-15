@@ -91,11 +91,17 @@ pub trait IGovernor<TContractState> {
     // Gets the proposal and the config version with which it was created.
     fn get_proposal_with_config(self: @TContractState, id: felt252) -> (ProposalInfo, Config);
 
-    // Returns the vote cast by the given voter on the given proposal ID.
+    // Returns the vote cast by the given voter on the given proposal ID using the default staker.
     // - 0 means not voted, or proposal does not exist
     // - 3 means voted in favor
     // - 1 means voted against
     fn get_vote(self: @TContractState, id: felt252, voter: ContractAddress) -> u8;
+
+    // Returns the vote cast by the given voter on the given proposal ID using a specific staker.
+    // - 0 means not voted, or proposal does not exist
+    // - 3 means voted in favor
+    // - 1 means voted against
+    fn get_vote_with_staker(self: @TContractState, id: felt252, voter: ContractAddress, staker: ContractAddress) -> u8;
 
     // Changes the configuration of the governor. Only affects proposals created after the
     // configuration change. Must be called by self, e.g. via a proposal.
@@ -201,7 +207,7 @@ pub mod Governor {
         nonce: u64,
         proposals: Map<felt252, ProposalInfo>,
         latest_proposal_by_proposer: Map<ContractAddress, felt252>,
-        vote: Map<(felt252, ContractAddress), u8>,
+        vote: Map<(felt252, ContractAddress, ContractAddress), u8>,
     }
 
     #[constructor]
@@ -332,7 +338,7 @@ pub mod Governor {
             let timestamp_current = get_block_timestamp();
             let voting_start_time = (proposal.execution_state.created + config.voting_start_delay);
             let voter = get_caller_address();
-            let past_vote = self.vote.read((id, voter));
+            let past_vote = self.vote.read((id, voter, staker));
 
             assert(timestamp_current >= voting_start_time, 'VOTING_NOT_STARTED');
             assert(timestamp_current < (voting_start_time + config.voting_period), 'VOTING_ENDED');
@@ -352,7 +358,7 @@ pub mod Governor {
                 proposal.nay = proposal.nay + weight;
             }
             self.proposals.write(id, proposal);
-            self.vote.write((id, voter), if yea {
+            self.vote.write((id, voter, staker), if yea {
                 3
             } else {
                 1
@@ -491,7 +497,11 @@ pub mod Governor {
         }
 
         fn get_vote(self: @ContractState, id: felt252, voter: ContractAddress) -> u8 {
-            self.vote.read((id, voter))
+            self.vote.read((id, voter, self.get_staker().contract_address))
+        }
+
+        fn get_vote_with_staker(self: @ContractState, id: felt252, voter: ContractAddress, staker: ContractAddress) -> u8 {
+            self.vote.read((id, voter, staker))
         }
 
         fn reconfigure(ref self: ContractState, config: Config) -> u64 {
