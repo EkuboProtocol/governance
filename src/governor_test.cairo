@@ -1195,7 +1195,7 @@ fn setup_second_staker() -> (IStakerDispatcher, IERC20Dispatcher) {
 #[test]
 fn test_default_staker_is_allowed() {
     let (staker, _token, governor, _config) = setup();
-    assert!(governor.is_staker_allowed(staker.contract_address));
+    assert(governor.is_staker_allowed(staker.contract_address), 'STAKER_SHOULD_BE_ALLOWED');
 }
 
 #[test]
@@ -1204,7 +1204,7 @@ fn test_add_staker() {
     let (staker2, _token2) = setup_second_staker();
     
     // Initially staker2 should not be allowed
-    assert!(!governor.is_staker_allowed(staker2.contract_address));
+    assert(!governor.is_staker_allowed(staker2.contract_address), 'STAKER2_SHOULD_NOT_BE_ALLOWED');
     
     // Add staker2 via governance call
     let mut calldata: Array<felt252> = array![];
@@ -1221,6 +1221,10 @@ fn test_add_staker() {
     
     // Vote and execute the proposal
     let config = governor.get_config();
+    // Stake enough tokens to meet quorum
+    token.approve(staker.contract_address, config.quorum.into());
+    staker.stake(proposer());
+    
     advance_time(config.voting_start_delay);
     set_contract_address(proposer());
     governor.vote(id, true);
@@ -1233,7 +1237,7 @@ fn test_add_staker() {
     }].span());
     
     // Now staker2 should be allowed
-    assert!(governor.is_staker_allowed(staker2.contract_address));
+    assert(governor.is_staker_allowed(staker2.contract_address), 'STAKER2_SHOULD_BE_ALLOWED');
 }
 
 #[test]
@@ -1254,13 +1258,17 @@ fn test_remove_staker() {
     let add_id = create_proposal_with_call(governor, token, staker, add_call);
     
     let config = governor.get_config();
+    // Stake enough tokens to meet quorum
+    token.approve(staker.contract_address, config.quorum.into());
+    staker.stake(proposer());
+    
     advance_time(config.voting_start_delay);
     set_contract_address(proposer());
     governor.vote(add_id, true);
     advance_time(config.voting_period + config.execution_delay);
     
     governor.execute(add_id, array![add_call].span());
-    assert!(governor.is_staker_allowed(staker2.contract_address));
+    assert(governor.is_staker_allowed(staker2.contract_address), 'STAKER2_SHOULD_BE_ALLOWED');
     
     // Now remove staker2
     let mut remove_calldata: Array<felt252> = array![];
@@ -1274,6 +1282,10 @@ fn test_remove_staker() {
     
     let remove_id = create_proposal_with_call(governor, token, staker, remove_call);
     
+    // Stake more tokens to meet quorum for the remove proposal
+    token.approve(staker.contract_address, config.quorum.into());
+    staker.stake(proposer());
+    
     advance_time(config.voting_start_delay);
     set_contract_address(proposer());
     governor.vote(remove_id, true);
@@ -1282,7 +1294,7 @@ fn test_remove_staker() {
     governor.execute(remove_id, array![remove_call].span());
     
     // Now staker2 should not be allowed
-    assert!(!governor.is_staker_allowed(staker2.contract_address));
+    assert(!governor.is_staker_allowed(staker2.contract_address), 'STAKER2_SHOULD_NOT_BE_ALLOWED');
 }
 
 #[test]
@@ -1302,6 +1314,10 @@ fn test_cannot_remove_default_staker() {
     let id = create_proposal_with_call(governor, token, staker, call);
     
     let config = governor.get_config();
+    // Stake enough tokens to meet quorum
+    token.approve(staker.contract_address, config.quorum.into());
+    staker.stake(proposer());
+    
     advance_time(config.voting_start_delay);
     set_contract_address(proposer());
     governor.vote(id, true);
@@ -1401,6 +1417,10 @@ fn test_vote_with_specific_staker() {
     };
     
     let add_id = create_proposal_with_call(governor, token, staker, add_call);
+    
+    // Stake enough tokens to meet quorum
+    token.approve(staker.contract_address, config.quorum.into());
+    staker.stake(proposer());
     
     advance_time(config.voting_start_delay);
     set_contract_address(proposer());

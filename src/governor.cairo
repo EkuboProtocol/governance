@@ -207,7 +207,10 @@ pub mod Governor {
         nonce: u64,
         proposals: Map<felt252, ProposalInfo>,
         latest_proposal_by_proposer: Map<ContractAddress, felt252>,
-        vote: Map<(felt252, ContractAddress, ContractAddress), u8>,
+        // Keep old vote storage for backwards compatibility
+        vote: Map<(felt252, ContractAddress), u8>,
+        // New storage for multi-staker votes
+        multi_staker_vote: Map<(felt252, ContractAddress, ContractAddress), u8>,
     }
 
     #[constructor]
@@ -338,7 +341,16 @@ pub mod Governor {
             let timestamp_current = get_block_timestamp();
             let voting_start_time = (proposal.execution_state.created + config.voting_start_delay);
             let voter = get_caller_address();
-            let past_vote = self.vote.read((id, voter, staker));
+            
+            // Check if already voted with this specific staker
+            let past_vote = if staker == self.get_staker().contract_address {
+                // For default staker, check both old and new storage for backwards compatibility
+                let old_vote = self.vote.read((id, voter));
+                let new_vote = self.multi_staker_vote.read((id, voter, staker));
+                if old_vote.is_non_zero() { old_vote } else { new_vote }
+            } else {
+                self.multi_staker_vote.read((id, voter, staker))
+            };
 
             assert(timestamp_current >= voting_start_time, 'VOTING_NOT_STARTED');
             assert(timestamp_current < (voting_start_time + config.voting_period), 'VOTING_ENDED');
@@ -358,11 +370,16 @@ pub mod Governor {
                 proposal.nay = proposal.nay + weight;
             }
             self.proposals.write(id, proposal);
-            self.vote.write((id, voter, staker), if yea {
-                3
+            
+            // Store vote in appropriate storage for backwards compatibility
+            let vote_value = if yea { 3 } else { 1 };
+            if staker == self.get_staker().contract_address {
+                // For default staker, use old storage for backwards compatibility
+                self.vote.write((id, voter), vote_value);
             } else {
-                1
-            });
+                // For other stakers, use new storage
+                self.multi_staker_vote.write((id, voter, staker), vote_value);
+            };
 
             self.emit(Voted { id, voter, weight, yea, staker });
         }
@@ -497,11 +514,23 @@ pub mod Governor {
         }
 
         fn get_vote(self: @ContractState, id: felt252, voter: ContractAddress) -> u8 {
-            self.vote.read((id, voter, self.get_staker().contract_address))
+            // For backwards compatibility, check old storage first
+            let old_vote = self.vote.read((id, voter));
+            if old_vote.is_non_zero() {
+                old_vote
+            } else {
+                self.multi_staker_vote.read((id, voter, self.get_staker().contract_address))
+            }
         }
 
         fn get_vote_with_staker(self: @ContractState, id: felt252, voter: ContractAddress, staker: ContractAddress) -> u8 {
-            self.vote.read((id, voter, staker))
+            if staker == self.get_staker().contract_address {
+                // For default staker, check both storages for backwards compatibility
+                let old_vote = self.vote.read((id, voter));
+                if old_vote.is_non_zero() { old_vote } else { self.multi_staker_vote.read((id, voter, staker)) }
+            } else {
+                self.multi_staker_vote.read((id, voter, staker))
+            }
         }
 
         fn reconfigure(ref self: ContractState, config: Config) -> u64 {
