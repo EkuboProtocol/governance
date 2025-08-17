@@ -158,12 +158,12 @@ pub mod Governor {
         pub staker: ContractAddress,
     }
 
-    #[derive(starknet::Event, Drop)]
+    #[derive(starknet::Event, Drop, PartialEq, Debug)]
     pub struct StakerAdded {
         pub staker: ContractAddress,
     }
 
-    #[derive(starknet::Event, Drop)]
+    #[derive(starknet::Event, Drop, PartialEq, Debug)]
     pub struct StakerRemoved {
         pub staker: ContractAddress,
     }
@@ -336,12 +336,7 @@ pub mod Governor {
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
             assert(proposal.execution_state.canceled.is_zero(), 'PROPOSAL_CANCELED');
-            // Allow default staker even if not explicitly in allowed_stakers (for upgrade compatibility)
-            let allowed = self.allowed_stakers.read(staker);
-            assert(
-                allowed != 0 || staker == self.get_staker().contract_address,
-                'STAKER_NOT_ALLOWED'
-            );
+            assert(self.is_staker_allowed(staker), 'STAKER_NOT_ALLOWED');
 
             let timestamp_current = get_block_timestamp();
             let voting_start_time = (proposal.execution_state.created + config.voting_start_delay);
