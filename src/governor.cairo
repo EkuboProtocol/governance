@@ -348,14 +348,7 @@ pub mod Governor {
             let voter = get_caller_address();
             
             // Check if already voted with this specific staker
-            let past_vote = if staker == self.get_staker().contract_address {
-                // For default staker, check both old and new storage for backwards compatibility
-                let old_vote = self.vote.read((id, voter));
-                let new_vote = self.multi_staker_vote.read((id, voter, staker));
-                if old_vote.is_non_zero() { old_vote } else { new_vote }
-            } else {
-                self.multi_staker_vote.read((id, voter, staker))
-            };
+            let past_vote = self.get_vote_with_staker(id, voter, staker);
 
             assert(timestamp_current >= voting_start_time, 'VOTING_NOT_STARTED');
             assert(timestamp_current < (voting_start_time + config.voting_period), 'VOTING_ENDED');
@@ -376,15 +369,9 @@ pub mod Governor {
             }
             self.proposals.write(id, proposal);
             
-            // Store vote in appropriate storage for backwards compatibility
+            // Store vote in new storage (old storage is only for reading existing votes)
             let vote_value = if yea { 3 } else { 1 };
-            if staker == self.get_staker().contract_address {
-                // For default staker, use old storage for backwards compatibility
-                self.vote.write((id, voter), vote_value);
-            } else {
-                // For other stakers, use new storage
-                self.multi_staker_vote.write((id, voter, staker), vote_value);
-            };
+            self.multi_staker_vote.write((id, voter, staker), vote_value);
 
             self.emit(Voted { id, voter, weight, yea, staker });
         }
@@ -520,13 +507,7 @@ pub mod Governor {
         }
 
         fn get_vote(self: @ContractState, id: felt252, voter: ContractAddress) -> u8 {
-            // For backwards compatibility, check old storage first
-            let old_vote = self.vote.read((id, voter));
-            if old_vote.is_non_zero() {
-                old_vote
-            } else {
-                self.multi_staker_vote.read((id, voter, self.get_staker().contract_address))
-            }
+            self.get_vote_with_staker(id, voter, self.get_staker().contract_address)
         }
 
         fn get_vote_with_staker(self: @ContractState, id: felt252, voter: ContractAddress, staker: ContractAddress) -> u8 {
