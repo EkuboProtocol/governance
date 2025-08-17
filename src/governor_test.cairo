@@ -1237,7 +1237,7 @@ fn test_add_staker() {
     }].span());
     
     // Now staker2 should be allowed
-    assert(governor.is_staker_allowed(staker2.contract_address), 'STAKER2_SHOULD_BE_ALLOWED');
+    assert(governor.is_staker_allowed(staker2), 'STAKER2_SHOULD_BE_ALLOWED');
 }
 
 #[test]
