@@ -1208,7 +1208,7 @@ fn test_add_staker() {
     
     // Add staker2 via governance call
     let mut calldata: Array<felt252> = array![];
-    Serde::serialize(@staker2.contract_address, ref calldata);
+    Serde::serialize(@staker2, ref calldata);
     
     let call = Call {
         to: governor.contract_address,
@@ -1251,7 +1251,7 @@ fn test_remove_staker() {
     
     // First add staker2
     let mut add_calldata: Array<felt252> = array![];
-    Serde::serialize(@staker2.contract_address, ref add_calldata);
+    Serde::serialize(@staker2, ref add_calldata);
     
     let add_call = Call {
         to: governor.contract_address,
@@ -1275,7 +1275,7 @@ fn test_remove_staker() {
     
     // Now remove staker2
     let mut remove_calldata: Array<felt252> = array![];
-    Serde::serialize(@staker2.contract_address, ref remove_calldata);
+    Serde::serialize(@staker2, ref remove_calldata);
     
     let remove_call = Call {
         to: governor.contract_address,
@@ -1306,7 +1306,7 @@ fn test_cannot_remove_default_staker() {
     let (staker, token, governor, _config) = setup();
     
     let mut calldata: Array<felt252> = array![];
-    Serde::serialize(@staker.contract_address, ref calldata);
+    Serde::serialize(@staker, ref calldata);
     
     let call = Call {
         to: governor.contract_address,
@@ -1340,7 +1340,7 @@ fn test_vote_with_different_stakers() {
     
     // Add staker2 first
     let mut add_calldata: Array<felt252> = array![];
-    Serde::serialize(@staker2.contract_address, ref add_calldata);
+    Serde::serialize(@staker2, ref add_calldata);
     
     let add_call = Call {
         to: governor.contract_address,
@@ -1426,7 +1426,7 @@ fn test_vote_with_specific_staker() {
     
     // Add staker2 first
     let mut add_calldata: Array<felt252> = array![];
-    Serde::serialize(@staker2.contract_address, ref add_calldata);
+    Serde::serialize(@staker2, ref add_calldata);
     
     let add_call = Call {
         to: governor.contract_address,

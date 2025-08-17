@@ -359,8 +359,8 @@ pub mod Governor {
             let mut total_weight: u128 = 0;
             let mut i: usize = 0;
             while i < stakers.len() {
-                let staker = stakers.at(i);
-                assert(self.is_staker_allowed(*staker), 'STAKER_NOT_ALLOWED');
+                let staker = *stakers.at(i);
+                assert(self.is_staker_allowed(staker), 'STAKER_NOT_ALLOWED');
                 
                 let weight = staker
                     .get_average_delegated_over_last(
