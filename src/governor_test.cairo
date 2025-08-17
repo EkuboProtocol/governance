@@ -1195,7 +1195,7 @@ fn setup_second_staker() -> (IStakerDispatcher, IERC20Dispatcher) {
 #[test]
 fn test_default_staker_is_allowed() {
     let (staker, _token, governor, _config) = setup();
-    assert(governor.is_staker_allowed(staker.contract_address), 'STAKER_SHOULD_BE_ALLOWED');
+    assert(governor.is_staker_allowed(staker), 'STAKER_SHOULD_BE_ALLOWED');
 }
 
 #[test]
@@ -1204,7 +1204,7 @@ fn test_add_staker() {
     let (staker2, _token2) = setup_second_staker();
     
     // Initially staker2 should not be allowed
-    assert(governor.is_staker_allowed(staker2.contract_address) == false, 'STAKER2_SHOULD_NOT_BE_ALLOWED');
+    assert(governor.is_staker_allowed(staker2) == false, 'STAKER2_SHOULD_NOT_BE_ALLOWED');
     
     // Add staker2 via governance call
     let mut calldata: Array<felt252> = array![];
@@ -1271,7 +1271,7 @@ fn test_remove_staker() {
     advance_time(config.voting_period + config.execution_delay);
     
     governor.execute(add_id, array![add_call].span());
-    assert(governor.is_staker_allowed(staker2.contract_address), 'STAKER2_SHOULD_BE_ALLOWED');
+    assert(governor.is_staker_allowed(staker2), 'STAKER2_SHOULD_BE_ALLOWED');
     
     // Now remove staker2
     let mut remove_calldata: Array<felt252> = array![];
@@ -1297,7 +1297,7 @@ fn test_remove_staker() {
     governor.execute(remove_id, array![remove_call].span());
     
     // Now staker2 should not be allowed
-    assert(governor.is_staker_allowed(staker2.contract_address) == false, 'STAKER2_SHOULD_NOT_BE_ALLOWED');
+    assert(governor.is_staker_allowed(staker2) == false, 'STAKER2_SHOULD_NOT_BE_ALLOWED');
 }
 
 #[test]
@@ -1385,7 +1385,7 @@ fn test_vote_with_different_stakers() {
     assert_eq!(proposal_after_first_vote.yea, expected_weight_staker1);
     
     // Now vote with the second staker - this should work and accumulate weight
-    governor.vote_with_staker(vote_id, true, staker2.contract_address);
+    governor.vote_with_staker(vote_id, true, staker2);
     
     let proposal_after_second_vote = governor.get_proposal(vote_id);
     let expected_weight_staker2 = staker2.get_average_delegated_over_last(voter1(), config.voting_weight_smoothing_duration);
@@ -1461,7 +1461,7 @@ fn test_vote_with_specific_staker() {
     
     // Vote with staker2
     set_contract_address(voter2());
-    governor.vote_with_staker(vote_id, true, staker2.contract_address);
+    governor.vote_with_staker(vote_id, true, staker2);
     
     let proposal = governor.get_proposal(vote_id);
     let expected_weight = staker2.get_average_delegated_over_last(voter2(), config.voting_weight_smoothing_duration);
@@ -1481,7 +1481,7 @@ fn test_vote_with_disallowed_staker() {
     
     set_contract_address(voter1());
     // This should fail because staker2 is not allowed
-    governor.vote_with_staker(id, true, staker2.contract_address);
+    governor.vote_with_staker(id, true, staker2);
 }
 
 #[test]
@@ -1491,7 +1491,7 @@ fn test_add_staker_only_self_call() {
     let (staker2, _token2) = setup_second_staker();
     
     set_contract_address(anyone());
-    governor.add_staker(staker2.contract_address);
+    governor.add_staker(staker2);
 }
 
 #[test]
@@ -1501,5 +1501,5 @@ fn test_remove_staker_only_self_call() {
     let (staker2, _token2) = setup_second_staker();
     
     set_contract_address(anyone());
-    governor.remove_staker(staker2.contract_address);
+    governor.remove_staker(staker2);
 }

@@ -47,7 +47,7 @@ pub trait IGovernor<TContractState> {
     fn vote(ref self: TContractState, id: felt252, yea: bool);
 
     // Votes on the given proposal using a specific staker contract.
-    fn vote_with_staker(ref self: TContractState, id: felt252, yea: bool, staker: ContractAddress);
+    fn vote_with_staker(ref self: TContractState, id: felt252, yea: bool, staker: IStakerDispatcher);
 
     // Cancels the proposal with the given ID. Only callable by the proposer.
     fn cancel(ref self: TContractState, id: felt252);
@@ -64,17 +64,20 @@ pub trait IGovernor<TContractState> {
         ref self: TContractState, calls: Span<Call>, description: ByteArray,
     ) -> felt252;
 
+    // Proposes executing the given call from this contract, checking threshold across multiple stakers.
+    fn propose_with_stakers(ref self: TContractState, calls: Span<Call>, stakers: Span<IStakerDispatcher>) -> felt252;
+
     // Gets the staker that is used by this governor contract.
     fn get_staker(self: @TContractState) -> IStakerDispatcher;
 
     // Adds a staker contract to the list of allowed stakers. Only callable by self.
-    fn add_staker(ref self: TContractState, staker: ContractAddress);
+    fn add_staker(ref self: TContractState, staker: IStakerDispatcher);
 
     // Removes a staker contract from the list of allowed stakers. Only callable by self.
-    fn remove_staker(ref self: TContractState, staker: ContractAddress);
+    fn remove_staker(ref self: TContractState, staker: IStakerDispatcher);
 
     // Checks if a staker contract is allowed.
-    fn is_staker_allowed(self: @TContractState, staker: ContractAddress) -> bool;
+    fn is_staker_allowed(self: @TContractState, staker: IStakerDispatcher) -> bool;
 
     // Gets the latest configuration for this governor contract.
     fn get_config(self: @TContractState) -> Config;
@@ -101,7 +104,7 @@ pub trait IGovernor<TContractState> {
     // - 0 means not voted, or proposal does not exist
     // - 3 means voted in favor
     // - 1 means voted against
-    fn get_vote_with_staker(self: @TContractState, id: felt252, voter: ContractAddress, staker: ContractAddress) -> u8;
+    fn get_vote_with_staker(self: @TContractState, id: felt252, voter: ContractAddress, staker: IStakerDispatcher) -> u8;
 
     // Changes the configuration of the governor. Only affects proposals created after the
     // configuration change. Must be called by self, e.g. via a proposal.
@@ -201,7 +204,7 @@ pub mod Governor {
     #[storage]
     struct Storage {
         staker: IStakerDispatcher,
-        allowed_stakers: Map<ContractAddress, felt252>,
+        allowed_stakers: Map<ContractAddress, bool>,
         config_versions: Map<u64, Config>,
         latest_config_version: u64,
         nonce: u64,
@@ -217,7 +220,7 @@ pub mod Governor {
     fn constructor(ref self: ContractState, staker: IStakerDispatcher, config: Config) {
         self.staker.write(staker);
         // The default staker is automatically allowed
-        self.allowed_stakers.write(staker.contract_address, 1);
+        self.allowed_stakers.write(staker.contract_address, true);
 
         self.config_versions.write(0, config);
         self.emit(Reconfigured { new_config: config, version: 0 });
@@ -327,11 +330,78 @@ pub mod Governor {
             id
         }
 
-        fn vote(ref self: ContractState, id: felt252, yea: bool) {
-            self.vote_with_staker(id, yea, self.get_staker().contract_address);
+        fn propose_with_stakers(ref self: ContractState, calls: Span<Call>, stakers: Span<IStakerDispatcher>) -> felt252 {
+            let nonce = self.nonce.read();
+            self.nonce.write(nonce + 1);
+            let id = get_proposal_id(get_contract_address(), nonce);
+
+            let proposer = get_caller_address();
+            let (config, config_version) = self.get_config_with_version();
+            let timestamp_current = get_block_timestamp();
+
+            let latest_proposal_id = self.latest_proposal_by_proposer.read(proposer);
+            if latest_proposal_id.is_non_zero() {
+                let latest_proposal_state = self.get_proposal(latest_proposal_id).execution_state;
+
+                // if the proposal is not canceled, check that the voting for that proposal has
+                // ended
+                if latest_proposal_state.canceled.is_zero() {
+                    assert(
+                        latest_proposal_state.created
+                            + config.voting_start_delay
+                            + config.voting_period <= timestamp_current,
+                        'PROPOSER_HAS_ACTIVE_PROPOSAL',
+                    );
+                }
+            }
+
+            // Check all stakers are allowed and sum their voting weights
+            let mut total_weight: u128 = 0;
+            let mut i = 0;
+            while i < stakers.len() {
+                let staker = *stakers.at(i);
+                assert(self.is_staker_allowed(staker), 'STAKER_NOT_ALLOWED');
+                
+                let weight = staker
+                    .get_average_delegated_over_last(
+                        delegate: proposer, period: config.voting_weight_smoothing_duration,
+                    );
+                total_weight += weight;
+                i += 1;
+            };
+
+            assert(total_weight >= config.proposal_creation_threshold, 'THRESHOLD');
+
+            self
+                .proposals
+                .write(
+                    id,
+                    ProposalInfo {
+                        calls_hash: hash_calls(@calls),
+                        proposer,
+                        execution_state: ExecutionState {
+                            created: timestamp_current,
+                            executed: Zero::zero(),
+                            canceled: Zero::zero(),
+                        },
+                        yea: 0,
+                        nay: 0,
+                        config_version,
+                    },
+                );
+
+            self.latest_proposal_by_proposer.write(proposer, id);
+
+            self.emit(Proposed { id, proposer, calls, config_version });
+
+            id
         }
 
-        fn vote_with_staker(ref self: ContractState, id: felt252, yea: bool, staker: ContractAddress) {
+        fn vote(ref self: ContractState, id: felt252, yea: bool) {
+            self.vote_with_staker(id, yea, self.get_staker());
+        }
+
+        fn vote_with_staker(ref self: ContractState, id: felt252, yea: bool, staker: IStakerDispatcher) {
             let (mut proposal, config) = self.get_proposal_with_config(id);
 
             assert(proposal.proposer.is_non_zero(), 'DOES_NOT_EXIST');
@@ -349,8 +419,7 @@ pub mod Governor {
             assert(timestamp_current < (voting_start_time + config.voting_period), 'VOTING_ENDED');
             assert(past_vote.is_zero(), 'ALREADY_VOTED');
 
-            let staker_dispatcher = IStakerDispatcher { contract_address: staker };
-            let weight = staker_dispatcher
+            let weight = staker
                 .get_average_delegated(
                     delegate: voter,
                     start: voting_start_time - config.voting_weight_smoothing_duration,
@@ -366,9 +435,9 @@ pub mod Governor {
             
             // Store vote in new storage (old storage is only for reading existing votes)
             let vote_value = if yea { 3 } else { 1 };
-            self.multi_staker_vote.write((id, voter, staker), vote_value);
+            self.multi_staker_vote.write((id, voter, staker.contract_address), vote_value);
 
-            self.emit(Voted { id, voter, weight, yea, staker });
+            self.emit(Voted { id, voter, weight, yea, staker: staker.contract_address });
         }
 
         fn cancel(ref self: ContractState, id: felt252) {
@@ -471,23 +540,23 @@ pub mod Governor {
             self.staker.read()
         }
 
-        fn add_staker(ref self: ContractState, staker: ContractAddress) {
+        fn add_staker(ref self: ContractState, staker: IStakerDispatcher) {
             self.check_self_call();
-            self.allowed_stakers.write(staker, 1);
-            self.emit(StakerAdded { staker });
+            self.allowed_stakers.write(staker.contract_address, true);
+            self.emit(StakerAdded { staker: staker.contract_address });
         }
 
-        fn remove_staker(ref self: ContractState, staker: ContractAddress) {
+        fn remove_staker(ref self: ContractState, staker: IStakerDispatcher) {
             self.check_self_call();
             // Cannot remove the default staker
-            assert(staker != self.get_staker().contract_address, 'CANNOT_REMOVE_DEFAULT_STAKER');
-            self.allowed_stakers.write(staker, 0);
-            self.emit(StakerRemoved { staker });
+            assert(staker.contract_address != self.get_staker().contract_address, 'CANNOT_REMOVE_DEFAULT_STAKER');
+            self.allowed_stakers.write(staker.contract_address, false);
+            self.emit(StakerRemoved { staker: staker.contract_address });
         }
 
-        fn is_staker_allowed(self: @ContractState, staker: ContractAddress) -> bool {
+        fn is_staker_allowed(self: @ContractState, staker: IStakerDispatcher) -> bool {
             // Default staker is always allowed (for upgrade compatibility)
-            self.allowed_stakers.read(staker).is_non_zero() || staker == self.get_staker().contract_address
+            self.allowed_stakers.read(staker.contract_address) || staker.contract_address == self.get_staker().contract_address
         }
 
         fn get_proposal(self: @ContractState, id: felt252) -> ProposalInfo {
@@ -502,16 +571,16 @@ pub mod Governor {
         }
 
         fn get_vote(self: @ContractState, id: felt252, voter: ContractAddress) -> u8 {
-            self.get_vote_with_staker(id, voter, self.get_staker().contract_address)
+            self.get_vote_with_staker(id, voter, self.get_staker())
         }
 
-        fn get_vote_with_staker(self: @ContractState, id: felt252, voter: ContractAddress, staker: ContractAddress) -> u8 {
-            if staker == self.get_staker().contract_address {
+        fn get_vote_with_staker(self: @ContractState, id: felt252, voter: ContractAddress, staker: IStakerDispatcher) -> u8 {
+            if staker.contract_address == self.get_staker().contract_address {
                 // For default staker, check both storages for backwards compatibility
                 let old_vote = self.vote.read((id, voter));
-                if old_vote.is_non_zero() { old_vote } else { self.multi_staker_vote.read((id, voter, staker)) }
+                if old_vote.is_non_zero() { old_vote } else { self.multi_staker_vote.read((id, voter, staker.contract_address)) }
             } else {
-                self.multi_staker_vote.read((id, voter, staker))
+                self.multi_staker_vote.read((id, voter, staker.contract_address))
             }
         }
 
