@@ -1301,7 +1301,7 @@ fn test_remove_staker() {
 }
 
 #[test]
-#[should_panic(expected: ('CANNOT_REMOVE_DEFAULT_STAKER', 'ENTRYPOINT_FAILED'))]
+#[should_panic(expected: ('CANNOT_REMOVE_DEFAULT_STAKER', 'ENTRYPOINT_FAILED', 'ENTRYPOINT_FAILED'))]
 fn test_cannot_remove_default_staker() {
     let (staker, token, governor, _config) = setup();
     
