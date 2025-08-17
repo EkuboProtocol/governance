@@ -487,7 +487,7 @@ pub mod Governor {
 
         fn is_staker_allowed(self: @ContractState, staker: ContractAddress) -> bool {
             // Default staker is always allowed (for upgrade compatibility)
-            self.allowed_stakers.read(staker) != 0 || staker == self.get_staker().contract_address
+            self.allowed_stakers.read(staker).is_non_zero() || staker == self.get_staker().contract_address
         }
 
         fn get_proposal(self: @ContractState, id: felt252) -> ProposalInfo {
