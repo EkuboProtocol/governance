@@ -1,4 +1,4 @@
-use starknet::{ContractAddress};
+use starknet::ContractAddress;
 
 #[starknet::interface]
 pub trait IStakerV2<TContractState> {
@@ -79,21 +79,16 @@ pub trait IStakerV2<TContractState> {
 
 #[starknet::contract]
 pub mod Staker {
-    use starknet::storage::MutableVecTrait;
-use core::num::traits::zero::{Zero};
-    use crate::staker_log::{LogOperations, StakingLog};
+    use core::num::traits::zero::Zero;
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::{
-        Vec, VecTrait,
-        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry,
-        StoragePointerReadAccess, StoragePointerWriteAccess,
+        Map, MutableVecTrait, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry,
+        StoragePointerReadAccess, StoragePointerWriteAccess, Vec, VecTrait,
     };
-
-    use starknet::{
-        ContractAddress, get_block_timestamp, get_caller_address, get_contract_address,
-        storage_access::{StorePacking},
-    };
-    use super::{IStakerV2};
+    use starknet::storage_access::StorePacking;
+    use starknet::{ContractAddress, get_block_timestamp, get_caller_address, get_contract_address};
+    use crate::staker_log::{LogOperations, StakingLog};
+    use super::IStakerV2;
 
     #[derive(Copy, Drop, PartialEq, Debug)]
     pub struct DelegatedSnapshot {
@@ -167,33 +162,30 @@ use core::num::traits::zero::{Zero};
             ref self: ContractState, address: ContractAddress, timestamp: u64,
         ) -> u128 {
             let amount_delegated = self.amount_delegated.read(address);
-            
+
             let delegate_snapshots_entry = self.delegated_cumulative_snapshot.entry(address);
             let num_snapshots = delegate_snapshots_entry.len();
 
             if num_snapshots > 0 {
-                
                 let last_snapshot = delegate_snapshots_entry.at(num_snapshots - 1).read();
-                
+
                 // if we haven't just snapshotted this address
                 if (last_snapshot.timestamp != timestamp) {
                     delegate_snapshots_entry
-                        .append()
-                        .write(DelegatedSnapshot {
-                            timestamp,
-                            delegated_cumulative: last_snapshot.delegated_cumulative
-                                + ((timestamp - last_snapshot.timestamp).into() * amount_delegated.into()),
-                        });
+                        .push(
+                            DelegatedSnapshot {
+                                timestamp,
+                                delegated_cumulative: last_snapshot.delegated_cumulative
+                                    + (timestamp - last_snapshot.timestamp).into()
+                                        * amount_delegated.into(),
+                            },
+                        );
                 }
             } else {
                 // record this timestamp as the first snapshot
                 delegate_snapshots_entry
-                    .append()
-                    .write(DelegatedSnapshot {
-                        timestamp, 
-                        delegated_cumulative: 0 
-                    });
-            };
+                    .push(DelegatedSnapshot { timestamp, delegated_cumulative: 0 });
+            }
 
             amount_delegated
         }
