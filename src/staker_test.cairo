@@ -1,13 +1,12 @@
-use core::num::traits::zero::{Zero};
-use governance::execution_state_test::{assert_pack_unpack};
+use core::num::traits::zero::Zero;
+use governance::execution_state_test::assert_pack_unpack;
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
-use governance::staker::{
-    IStakerDispatcher, IStakerDispatcherTrait, Staker,
-    Staker::{DelegatedSnapshot, DelegatedSnapshotStorePacking},
-};
+use governance::staker::Staker::{DelegatedSnapshot, DelegatedSnapshotStorePacking};
+use governance::staker::{IStakerDispatcher, IStakerDispatcherTrait, Staker};
 use governance::test::test_token::{TestToken, deploy as deploy_token};
+use starknet::get_contract_address;
+use starknet::syscalls::deploy_syscall;
 use starknet::testing::{pop_log, set_block_timestamp};
-use starknet::{contract_address_const, get_contract_address, syscalls::deploy_syscall};
 
 pub(crate) fn setup(amount: u256) -> (IStakerDispatcher, IERC20Dispatcher) {
     let token = deploy_token(get_contract_address(), amount);
@@ -24,7 +23,7 @@ pub(crate) fn setup(amount: u256) -> (IStakerDispatcher, IERC20Dispatcher) {
 mod stake_withdraw {
     use super::{
         IERC20DispatcherTrait, IStakerDispatcherTrait, Staker, TestToken, Zero,
-        contract_address_const, get_contract_address, pop_log, setup,
+        get_contract_address, pop_log, setup,
     };
 
     #[test]
@@ -32,15 +31,11 @@ mod stake_withdraw {
         let (staker, token) = setup(1000);
 
         token.approve(staker.contract_address, 500);
-        staker.stake(contract_address_const::<'delegate'>());
+        staker.stake('delegate'.try_into().unwrap());
 
-        assert_eq!(
-            staker.get_staked(get_contract_address(), contract_address_const::<'delegate'>()), 500,
-        );
+        assert_eq!(staker.get_staked(get_contract_address(), 'delegate'.try_into().unwrap()), 500);
         assert_eq!(staker.get_staked(get_contract_address(), Zero::zero()), 0);
-        assert_eq!(
-            staker.get_staked(contract_address_const::<'delegate'>(), get_contract_address()), 0,
-        );
+        assert_eq!(staker.get_staked('delegate'.try_into().unwrap(), get_contract_address()), 0);
         // pop the transfer from 0 to deployer
         pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
         assert_eq!(
@@ -57,7 +52,7 @@ mod stake_withdraw {
                 Staker::Staked {
                     from: get_contract_address(),
                     amount: 500,
-                    delegate: contract_address_const::<'delegate'>(),
+                    delegate: 'delegate'.try_into().unwrap(),
                 },
             ),
         );
@@ -69,7 +64,7 @@ mod stake_withdraw {
         let (staker, token) = setup(1000);
 
         token.approve(staker.contract_address, u256 { high: 1, low: 0 });
-        staker.stake(contract_address_const::<'delegate'>());
+        staker.stake('delegate'.try_into().unwrap());
     }
 
     #[test]
@@ -78,7 +73,7 @@ mod stake_withdraw {
         let (staker, token) = setup(1000);
 
         token.approve(staker.contract_address, 1001);
-        staker.stake(contract_address_const::<'delegate'>());
+        staker.stake('delegate'.try_into().unwrap());
     }
 }
 
@@ -209,7 +204,7 @@ fn test_staker_delegated_snapshot_pack_max_delegated_cumulative() {
 fn test_get_average_delegated_order_same() {
     let (staker, _) = setup(12345);
 
-    staker.get_average_delegated(contract_address_const::<12345>(), 0, 0);
+    staker.get_average_delegated(12345.try_into().unwrap(), 0, 0);
 }
 
 #[test]
@@ -217,7 +212,7 @@ fn test_get_average_delegated_order_same() {
 fn test_get_average_delegated_order_backwards() {
     let (staker, _) = setup(12345);
 
-    staker.get_average_delegated(contract_address_const::<12345>(), 1, 0);
+    staker.get_average_delegated(12345.try_into().unwrap(), 1, 0);
 }
 
 #[test]
@@ -225,7 +220,7 @@ fn test_get_average_delegated_order_backwards() {
 fn test_get_average_delegated_future() {
     let (staker, _) = setup(12345);
 
-    staker.get_average_delegated(contract_address_const::<12345>(), 0, 1);
+    staker.get_average_delegated(12345.try_into().unwrap(), 0, 1);
 }
 
 #[test]
@@ -235,14 +230,14 @@ fn test_get_average_delegated_future_non_zero() {
 
     set_block_timestamp(5);
 
-    staker.get_average_delegated(contract_address_const::<12345>(), 4, 6);
+    staker.get_average_delegated(12345.try_into().unwrap(), 4, 6);
 }
 
 #[test]
 fn test_approve_sets_allowance() {
     let (_, erc20) = setup(12345);
 
-    let spender = contract_address_const::<12345>();
+    let spender = 12345.try_into().unwrap();
     erc20.approve(spender, 5151);
     assert(erc20.allowance(get_contract_address(), spender) == 5151, 'allowance');
 }
@@ -250,7 +245,7 @@ fn test_approve_sets_allowance() {
 #[test]
 fn test_delegate_count_lags() {
     let (staker, token) = setup(12345);
-    let delegatee = contract_address_const::<12345>();
+    let delegatee = 12345.try_into().unwrap();
 
     token.approve(staker.contract_address, 12345);
 
@@ -271,7 +266,7 @@ fn test_delegate_count_lags() {
 #[test]
 fn test_get_delegated_cumulative() {
     let (staker, token) = setup(12345);
-    let delegatee = contract_address_const::<12345>();
+    let delegatee = 12345.try_into().unwrap();
 
     token.approve(staker.contract_address, 12345);
 
@@ -291,7 +286,7 @@ fn test_get_delegated_cumulative() {
 fn test_get_delegated_cumulative_fails_future() {
     let (staker, _) = setup(12345);
 
-    staker.get_delegated_cumulative(delegate: contract_address_const::<12345>(), timestamp: 1);
+    staker.get_delegated_cumulative(delegate: 12345.try_into().unwrap(), timestamp: 1);
 }
 
 #[test]
@@ -301,7 +296,7 @@ fn test_get_delegated_cumulative_fails_future_non_zero_ts() {
 
     set_block_timestamp(5);
 
-    staker.get_delegated_cumulative(delegate: contract_address_const::<12345>(), timestamp: 6);
+    staker.get_delegated_cumulative(delegate: 12345.try_into().unwrap(), timestamp: 6);
 }
 
 #[test]
@@ -309,7 +304,7 @@ fn test_get_delegated_cumulative_fails_future_non_zero_ts() {
 fn test_get_delegated_at_fails_future() {
     let (staker, _) = setup(12345);
 
-    staker.get_delegated_at(delegate: contract_address_const::<12345>(), timestamp: 1);
+    staker.get_delegated_at(delegate: 12345.try_into().unwrap(), timestamp: 1);
 }
 
 #[test]
@@ -319,13 +314,13 @@ fn test_get_delegated_at_fails_future_non_zero_ts() {
 
     set_block_timestamp(5);
 
-    staker.get_delegated_at(delegate: contract_address_const::<12345>(), timestamp: 6);
+    staker.get_delegated_at(delegate: 12345.try_into().unwrap(), timestamp: 6);
 }
 
 #[test]
 fn test_get_average_delegated() {
     let (staker, token) = setup(12345);
-    let delegatee = contract_address_const::<12345>();
+    let delegatee = 12345.try_into().unwrap();
 
     set_block_timestamp(10);
 
@@ -350,7 +345,7 @@ fn test_get_average_delegated() {
 
     // rewind to undelegate at 8
     set_block_timestamp(8);
-    staker.withdraw_amount(delegatee, recipient: contract_address_const::<0>(), amount: 12345);
+    staker.withdraw_amount(delegatee, recipient: 0.try_into().unwrap(), amount: 12345);
 
     set_block_timestamp(12);
     assert(staker.get_average_delegated(delegatee, 4, 10) == 8230, 'average (4 sec * 12345)/6');
@@ -359,12 +354,12 @@ fn test_get_average_delegated() {
 #[test]
 fn test_transfer_delegates_moved() {
     let (staker, token) = setup(12345);
-    let delegatee = contract_address_const::<12345>();
+    let delegatee = 12345.try_into().unwrap();
 
     set_block_timestamp(2);
     token.approve(staker.contract_address, 12345);
     staker.stake(delegatee);
-    staker.withdraw_amount(delegatee, contract_address_const::<3456>(), 500);
+    staker.withdraw_amount(delegatee, 3456.try_into().unwrap(), 500);
     set_block_timestamp(5);
 
     assert_eq!(staker.get_delegated(delegatee), (12345 - 500));
@@ -374,7 +369,7 @@ fn test_transfer_delegates_moved() {
 #[test]
 fn test_delegate_undelegate() {
     let (staker, token) = setup(12345);
-    let delegatee = contract_address_const::<12345>();
+    let delegatee = 12345.try_into().unwrap();
 
     set_block_timestamp(2);
     token.approve(staker.contract_address, 12345);

@@ -1,18 +1,16 @@
-use core::num::traits::zero::{Zero};
-use governance::execution_state::{ExecutionState};
+use core::num::traits::zero::Zero;
+use governance::execution_state::ExecutionState;
+use governance::governor::Governor::hash_calls;
 use governance::governor::{
-    Config, Governor, Governor::{hash_calls}, IGovernorDispatcher, IGovernorDispatcherTrait,
-    ProposalInfo,
+    Config, Governor, IGovernorDispatcher, IGovernorDispatcherTrait, ProposalInfo,
 };
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::staker::{IStakerDispatcher, IStakerDispatcherTrait};
-use governance::staker_test::{setup as setup_staker};
-use starknet::account::{Call};
-use starknet::{
-    ContractAddress, account::{AccountContractDispatcher, AccountContractDispatcherTrait},
-    contract_address_const, get_block_timestamp, get_contract_address, syscalls::deploy_syscall,
-    testing::{pop_log, set_block_timestamp, set_contract_address, set_version},
-};
+use governance::staker_test::setup as setup_staker;
+use starknet::account::{AccountContractDispatcher, AccountContractDispatcherTrait, Call};
+use starknet::syscalls::deploy_syscall;
+use starknet::testing::{pop_log, set_block_timestamp, set_contract_address, set_version};
+use starknet::{ContractAddress, get_block_timestamp, get_contract_address};
 
 fn recipient() -> ContractAddress {
     'recipient'.try_into().unwrap()
@@ -117,7 +115,7 @@ fn test_hash_call() {
         hash_calls(
             @array![
                 Call {
-                    to: contract_address_const::<'to'>(),
+                    to: 'to'.try_into().unwrap(),
                     selector: 'selector',
                     calldata: array![1, 2, 3].span(),
                 },
@@ -976,7 +974,7 @@ fn test_upgrade_succeeds_self_call() {
         Call {
             to: governor.contract_address,
             selector: selector!("upgrade"),
-            calldata: array![Governor::TEST_CLASS_HASH].span(),
+            calldata: array![Governor::TEST_CLASS_HASH.into()].span(),
         },
     );
 
@@ -994,7 +992,7 @@ fn test_upgrade_succeeds_self_call() {
                 Call {
                     to: governor.contract_address,
                     selector: selector!("upgrade"),
-                    calldata: array![Governor::TEST_CLASS_HASH].span(),
+                    calldata: array![Governor::TEST_CLASS_HASH.into()].span(),
                 },
             ]
                 .span(),
@@ -1088,7 +1086,7 @@ fn test_governor_validate_declare_fails() {
 #[should_panic(expected: ('Invalid caller', 'ENTRYPOINT_FAILED'))]
 fn test_governor_execute_fails_from_non_zero() {
     let (_staker, _token, governor, _config) = setup();
-    set_contract_address(contract_address_const::<1>());
+    set_contract_address(1.try_into().unwrap());
     AccountContractDispatcher { contract_address: governor.contract_address }.__execute__(array![]);
 }
 

@@ -1,10 +1,9 @@
+use starknet::get_block_timestamp;
 use starknet::storage::{
-    Mutable, StorageAsPath, StorageBase, StoragePointerReadAccess, StoragePointerWriteAccess,
-    Vec, VecTrait, MutableVecTrait
+    Mutable, MutableVecTrait, StorageAsPath, StorageBase, StoragePointerReadAccess,
+    StoragePointerWriteAccess, Vec, VecTrait,
 };
-
-use starknet::storage_access::{StorePacking};
-use starknet::{get_block_timestamp};
+use starknet::storage_access::StorePacking;
 
 
 pub type StakingLog = Vec<StakingLogRecord>;
@@ -39,8 +38,8 @@ impl InternalStakingLogOperations of InternalLogOperations {
             let res = self
                 .search_recursive(timestamp, center + 1, right)
                 .unwrap_or((record, center));
-            
-            Option::Some(res)            
+
+            Option::Some(res)
         } else {
             self.search_recursive(timestamp, left, center - 1)
         }
@@ -49,7 +48,6 @@ impl InternalStakingLogOperations of InternalLogOperations {
 
 #[generate_trait]
 pub impl StakingLogOperations of LogOperations {
-    
     fn find_record_on_or_before_timestamp(
         self: @StorageBase<StakingLog>, timestamp: u64,
     ) -> Option<(StakingLogRecord, u64)> {
@@ -74,8 +72,7 @@ pub impl StakingLogOperations of LogOperations {
 
         if log.len() == 0 {
             log
-                .append()
-                .write(
+                .push(
                     StakingLogRecord {
                         timestamp: block_timestamp,
                         time_weighted_total_staked_sum: 0_u256,
@@ -90,14 +87,6 @@ pub impl StakingLogOperations of LogOperations {
 
         let mut last_record = last_record_ptr.read();
 
-        let mut record = if last_record.timestamp == block_timestamp {
-            // update record
-            last_record_ptr
-        } else {
-            // create new record
-            log.append()
-        };
-
         // Might be zero
         let seconds_diff = block_timestamp - last_record.timestamp;
 
@@ -111,17 +100,20 @@ pub impl StakingLogOperations of LogOperations {
             res
         };
 
-        // Add a new record.
-        record
-            .write(
-                StakingLogRecord {
-                    timestamp: block_timestamp,
-                    time_weighted_total_staked_sum: last_record.time_weighted_total_staked_sum
-                        + time_weighted_total_staked,
-                    seconds_per_total_staked_sum: last_record.seconds_per_total_staked_sum
-                        + staked_seconds_per_total_staked,
-                },
-            );
+        let next_log = StakingLogRecord {
+            timestamp: block_timestamp,
+            time_weighted_total_staked_sum: last_record.time_weighted_total_staked_sum
+                + time_weighted_total_staked,
+            seconds_per_total_staked_sum: last_record.seconds_per_total_staked_sum
+                + staked_seconds_per_total_staked,
+        };
+
+        if last_record.timestamp == block_timestamp {
+            last_record_ptr.write(next_log);
+        } else {
+            // Add a new record.
+            log.push(next_log)
+        };
     }
 }
 

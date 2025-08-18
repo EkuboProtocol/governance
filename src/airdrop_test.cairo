@@ -1,14 +1,13 @@
-use core::num::traits::zero::{Zero};
-use governance::airdrop::{
-    Airdrop, Airdrop::{compute_pedersen_root, compute_root_of_group, hash_claim, hash_function},
-    Claim, Config, IAirdropDispatcher, IAirdropDispatcherTrait,
+use core::num::traits::zero::Zero;
+use governance::airdrop::Airdrop::{
+    compute_pedersen_root, compute_root_of_group, hash_claim, hash_function,
 };
-use governance::interfaces::erc20::{IERC20DispatcherTrait};
+use governance::airdrop::{Airdrop, Claim, Config, IAirdropDispatcher, IAirdropDispatcherTrait};
+use governance::interfaces::erc20::IERC20DispatcherTrait;
 use governance::test::test_token::{TestToken, deploy as deploy_token};
+use starknet::syscalls::deploy_syscall;
 use starknet::testing::{pop_log, set_block_timestamp};
-use starknet::{
-    ContractAddress, contract_address_const, get_contract_address, syscalls::{deploy_syscall},
-};
+use starknet::{ContractAddress, get_contract_address};
 
 fn deploy_with_refundee(
     token: ContractAddress, root: felt252, refundable_timestamp: u64, refund_to: ContractAddress,
@@ -40,7 +39,7 @@ fn test_selector() {
 #[test]
 fn test_hash() {
     assert_eq!(
-        hash_claim(Claim { id: 123, claimee: contract_address_const::<456>(), amount: 789 }),
+        hash_claim(Claim { id: 123, claimee: 456.try_into().unwrap(), amount: 789 }),
         0x0760b337026a91a6f2af99a0654f7fdff5d5c8d4e565277e787b99e17b1742a3,
     );
 }
@@ -86,7 +85,7 @@ fn test_compute_pedersen_root_recursive() {
 fn test_claim_single_recipient() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
+    let claim = Claim { id: 0, claimee: 2345.try_into().unwrap(), amount: 6789 };
 
     let leaf = hash_claim(claim);
 
@@ -111,7 +110,7 @@ fn test_claim_single_recipient() {
 fn test_claim_128_single_recipient_tree() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
+    let claim = Claim { id: 0, claimee: 2345.try_into().unwrap(), amount: 6789 };
 
     let leaf = hash_claim(claim);
 
@@ -136,7 +135,7 @@ fn test_claim_128_single_recipient_tree() {
 fn test_double_claim() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
+    let claim = Claim { id: 0, claimee: 2345.try_into().unwrap(), amount: 6789 };
 
     let leaf = hash_claim(claim);
 
@@ -151,7 +150,7 @@ fn test_double_claim() {
 fn test_double_claim_128_single_recipient_tree() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
+    let claim = Claim { id: 0, claimee: 2345.try_into().unwrap(), amount: 6789 };
 
     let leaf = hash_claim(claim);
 
@@ -167,7 +166,7 @@ fn test_double_claim_128_single_recipient_tree() {
 fn test_invalid_proof_single_entry() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
+    let claim = Claim { id: 0, claimee: 2345.try_into().unwrap(), amount: 6789 };
 
     let leaf = hash_claim(claim);
 
@@ -182,7 +181,7 @@ fn test_invalid_proof_single_entry() {
 fn test_invalid_proof_fake_entry() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
+    let claim = Claim { id: 0, claimee: 2345.try_into().unwrap(), amount: 6789 };
 
     let leaf = hash_claim(claim);
 
@@ -192,8 +191,7 @@ fn test_invalid_proof_fake_entry() {
 
     airdrop
         .claim(
-            Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 + 1 },
-            array![].span(),
+            Claim { id: 0, claimee: 2345.try_into().unwrap(), amount: 6789 + 1 }, array![].span(),
         );
 }
 
@@ -207,15 +205,15 @@ fn test_compute_root_of_group_empty() {
 fn test_compute_root_of_group() {
     assert_eq!(
         compute_root_of_group(
-            array![Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 }].span(),
+            array![Claim { id: 0, claimee: 2345.try_into().unwrap(), amount: 6789 }].span(),
         ),
         0x0336963eacdeee5da262a870ddfc7f8d12c6162ebdf58a805941c06d3baf8b40,
     );
     assert_eq!(
         compute_root_of_group(
             array![
-                Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 },
-                Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789 },
+                Claim { id: 0, claimee: 2345.try_into().unwrap(), amount: 6789 },
+                Claim { id: 1, claimee: 3456.try_into().unwrap(), amount: 789 },
             ]
                 .span(),
         ),
@@ -224,9 +222,9 @@ fn test_compute_root_of_group() {
     assert_eq!(
         compute_root_of_group(
             array![
-                Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 },
-                Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789 },
-                Claim { id: 2, claimee: contract_address_const::<4567>(), amount: 89 },
+                Claim { id: 0, claimee: 2345.try_into().unwrap(), amount: 6789 },
+                Claim { id: 1, claimee: 3456.try_into().unwrap(), amount: 789 },
+                Claim { id: 2, claimee: 4567.try_into().unwrap(), amount: 89 },
             ]
                 .span(),
         ),
@@ -240,12 +238,9 @@ fn test_compute_root_of_group_large() {
 
     let mut i: u64 = 64;
     while i < 256 {
-        arr
-            .append(
-                Claim { id: i, claimee: contract_address_const::<2345>(), amount: (i + 1).into() },
-            );
+        arr.append(Claim { id: i, claimee: 2345.try_into().unwrap(), amount: (i + 1).into() });
         i += 1;
-    };
+    }
 
     assert_eq!(
         compute_root_of_group(arr.span()),
@@ -259,12 +254,9 @@ fn test_compute_root_of_group_large_odd() {
 
     let mut i: u64 = 64;
     while i < 257 {
-        arr
-            .append(
-                Claim { id: i, claimee: contract_address_const::<2345>(), amount: (i + 1).into() },
-            );
+        arr.append(Claim { id: i, claimee: 2345.try_into().unwrap(), amount: (i + 1).into() });
         i += 1;
-    };
+    }
 
     assert_eq!(
         compute_root_of_group(arr.span()),
@@ -276,8 +268,8 @@ fn test_compute_root_of_group_large_odd() {
 fn test_claim_two_claims() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
-    let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789 };
+    let claim_a = Claim { id: 0, claimee: 2345.try_into().unwrap(), amount: 6789 };
+    let claim_b = Claim { id: 1, claimee: 3456.try_into().unwrap(), amount: 789 };
 
     let leaf_a = hash_claim(claim_a);
     let leaf_b = hash_claim(claim_b);
@@ -300,8 +292,8 @@ fn test_claim_two_claims() {
 fn test_claim_two_claims_via_claim_128() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
-    let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789 };
+    let claim_a = Claim { id: 0, claimee: 2345.try_into().unwrap(), amount: 6789 };
+    let claim_b = Claim { id: 1, claimee: 3456.try_into().unwrap(), amount: 789 };
 
     let leaf_a = hash_claim(claim_a);
     let leaf_b = hash_claim(claim_b);
@@ -341,9 +333,9 @@ fn test_claim_two_claims_via_claim_128() {
 fn test_claim_three_claims_one_invalid_via_claim_128() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
-    let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789 };
-    let claim_b_2 = Claim { id: 2, claimee: contract_address_const::<3456>(), amount: 789 };
+    let claim_a = Claim { id: 0, claimee: 2345.try_into().unwrap(), amount: 6789 };
+    let claim_b = Claim { id: 1, claimee: 3456.try_into().unwrap(), amount: 789 };
+    let claim_b_2 = Claim { id: 2, claimee: 3456.try_into().unwrap(), amount: 789 };
 
     let leaf_a = hash_claim(claim_a);
     let leaf_b = hash_claim(claim_b);
@@ -384,9 +376,9 @@ fn test_claim_from_end_of_tree() {
         root: 2413984000256568988735068618807996871735886303454043475744972321149068137869,
         claim: Claim {
             id: 3592,
-            claimee: contract_address_const::<
-                827929506653898309809051765272831150759947744606852950844797791651878826782,
-            >(),
+            claimee: 827929506653898309809051765272831150759947744606852950844797791651878826782
+                .try_into()
+                .unwrap(),
             amount: 1001271836113844608,
         },
         proof: array![
@@ -412,9 +404,9 @@ fn test_claim_from_end_of_tree_large() {
         root: 405011783278363798212920545986279540950667137059008708904434915300742585819,
         claim: Claim {
             id: 16605,
-            claimee: contract_address_const::<
-                284836135682475739559347904100664354678769084599508066858400818369306251115,
-            >(),
+            claimee: 284836135682475739559347904100664354678769084599508066858400818369306251115
+                .try_into()
+                .unwrap(),
             amount: 1000080194694973312,
         },
         proof: array![
@@ -443,9 +435,9 @@ fn test_claim_from_end_of_tree_middle_of_bitmap() {
         root: 405011783278363798212920545986279540950667137059008708904434915300742585819,
         claim: Claim {
             id: 16567,
-            claimee: contract_address_const::<
-                1748616718994798723044863281884565737514860606804556124091102474369748521947,
-            >(),
+            claimee: 1748616718994798723044863281884565737514860606804556124091102474369748521947
+                .try_into()
+                .unwrap(),
             amount: 1005026355664803840,
         },
         proof: array![
@@ -474,9 +466,9 @@ fn test_double_claim_from_generated_tree() {
         root: 2413984000256568988735068618807996871735886303454043475744972321149068137869,
         claim: Claim {
             id: 0,
-            claimee: contract_address_const::<
-                1257981684727298919953780547925609938727371268283996697135018561811391002099,
-            >(),
+            claimee: 1257981684727298919953780547925609938727371268283996697135018561811391002099
+                .try_into()
+                .unwrap(),
             amount: 845608158412629999616,
         },
         proof: array![
@@ -500,17 +492,17 @@ fn test_double_claim_from_generated_tree() {
 fn test_double_claim_after_other_claim() {
     let claim_0 = Claim {
         id: 0,
-        claimee: contract_address_const::<
-            1257981684727298919953780547925609938727371268283996697135018561811391002099,
-        >(),
+        claimee: 1257981684727298919953780547925609938727371268283996697135018561811391002099
+            .try_into()
+            .unwrap(),
         amount: 845608158412629999616,
     };
 
     let claim_1 = Claim {
         id: 1,
-        claimee: contract_address_const::<
-            2446484730111463702450186103350698828806903266085688038950964576824849476058,
-        >(),
+        claimee: 2446484730111463702450186103350698828806903266085688038950964576824849476058
+            .try_into()
+            .unwrap(),
         amount: 758639984742607224832,
     };
 
@@ -599,9 +591,9 @@ fn test_double_claim_after_other_claim() {
 fn test_claim_before_funded() {
     let claim_0 = Claim {
         id: 0,
-        claimee: contract_address_const::<
-            1257981684727298919953780547925609938727371268283996697135018561811391002099,
-        >(),
+        claimee: 1257981684727298919953780547925609938727371268283996697135018561811391002099
+            .try_into()
+            .unwrap(),
         amount: 845608158412629999616,
     };
 
@@ -635,17 +627,17 @@ fn test_claim_before_funded() {
 fn test_multiple_claims_from_generated_tree() {
     let claim_0 = Claim {
         id: 0,
-        claimee: contract_address_const::<
-            1257981684727298919953780547925609938727371268283996697135018561811391002099,
-        >(),
+        claimee: 1257981684727298919953780547925609938727371268283996697135018561811391002099
+            .try_into()
+            .unwrap(),
         amount: 845608158412629999616,
     };
 
     let claim_1 = Claim {
         id: 1,
-        claimee: contract_address_const::<
-            2446484730111463702450186103350698828806903266085688038950964576824849476058,
-        >(),
+        claimee: 2446484730111463702450186103350698828806903266085688038950964576824849476058
+            .try_into()
+            .unwrap(),
         amount: 758639984742607224832,
     };
 
@@ -707,8 +699,8 @@ fn test_multiple_claims_from_generated_tree() {
 fn test_claim_128_fails_if_not_id_aligned() {
     let token = deploy_token(get_contract_address(), 1234567);
 
-    let claim_a = Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 };
-    let claim_b = Claim { id: 1, claimee: contract_address_const::<3456>(), amount: 789 };
+    let claim_a = Claim { id: 0, claimee: 2345.try_into().unwrap(), amount: 6789 };
+    let claim_b = Claim { id: 1, claimee: 3456.try_into().unwrap(), amount: 789 };
 
     let leaf_a = hash_claim(claim_a);
     let leaf_b = hash_claim(claim_b);
@@ -740,9 +732,9 @@ fn test_claim_128_too_many_claims() {
     let mut claims: Array<Claim> = array![];
     let mut i: u64 = 0;
     while i < 129 {
-        claims.append(Claim { id: 0, claimee: contract_address_const::<2345>(), amount: 6789 });
+        claims.append(Claim { id: 0, claimee: 2345.try_into().unwrap(), amount: 6789 });
         i += 1;
-    };
+    }
 
     airdrop.claim_128(claims.span(), array![].span());
 }
@@ -754,9 +746,9 @@ fn test_claim_128_large_tree() {
     let mut claims: Array<Claim> = array![];
 
     while (i < 320) {
-        claims.append(Claim { id: i, amount: 3, claimee: contract_address_const::<0xcdee>() });
+        claims.append(Claim { id: i, amount: 3, claimee: 0xcdee.try_into().unwrap() });
         i += 1;
-    };
+    }
 
     let s1 = compute_root_of_group(claims.span().slice(0, 128));
     let s2 = compute_root_of_group(claims.span().slice(128, 128));
@@ -782,9 +774,9 @@ fn test_claim_128_double_claim() {
     let mut claims: Array<Claim> = array![];
 
     while (i < 320) {
-        claims.append(Claim { id: i, amount: 3, claimee: contract_address_const::<0xcdee>() });
+        claims.append(Claim { id: i, amount: 3, claimee: 0xcdee.try_into().unwrap() });
         i += 1;
-    };
+    }
 
     let s1 = compute_root_of_group(claims.span().slice(0, 128));
     let s2 = compute_root_of_group(claims.span().slice(128, 128));
@@ -801,11 +793,9 @@ fn test_claim_128_double_claim() {
     assert_eq!(airdrop.claim_128(claims.span().slice(0, 128), array![s2, rr].span()), 128);
     let mut i: u64 = 0;
     while let Option::Some(claimed) = pop_log::<Airdrop::Claimed>(airdrop.contract_address) {
-        assert_eq!(
-            claimed.claim, Claim { id: i, amount: 3, claimee: contract_address_const::<0xcdee>() },
-        );
+        assert_eq!(claimed.claim, Claim { id: i, amount: 3, claimee: 0xcdee.try_into().unwrap() });
         i += 1;
-    };
+    }
 
     assert_eq!(airdrop.claim_128(claims.span().slice(0, 128), array![s2, rr].span()), 0);
     assert_eq!(pop_log::<Airdrop::Claimed>(airdrop.contract_address).is_none(), true);
@@ -813,12 +803,12 @@ fn test_claim_128_double_claim() {
 
 mod refundable {
     use super::{
-        ContractAddress, IAirdropDispatcherTrait, IERC20DispatcherTrait, contract_address_const,
-        deploy_token, deploy_with_refundee, get_contract_address, set_block_timestamp,
+        ContractAddress, IAirdropDispatcherTrait, IERC20DispatcherTrait, deploy_token,
+        deploy_with_refundee, get_contract_address, set_block_timestamp,
     };
 
     fn refund_to() -> ContractAddress {
-        contract_address_const::<'refund_to'>()
+        'refund_to'.try_into().unwrap()
     }
 
     #[test]
