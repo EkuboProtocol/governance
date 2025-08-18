@@ -1,6 +1,6 @@
-use governance::execution_state::{ExecutionState};
-use governance::staker::{IStakerDispatcher};
-use starknet::account::{Call};
+use governance::execution_state::ExecutionState;
+use governance::staker::IStakerDispatcher;
+use starknet::account::Call;
 use starknet::{ClassHash, ContractAddress, EthAddress};
 
 #[derive(Copy, Drop, Serde, starknet::Store, PartialEq, Debug)]
@@ -99,21 +99,21 @@ pub trait IGovernor<TContractState> {
 #[starknet::contract(account)]
 pub mod Governor {
     use core::hash::{HashStateExTrait, HashStateTrait};
-    use core::num::traits::zero::{Zero};
-    use core::poseidon::{PoseidonTrait};
+    use core::num::traits::zero::Zero;
+    use core::poseidon::PoseidonTrait;
     use governance::call_trait::{CallTrait, HashSerializable};
-    use governance::staker::{IStakerDispatcherTrait};
+    use governance::staker::IStakerDispatcherTrait;
     use starknet::storage::{
         Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess,
         StoragePointerWriteAccess,
     };
+    use starknet::syscalls::{replace_class_syscall, send_message_to_l1_syscall};
     use starknet::{
         AccountContract, get_block_timestamp, get_caller_address, get_contract_address, get_tx_info,
-        syscalls::{replace_class_syscall, send_message_to_l1_syscall},
     };
     use super::{
-        Call, ClassHash, Config, ContractAddress, ExecutionState, IGovernor, IStakerDispatcher,
-        ProposalInfo, EthAddress,
+        Call, ClassHash, Config, ContractAddress, EthAddress, ExecutionState, IGovernor,
+        IStakerDispatcher, ProposalInfo,
     };
 
 
@@ -400,7 +400,7 @@ pub mod Governor {
 
             while let Option::Some(call) = calls.pop_front() {
                 results.append(call.execute());
-            };
+            }
 
             let result_span = results.span();
 
@@ -473,11 +473,9 @@ pub mod Governor {
     impl GovernorAccountContractForSimulation of AccountContract<ContractState> {
         fn __validate_declare__(self: @ContractState, class_hash: felt252) -> felt252 {
             panic!("Not allowed");
-            0
         }
         fn __validate__(ref self: ContractState, calls: Array<Call>) -> felt252 {
             panic!("Not allowed");
-            0
         }
         fn __execute__(ref self: ContractState, mut calls: Array<Call>) -> Array<Span<felt252>> {
             assert(get_caller_address().is_zero(), 'Invalid caller');
@@ -490,7 +488,7 @@ pub mod Governor {
             let mut results: Array<Span<felt252>> = array![];
             while let Option::Some(call) = calls.pop_front() {
                 results.append(call.execute());
-            };
+            }
             results
         }
     }
