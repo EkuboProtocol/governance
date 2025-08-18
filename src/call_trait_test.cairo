@@ -1,12 +1,13 @@
 use core::hash::{HashStateExTrait, HashStateTrait, LegacyHash};
-use core::poseidon::{PoseidonTrait};
+use core::poseidon::PoseidonTrait;
 use governance::call_trait::{CallTrait, HashSerializable};
-use governance::test::test_token::{deploy as deploy_token};
-use starknet::{account::{Call}, contract_address_const, get_contract_address};
+use governance::test::test_token::deploy as deploy_token;
+use starknet::account::Call;
+use starknet::{ContractAddress, get_contract_address};
 
 #[test]
 fn test_hash_empty() {
-    let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: array![].span() };
+    let call = Call { to: 0.try_into().unwrap(), selector: 0, calldata: array![].span() };
     assert_eq!(
         LegacyHash::hash(0, @call),
         592531356294457842089938121745653035784273932434733687203842865999223838417,
@@ -15,7 +16,7 @@ fn test_hash_empty() {
 
 #[test]
 fn test_hash_empty_different_state() {
-    let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: array![].span() };
+    let call = Call { to: 0.try_into().unwrap(), selector: 0, calldata: array![].span() };
     assert_eq!(
         LegacyHash::hash(1, @call),
         641779498390055840747899186344080567584946769797748441152535133488389427639,
@@ -24,7 +25,7 @@ fn test_hash_empty_different_state() {
 
 #[test]
 fn test_hash_address_one() {
-    let call = Call { to: contract_address_const::<1>(), selector: 0, calldata: array![].span() };
+    let call = Call { to: 1.try_into().unwrap(), selector: 0, calldata: array![].span() };
     assert_eq!(
         LegacyHash::hash(0, @call),
         822101510419032526850572827036529302322534847455039029719271666012578939011,
@@ -33,7 +34,7 @@ fn test_hash_address_one() {
 
 #[test]
 fn test_hash_address_entry_point_one() {
-    let call = Call { to: contract_address_const::<0>(), selector: 1, calldata: array![].span() };
+    let call = Call { to: 0.try_into().unwrap(), selector: 1, calldata: array![].span() };
     assert_eq!(
         LegacyHash::hash(0, @call),
         2649728997388989667623494598440207295058382579827039351281187174838687580826,
@@ -42,7 +43,7 @@ fn test_hash_address_entry_point_one() {
 
 #[test]
 fn test_hash_address_data_one() {
-    let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: array![1].span() };
+    let call = Call { to: 0.try_into().unwrap(), selector: 0, calldata: array![1].span() };
 
     assert_eq!(
         LegacyHash::hash(0, @call),
@@ -52,9 +53,7 @@ fn test_hash_address_data_one() {
 
 #[test]
 fn test_hash_address_data_one_two() {
-    let call = Call {
-        to: contract_address_const::<0>(), selector: 0, calldata: array![1, 2].span(),
-    };
+    let call = Call { to: 0.try_into().unwrap(), selector: 0, calldata: array![1, 2].span() };
 
     assert_eq!(
         LegacyHash::hash(0, @call),
@@ -65,7 +64,7 @@ fn test_hash_address_data_one_two() {
 #[test]
 #[should_panic(expected: ('CONTRACT_NOT_DEPLOYED', 'ENTRYPOINT_FAILED'))]
 fn test_execute_contract_not_deployed() {
-    let call = Call { to: contract_address_const::<0>(), selector: 0, calldata: array![].span() };
+    let call = Call { to: 0.try_into().unwrap(), selector: 0, calldata: array![].span() };
     call.execute();
 }
 
@@ -99,7 +98,8 @@ fn test_execute_valid_call_data() {
     let token = deploy_token(get_contract_address(), 1);
 
     let mut calldata: Array<felt252> = array![];
-    Serde::serialize(@(contract_address_const::<1>(), 1_u256), ref calldata);
+    let address: ContractAddress = 1.try_into().unwrap();
+    Serde::serialize(@(address, 1_u256), ref calldata);
 
     let call = Call {
         to: token.contract_address,
@@ -113,20 +113,12 @@ fn test_execute_valid_call_data() {
 
 #[test]
 fn test_hash_no_collision_span_length() {
-    let call_a1 = Call {
-        to: contract_address_const::<1>(), selector: 2, calldata: array![3, 4].span(),
-    };
-    let call_a2 = Call {
-        to: contract_address_const::<5>(), selector: 6, calldata: array![].span(),
-    };
+    let call_a1 = Call { to: 1.try_into().unwrap(), selector: 2, calldata: array![3, 4].span() };
+    let call_a2 = Call { to: 5.try_into().unwrap(), selector: 6, calldata: array![].span() };
     let hash_a = PoseidonTrait::new().update_with(@call_a1).update_with(@call_a2).finalize();
 
-    let call_b1 = Call {
-        to: contract_address_const::<1>(), selector: 2, calldata: array![].span(),
-    };
-    let call_b2 = Call {
-        to: contract_address_const::<3>(), selector: 4, calldata: array![5, 6].span(),
-    };
+    let call_b1 = Call { to: 1.try_into().unwrap(), selector: 2, calldata: array![].span() };
+    let call_b2 = Call { to: 3.try_into().unwrap(), selector: 4, calldata: array![5, 6].span() };
     let hash_b = PoseidonTrait::new().update_with(@call_b1).update_with(@call_b2).finalize();
 
     assert_ne!(hash_a, hash_b);
