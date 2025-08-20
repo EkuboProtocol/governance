@@ -1261,7 +1261,7 @@ fn test_remove_staker() {
     advance_time(config.voting_weight_smoothing_duration);
     set_contract_address(proposer());
     let add_id = governor.propose(array![add_call].span());
-    set_contract_address(contract_address_const::<0>());
+    set_contract_address(0.try_into().unwrap());
     
     advance_time(config.voting_start_delay);
     set_contract_address(proposer());
@@ -1285,7 +1285,7 @@ fn test_remove_staker() {
     advance_time(config.voting_weight_smoothing_duration);
     set_contract_address(proposer());
     let remove_id = governor.propose(array![remove_call].span());
-    set_contract_address(contract_address_const::<0>());
+    set_contract_address(0.try_into().unwrap());
     
     advance_time(config.voting_start_delay);
     set_contract_address(proposer());
@@ -1350,7 +1350,7 @@ fn test_vote_with_different_stakers() {
     advance_time(config.voting_weight_smoothing_duration);
     set_contract_address(proposer());
     let add_id = governor.propose(array![add_call].span());
-    set_contract_address(contract_address_const::<0>());
+    set_contract_address(0.try_into().unwrap());
     
     advance_time(config.voting_start_delay);
     set_contract_address(proposer());
@@ -1363,7 +1363,7 @@ fn test_vote_with_different_stakers() {
     advance_time(config.voting_weight_smoothing_duration);
     set_contract_address(proposer());
     let vote_id = governor.propose(array![transfer_call(token, recipient(), amount: 100)].span());
-    set_contract_address(contract_address_const::<0>());
+    set_contract_address(0.try_into().unwrap());
     
     // Stake tokens in both stakers for voter1
     token.approve(staker.contract_address, 500);
@@ -1436,7 +1436,7 @@ fn test_vote_with_specific_staker() {
     advance_time(config.voting_weight_smoothing_duration);
     set_contract_address(proposer());
     let add_id = governor.propose(array![add_call].span());
-    set_contract_address(contract_address_const::<0>());
+    set_contract_address(0.try_into().unwrap());
     
     advance_time(config.voting_start_delay);
     set_contract_address(proposer());
@@ -1449,7 +1449,7 @@ fn test_vote_with_specific_staker() {
     advance_time(config.voting_weight_smoothing_duration);
     set_contract_address(proposer());
     let vote_id = governor.propose(array![transfer_call(token, recipient(), amount: 100)].span());
-    set_contract_address(contract_address_const::<0>());
+    set_contract_address(0.try_into().unwrap());
     
     // Stake tokens in staker2 for voter2
     token2.approve(staker2.contract_address, 400);
