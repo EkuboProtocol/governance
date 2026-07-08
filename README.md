@@ -55,6 +55,15 @@ Contracts in this repository are designed so that they may be used together _or_
 - The payload can be computed by calling the `getPayload` view function on the deployed `StarknetOwnerProxy`
 - Once the message is accepted on L1, anyone can call `StarknetOwnerProxy#execute` with the proposal's specified `target`, `value` and `data`.
 
+#### ArbitrumOwnerProxy.sol: Arbitrum L2 Proxy
+
+`ArbitrumOwnerProxy` enables an Ethereum L1 address, such as a deployed `StarknetOwnerProxy`, to perform actions on an Arbitrum child chain.
+
+- Deploy it on the Arbitrum child chain with the unaliased L1 owner address
+- `owner()` returns the unaliased L1 owner address
+- L1-to-L2 retryable ticket calls are authorized when `msg.sender` is the owner's Arbitrum alias, exposed as `l2OwnerAlias()`
+- The L1 owner can call `execute(target, value, data)` to make arbitrary calls from the proxy
+
 ## Testing
 
 Make sure you have [Scarb with asdf](https://docs.swmansion.com/scarb/download#install-via-asdf) installed. You can look at the _.tool-versions_ file to know which version of Scarb is currently used.

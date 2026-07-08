@@ -1,3 +1,6 @@
 [submodule "l1_proxy/lib/forge-std"]
 	path = l1_proxy/lib/forge-std
 	url = https://github.com/foundry-rs/forge-std
+[submodule "l1_proxy/lib/solady"]
+	path = l1_proxy/lib/solady
+	url = https://github.com/Vectorized/solady
