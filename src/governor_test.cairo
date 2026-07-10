@@ -208,6 +208,37 @@ fn test_proposer_can_wait_out_original_proposal_and_re_propose() {
 }
 
 #[test]
+#[should_panic(expected: ('PROPOSER_HAS_ACTIVE_PROPOSAL', 'ENTRYPOINT_FAILED'))]
+fn test_propose_active_proposal_gate_uses_latest_proposal_config_version() {
+    let (staker, token, governor, config) = setup();
+
+    token.approve(staker.contract_address, config.proposal_creation_threshold.into());
+    staker.stake(proposer());
+    advance_time(config.voting_weight_smoothing_duration);
+
+    set_contract_address(proposer());
+    governor.propose(array![transfer_call(token, recipient(), amount: 100)].span());
+
+    let new_config = Config {
+        voting_start_delay: 1,
+        voting_period: 2,
+        voting_weight_smoothing_duration: config.voting_weight_smoothing_duration,
+        quorum: config.quorum,
+        proposal_creation_threshold: config.proposal_creation_threshold,
+        execution_delay: config.execution_delay,
+        execution_window: config.execution_window,
+    };
+
+    set_contract_address(governor.contract_address);
+    governor.reconfigure(new_config);
+
+    advance_time(new_config.voting_start_delay + new_config.voting_period);
+
+    set_contract_address(proposer());
+    governor.propose(array![transfer_call(token, recipient(), amount: 101)].span());
+}
+
+#[test]
 fn test_proposer_can_cancel_and_propose_different() {
     let (staker, token, governor, config) = setup();
 

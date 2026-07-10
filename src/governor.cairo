@@ -221,15 +221,17 @@ pub mod Governor {
 
             let latest_proposal_id = self.latest_proposal_by_proposer.read(proposer);
             if latest_proposal_id.is_non_zero() {
-                let latest_proposal_state = self.get_proposal(latest_proposal_id).execution_state;
+                let (latest_proposal, latest_proposal_config) = self
+                    .get_proposal_with_config(latest_proposal_id);
+                let latest_proposal_state = latest_proposal.execution_state;
 
                 // if the proposal is not canceled, check that the voting for that proposal has
                 // ended
                 if latest_proposal_state.canceled.is_zero() {
                     assert(
                         latest_proposal_state.created
-                            + config.voting_start_delay
-                            + config.voting_period <= timestamp_current,
+                            + latest_proposal_config.voting_start_delay
+                            + latest_proposal_config.voting_period <= timestamp_current,
                         'PROPOSER_HAS_ACTIVE_PROPOSAL',
                     );
                 }
