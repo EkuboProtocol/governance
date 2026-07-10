@@ -20,6 +20,8 @@ library ArbitrumAddressAliasHelper {
 }
 
 contract ArbitrumOwnerProxy is Ownable {
+    uint256 private constant _HANDOVER_SLOT_SEED = 0x389a75e1;
+
     error InvalidTarget();
     error InsufficientBalance();
     error RenounceOwnershipDisabled();
@@ -45,6 +47,19 @@ contract ArbitrumOwnerProxy is Ownable {
 
     function renounceOwnership() public payable override onlyOwner {
         revert RenounceOwnershipDisabled();
+    }
+
+    function completeOwnershipHandover(address pendingOwner) public payable override onlyOwner {
+        uint256 expires = ownershipHandoverExpiresAt(pendingOwner);
+        if (expires == 0 || block.timestamp > expires) revert NoHandoverRequest();
+
+        assembly {
+            mstore(0x0c, _HANDOVER_SLOT_SEED)
+            mstore(0x00, pendingOwner)
+            sstore(keccak256(0x0c, 0x20), 0)
+        }
+
+        _setOwner(ArbitrumAddressAliasHelper.undoL1ToL2Alias(pendingOwner));
     }
 
     function _checkOwner() internal view override {

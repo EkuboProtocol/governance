@@ -133,6 +133,29 @@ contract ArbitrumOwnerProxyTest is Test {
         proxy.transferOwnership(address(0));
     }
 
+    function test_complete_ownership_handover_stores_unaliased_l1_owner() public {
+        address oldAlias = proxy.l2OwnerAlias();
+        address newAlias = ArbitrumAddressAliasHelper.applyL1ToL2Alias(OTHER_L1_OWNER);
+
+        vm.prank(newAlias);
+        proxy.requestOwnershipHandover();
+
+        vm.prank(oldAlias);
+        proxy.completeOwnershipHandover(newAlias);
+
+        assertEq(proxy.owner(), OTHER_L1_OWNER);
+        assertEq(proxy.l2OwnerAlias(), newAlias);
+        assertEq(proxy.ownershipHandoverExpiresAt(newAlias), 0);
+
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        vm.prank(oldAlias);
+        proxy.execute(address(target), 0, abi.encodeWithSelector(ArbitrumTestTarget.setX.selector, 1));
+
+        vm.prank(newAlias);
+        proxy.execute(address(target), 0, abi.encodeWithSelector(ArbitrumTestTarget.setX.selector, 2));
+        assertEq(target.x(), 2);
+    }
+
     function test_renounce_ownership_disabled() public {
         address ownerAlias = proxy.l2OwnerAlias();
 
