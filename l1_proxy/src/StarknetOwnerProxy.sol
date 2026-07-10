@@ -46,10 +46,7 @@ contract StarknetOwnerProxy {
         return payload;
     }
 
-    function execute(address target, uint256 value, uint64 nonce, bytes calldata data)
-        external
-        returns (bytes memory)
-    {
+    function execute(address target, uint256 value, uint64 nonce, bytes calldata data) external returns (bytes memory) {
         if (target == address(0) || target == address(this)) {
             revert InvalidTarget();
         }
