@@ -2,6 +2,7 @@
 pragma solidity =0.8.28;
 
 import {Test} from "forge-std/Test.sol";
+import {L1L2OwnerProxy} from "../src/L1L2OwnerProxy.sol";
 import {OPStackOwnerProxy} from "../src/OPStackOwnerProxy.sol";
 import {Ownable} from "solady/auth/Ownable.sol";
 
@@ -55,10 +56,8 @@ contract OPStackOwnerProxyTest is Test {
         new OPStackOwnerProxy(address(0));
     }
 
-    function test_execute_from_l1_owner_through_l2_messenger() public {
-        _setXDomainMessageSender(L1_OWNER);
-
-        vm.prank(L2_CROSS_DOMAIN_MESSENGER);
+    function test_execute_from_l2_owner() public {
+        vm.prank(L1_OWNER);
         bytes memory result =
             proxy.execute(address(target), 0, abi.encodeWithSelector(OPStackTestTarget.setX.selector, 123));
 
@@ -68,9 +67,8 @@ contract OPStackOwnerProxyTest is Test {
 
     function test_execute_forwards_value() public {
         vm.deal(address(proxy), 1 ether);
-        _setXDomainMessageSender(L1_OWNER);
 
-        vm.prank(L2_CROSS_DOMAIN_MESSENGER);
+        vm.prank(L1_OWNER);
         proxy.execute(address(target), 0.25 ether, abi.encodeWithSelector(OPStackTestTarget.setX.selector, 5));
 
         assertEq(target.x(), 5);
@@ -78,12 +76,13 @@ contract OPStackOwnerProxyTest is Test {
         assertEq(address(proxy).balance, 0.75 ether);
     }
 
-    function test_execute_reverts_from_l1_owner_without_messenger() public {
+    function test_execute_accepts_l1_owner_through_l2_messenger() public {
         _setXDomainMessageSender(L1_OWNER);
 
-        vm.expectRevert(Ownable.Unauthorized.selector);
-        vm.prank(L1_OWNER);
+        vm.prank(L2_CROSS_DOMAIN_MESSENGER);
         proxy.execute(address(target), 0, abi.encodeWithSelector(OPStackTestTarget.setX.selector, 123));
+
+        assertEq(target.x(), 123);
     }
 
     function test_execute_reverts_from_messenger_with_wrong_l1_sender() public {
@@ -103,35 +102,44 @@ contract OPStackOwnerProxyTest is Test {
     }
 
     function test_execute_reverts_invalid_target() public {
-        _setXDomainMessageSender(L1_OWNER);
-
-        vm.expectRevert(OPStackOwnerProxy.InvalidTarget.selector);
-        vm.prank(L2_CROSS_DOMAIN_MESSENGER);
+        vm.expectRevert(L1L2OwnerProxy.InvalidTarget.selector);
+        vm.prank(L1_OWNER);
         proxy.execute(address(0), 0, "");
     }
 
     function test_execute_reverts_insufficient_balance() public {
-        _setXDomainMessageSender(L1_OWNER);
-
-        vm.expectRevert(OPStackOwnerProxy.InsufficientBalance.selector);
-        vm.prank(L2_CROSS_DOMAIN_MESSENGER);
+        vm.expectRevert(L1L2OwnerProxy.InsufficientBalance.selector);
+        vm.prank(L1_OWNER);
         proxy.execute(address(target), 1, abi.encodeWithSelector(OPStackTestTarget.setX.selector, 123));
     }
 
     function test_execute_reverts_call_failure() public {
-        _setXDomainMessageSender(L1_OWNER);
-
         vm.expectRevert(
             abi.encodeWithSelector(
-                OPStackOwnerProxy.CallFailed.selector,
+                L1L2OwnerProxy.CallFailed.selector,
                 abi.encodeWithSelector(OPStackTestTarget.RandomError.selector, uint256(0))
             )
         );
-        vm.prank(L2_CROSS_DOMAIN_MESSENGER);
+        vm.prank(L1_OWNER);
         proxy.execute(address(target), 0, abi.encodeWithSelector(OPStackTestTarget.reverts.selector));
     }
 
     function test_transfer_ownership_to_new_l1_owner() public {
+        vm.prank(L1_OWNER);
+        proxy.transferOwnership(OTHER_L1_OWNER);
+
+        assertEq(proxy.owner(), OTHER_L1_OWNER);
+
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        vm.prank(L1_OWNER);
+        proxy.execute(address(target), 0, abi.encodeWithSelector(OPStackTestTarget.setX.selector, 1));
+
+        vm.prank(OTHER_L1_OWNER);
+        proxy.execute(address(target), 0, abi.encodeWithSelector(OPStackTestTarget.setX.selector, 2));
+        assertEq(target.x(), 2);
+    }
+
+    function test_transfer_ownership_to_new_l1_owner_from_l1_messenger() public {
         _setXDomainMessageSender(L1_OWNER);
 
         vm.prank(L2_CROSS_DOMAIN_MESSENGER);
@@ -151,19 +159,25 @@ contract OPStackOwnerProxyTest is Test {
     }
 
     function test_transfer_ownership_reverts_zero_owner() public {
-        _setXDomainMessageSender(L1_OWNER);
-
         vm.expectRevert(Ownable.NewOwnerIsZeroAddress.selector);
-        vm.prank(L2_CROSS_DOMAIN_MESSENGER);
+        vm.prank(L1_OWNER);
         proxy.transferOwnership(address(0));
     }
 
-    function test_renounce_ownership_disabled() public {
+    function test_renounce_ownership_from_l2_owner() public {
+        vm.prank(L1_OWNER);
+        proxy.renounceOwnership();
+
+        assertEq(proxy.owner(), address(0));
+    }
+
+    function test_renounce_ownership_from_l1_messenger() public {
         _setXDomainMessageSender(L1_OWNER);
 
-        vm.expectRevert(OPStackOwnerProxy.RenounceOwnershipDisabled.selector);
         vm.prank(L2_CROSS_DOMAIN_MESSENGER);
         proxy.renounceOwnership();
+
+        assertEq(proxy.owner(), address(0));
     }
 
     function _setXDomainMessageSender(address sender) internal {

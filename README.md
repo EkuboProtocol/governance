@@ -61,8 +61,8 @@ Contracts in this repository are designed so that they may be used together _or_
 
 - Deploy it on the Arbitrum child chain with the unaliased L1 owner address
 - `owner()` returns the unaliased L1 owner address
-- L1-to-L2 retryable ticket calls are authorized when `msg.sender` is the owner's Arbitrum alias, exposed as `l2OwnerAlias()`
-- The L1 owner can call `execute(target, value, data)` to make arbitrary calls from the proxy
+- Owner-gated calls are authorized from either the raw owner address on L2 or the owner's Arbitrum alias from an L1-to-L2 retryable ticket, exposed as `l2OwnerAlias()`
+- The owner can call `execute(target, value, data)` from either path to make arbitrary calls from the proxy
 
 #### OPStackOwnerProxy.sol: OP Stack / Base L2 Proxy
 
@@ -70,8 +70,8 @@ Contracts in this repository are designed so that they may be used together _or_
 
 - Deploy it on the child chain with the L1 owner address
 - `owner()` returns the L1 owner address
-- L1-to-L2 calls are authorized only when `msg.sender` is the `L2CrossDomainMessenger` predeploy at `0x4200000000000000000000000000000000000007` and `xDomainMessageSender()` is the L1 owner
-- The L1 owner can call `execute(target, value, data)` through that chain's `L1CrossDomainMessenger` to make arbitrary calls from the proxy
+- Owner-gated calls are authorized from either the raw owner address on L2 or an L1-to-L2 message where `msg.sender` is the `L2CrossDomainMessenger` predeploy at `0x4200000000000000000000000000000000000007` and `xDomainMessageSender()` is the L1 owner
+- The owner can call `execute(target, value, data)` from either path to make arbitrary calls from the proxy
 
 ## Testing
 
