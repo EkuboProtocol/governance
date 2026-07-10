@@ -3,6 +3,7 @@ pragma solidity =0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {ArbitrumAddressAliasHelper, ArbitrumOwnerProxy} from "../src/ArbitrumOwnerProxy.sol";
+import {L1L2OwnerProxy} from "../src/L1L2OwnerProxy.sol";
 import {Ownable} from "solady/auth/Ownable.sol";
 
 contract ArbitrumTestTarget {
@@ -44,8 +45,8 @@ contract ArbitrumOwnerProxyTest is Test {
         new ArbitrumOwnerProxy(address(0));
     }
 
-    function test_execute_from_l1_owner_alias() public {
-        vm.prank(proxy.l2OwnerAlias());
+    function test_execute_from_l2_owner() public {
+        vm.prank(L1_OWNER);
         bytes memory result =
             proxy.execute(address(target), 0, abi.encodeWithSelector(ArbitrumTestTarget.setX.selector, 123));
 
@@ -56,7 +57,7 @@ contract ArbitrumOwnerProxyTest is Test {
     function test_execute_forwards_value() public {
         vm.deal(address(proxy), 1 ether);
 
-        vm.prank(proxy.l2OwnerAlias());
+        vm.prank(L1_OWNER);
         proxy.execute(address(target), 0.25 ether, abi.encodeWithSelector(ArbitrumTestTarget.setX.selector, 5));
 
         assertEq(target.x(), 5);
@@ -64,10 +65,11 @@ contract ArbitrumOwnerProxyTest is Test {
         assertEq(address(proxy).balance, 0.75 ether);
     }
 
-    function test_execute_reverts_from_l1_owner_without_alias() public {
-        vm.expectRevert(Ownable.Unauthorized.selector);
-        vm.prank(L1_OWNER);
+    function test_execute_accepts_l1_owner_alias() public {
+        vm.prank(proxy.l2OwnerAlias());
         proxy.execute(address(target), 0, abi.encodeWithSelector(ArbitrumTestTarget.setX.selector, 123));
+
+        assertEq(target.x(), 123);
     }
 
     function test_execute_reverts_from_random_address() public {
@@ -79,35 +81,45 @@ contract ArbitrumOwnerProxyTest is Test {
     }
 
     function test_execute_reverts_invalid_target() public {
-        address ownerAlias = proxy.l2OwnerAlias();
-
-        vm.expectRevert(ArbitrumOwnerProxy.InvalidTarget.selector);
-        vm.prank(ownerAlias);
+        vm.expectRevert(L1L2OwnerProxy.InvalidTarget.selector);
+        vm.prank(L1_OWNER);
         proxy.execute(address(0), 0, "");
     }
 
     function test_execute_reverts_insufficient_balance() public {
-        address ownerAlias = proxy.l2OwnerAlias();
-
-        vm.expectRevert(ArbitrumOwnerProxy.InsufficientBalance.selector);
-        vm.prank(ownerAlias);
+        vm.expectRevert(L1L2OwnerProxy.InsufficientBalance.selector);
+        vm.prank(L1_OWNER);
         proxy.execute(address(target), 1, abi.encodeWithSelector(ArbitrumTestTarget.setX.selector, 123));
     }
 
     function test_execute_reverts_call_failure() public {
-        address ownerAlias = proxy.l2OwnerAlias();
-
         vm.expectRevert(
             abi.encodeWithSelector(
-                ArbitrumOwnerProxy.CallFailed.selector,
+                L1L2OwnerProxy.CallFailed.selector,
                 abi.encodeWithSelector(ArbitrumTestTarget.RandomError.selector, uint256(0))
             )
         );
-        vm.prank(ownerAlias);
+        vm.prank(L1_OWNER);
         proxy.execute(address(target), 0, abi.encodeWithSelector(ArbitrumTestTarget.reverts.selector));
     }
 
     function test_transfer_ownership_to_new_l1_owner() public {
+        vm.prank(L1_OWNER);
+        proxy.transferOwnership(OTHER_L1_OWNER);
+
+        assertEq(proxy.owner(), OTHER_L1_OWNER);
+        assertEq(proxy.l2OwnerAlias(), ArbitrumAddressAliasHelper.applyL1ToL2Alias(OTHER_L1_OWNER));
+
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        vm.prank(L1_OWNER);
+        proxy.execute(address(target), 0, abi.encodeWithSelector(ArbitrumTestTarget.setX.selector, 1));
+
+        vm.prank(OTHER_L1_OWNER);
+        proxy.execute(address(target), 0, abi.encodeWithSelector(ArbitrumTestTarget.setX.selector, 2));
+        assertEq(target.x(), 2);
+    }
+
+    function test_transfer_ownership_to_new_l1_owner_from_l1_alias() public {
         address oldAlias = proxy.l2OwnerAlias();
 
         vm.prank(oldAlias);
@@ -126,18 +138,22 @@ contract ArbitrumOwnerProxyTest is Test {
     }
 
     function test_transfer_ownership_reverts_zero_owner() public {
-        address ownerAlias = proxy.l2OwnerAlias();
-
         vm.expectRevert(Ownable.NewOwnerIsZeroAddress.selector);
-        vm.prank(ownerAlias);
+        vm.prank(L1_OWNER);
         proxy.transferOwnership(address(0));
     }
 
-    function test_renounce_ownership_disabled() public {
-        address ownerAlias = proxy.l2OwnerAlias();
-
-        vm.expectRevert(ArbitrumOwnerProxy.RenounceOwnershipDisabled.selector);
-        vm.prank(ownerAlias);
+    function test_renounce_ownership_from_l2_owner() public {
+        vm.prank(L1_OWNER);
         proxy.renounceOwnership();
+
+        assertEq(proxy.owner(), address(0));
+    }
+
+    function test_renounce_ownership_from_l1_alias() public {
+        vm.prank(proxy.l2OwnerAlias());
+        proxy.renounceOwnership();
+
+        assertEq(proxy.owner(), address(0));
     }
 }

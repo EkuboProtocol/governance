@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity =0.8.28;
 
-import {Ownable} from "solady/auth/Ownable.sol";
+import {L1L2OwnerProxy} from "./L1L2OwnerProxy.sol";
 
 library ArbitrumAddressAliasHelper {
     uint160 internal constant OFFSET = uint160(0x1111000000000000000000000000000000001111);
@@ -19,36 +19,15 @@ library ArbitrumAddressAliasHelper {
     }
 }
 
-contract ArbitrumOwnerProxy is Ownable {
-    error InvalidTarget();
-    error InsufficientBalance();
-    error RenounceOwnershipDisabled();
-    error CallFailed(bytes data);
-
-    constructor(address initialOwner) {
-        if (initialOwner == address(0)) revert NewOwnerIsZeroAddress();
-        _initializeOwner(initialOwner);
-    }
+contract ArbitrumOwnerProxy is L1L2OwnerProxy {
+    constructor(address initialOwner) L1L2OwnerProxy(initialOwner) {}
 
     function l2OwnerAlias() public view returns (address) {
         return ArbitrumAddressAliasHelper.applyL1ToL2Alias(owner());
     }
 
-    function execute(address target, uint256 value, bytes calldata data) external onlyOwner returns (bytes memory) {
-        if (target == address(0)) revert InvalidTarget();
-        if (address(this).balance < value) revert InsufficientBalance();
-
-        (bool success, bytes memory result) = target.call{value: value}(data);
-        if (!success) revert CallFailed(result);
-        return result;
-    }
-
-    function renounceOwnership() public payable override onlyOwner {
-        revert RenounceOwnershipDisabled();
-    }
-
-    function _checkOwner() internal view override {
-        if (msg.sender != l2OwnerAlias()) revert Unauthorized();
+    function _isL1Owner() internal view override returns (bool) {
+        return msg.sender == l2OwnerAlias();
     }
 
     receive() external payable {}
