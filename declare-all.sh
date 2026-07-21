@@ -2,7 +2,7 @@
 
 # Function to print usage and exit
 print_usage_and_exit() {
-    echo "Usage: $0 --network {sepolia,goerli-1,mainnet}"
+    echo "Usage: $0 --network {sepolia,mainnet}"
     exit 1
 }
 
@@ -27,7 +27,7 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 # Ensure network is valid
-if [ "$NETWORK" != "sepolia" -a "$NETWORK" != "mainnet" -a "$NETWORK" != "goerli-1" ]; then
+if [ "$NETWORK" != "sepolia" -a "$NETWORK" != "mainnet" ]; then
     echo "Invalid network: $NETWORK"
     print_usage_and_exit
 fi
@@ -36,22 +36,15 @@ fi
 scarb build
 
 declare_class_hash() {
-    local class_name=$1
-    starkli declare --watch --network "$NETWORK" --keystore-password "$STARKNET_KEYSTORE_PASSWORD" --casm-file  "target/dev/governance_${class_name}.compiled_contract_class.json" "target/dev/governance_${class_name}.contract_class.json"
+    # Expects an sncast account named after the network.
+    sncast --account "$NETWORK" --wait declare --network "$NETWORK" --contract-name "$1"
 }
 
 echo "Declaring AirdropClaimCheck"
-AIRDROP_CLAIM_CHECK_CLASS_HASH=$(declare_class_hash AirdropClaimCheck)
+declare_class_hash AirdropClaimCheck
 echo "Declaring Airdrop"
-AIRDROP_CLASS_HASH=$(declare_class_hash Airdrop)
+declare_class_hash Airdrop
 echo "Declaring Staker"
-STAKER_CLASS_HASH=$(declare_class_hash Staker)
+declare_class_hash governance::staker::Staker
 echo "Declaring Governor"
-GOVERNOR_CLASS_HASH=$(declare_class_hash Governor)
-
-echo "AirdropClaimCheck @ $AIRDROP_CLAIM_CHECK_CLASS_HASH"
-echo "Airdrop @ $AIRDROP_CLASS_HASH"
-echo "Staker @ $STAKER_CLASS_HASH"
-echo "Governor @ $GOVERNOR_CLASS_HASH"
-
-# starkli deploy --max-fee 0.001 --watch --network "$NETWORK" --keystore-password "$STARKNET_KEYSTORE_PASSWORD" "$AIRDROP_CLAIM_CHECK_CLASS_HASH"
+declare_class_hash Governor

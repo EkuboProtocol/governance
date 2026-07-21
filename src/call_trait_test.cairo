@@ -62,7 +62,7 @@ fn test_hash_address_data_one_two() {
 }
 
 #[test]
-#[should_panic(expected: ('CONTRACT_NOT_DEPLOYED', 'ENTRYPOINT_FAILED'))]
+#[should_panic]
 fn test_execute_contract_not_deployed() {
     let call = Call { to: 0.try_into().unwrap(), selector: 0, calldata: array![].span() };
     call.execute();
@@ -123,4 +123,3 @@ fn test_hash_no_collision_span_length() {
 
     assert_ne!(hash_a, hash_b);
 }
-

@@ -7,9 +7,14 @@ use governance::governor::{
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::staker::{IStakerDispatcher, IStakerDispatcherTrait};
 use governance::staker_test::setup as setup_staker;
+use governance::test::helpers::{EventLoggerTrait, event_logger};
+use snforge_std::{
+    ContractClassTrait, DeclareResultTrait, declare,
+    start_cheat_block_timestamp_global as set_block_timestamp, start_cheat_caller_address,
+    start_cheat_caller_address_global, start_cheat_transaction_version_global as set_version,
+    stop_cheat_caller_address, stop_cheat_caller_address_global,
+};
 use starknet::account::{AccountContractDispatcher, AccountContractDispatcherTrait, Call};
-use starknet::syscalls::deploy_syscall;
-use starknet::testing::{pop_log, set_block_timestamp, set_contract_address, set_version};
 use starknet::{ContractAddress, get_block_timestamp, get_contract_address};
 
 fn recipient() -> ContractAddress {
@@ -36,6 +41,13 @@ fn anyone() -> ContractAddress {
     'anyone'.try_into().unwrap()
 }
 
+fn set_contract_address(address: ContractAddress) {
+    stop_cheat_caller_address_global();
+    if address != get_contract_address() {
+        start_cheat_caller_address_global(address);
+    }
+}
+
 fn advance_time(by: u64) -> u64 {
     let next = get_block_timestamp() + by;
     set_block_timestamp(next);
@@ -59,10 +71,8 @@ fn deploy(staker: IStakerDispatcher, config: Config) -> IGovernorDispatcher {
     let mut constructor_args: Array<felt252> = array![];
     Serde::serialize(@(staker, config), ref constructor_args);
 
-    let (address, _) = deploy_syscall(
-        Governor::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true,
-    )
-        .expect('DEPLOY_GV_FAILED');
+    let contract = declare("Governor").unwrap().contract_class();
+    let (address, _) = contract.deploy(@constructor_args).expect('DEPLOY_GV_FAILED');
     return IGovernorDispatcher { contract_address: address };
 }
 
@@ -313,6 +323,7 @@ fn test_anyone_can_vote() {
 
 #[test]
 fn test_describe_proposal_successful() {
+    let mut logger = event_logger();
     let (staker, token, governor, _config) = setup();
     let id = create_proposal(governor, token, staker);
 
@@ -322,10 +333,10 @@ fn test_describe_proposal_successful() {
             id,
             "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
         );
-    pop_log::<Governor::Reconfigured>(governor.contract_address).unwrap();
-    pop_log::<Governor::Proposed>(governor.contract_address).unwrap();
+    logger.pop_log::<Governor::Reconfigured>(governor.contract_address).unwrap();
+    logger.pop_log::<Governor::Proposed>(governor.contract_address).unwrap();
     assert_eq!(
-        pop_log::<Governor::Described>(governor.contract_address).unwrap(),
+        logger.pop_log::<Governor::Described>(governor.contract_address).unwrap(),
         Governor::Described {
             id,
             description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
@@ -335,6 +346,7 @@ fn test_describe_proposal_successful() {
 
 #[test]
 fn test_propose_and_describe_successful() {
+    let mut logger = event_logger();
     let (staker, token, governor, config) = setup();
     token.approve(staker.contract_address, config.proposal_creation_threshold.into());
     staker.stake(proposer());
@@ -350,10 +362,10 @@ fn test_propose_and_describe_successful() {
         );
     set_contract_address(address_before);
 
-    pop_log::<Governor::Reconfigured>(governor.contract_address).unwrap();
-    pop_log::<Governor::Proposed>(governor.contract_address).unwrap();
+    logger.pop_log::<Governor::Reconfigured>(governor.contract_address).unwrap();
+    logger.pop_log::<Governor::Proposed>(governor.contract_address).unwrap();
     assert_eq!(
-        pop_log::<Governor::Described>(governor.contract_address).unwrap(),
+        logger.pop_log::<Governor::Described>(governor.contract_address).unwrap(),
         Governor::Described {
             id,
             description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
@@ -403,7 +415,7 @@ fn test_describe_proposal_fails_if_executed() {
     set_contract_address(voter1());
     governor.vote(id, true);
     advance_time(config.voting_period + config.execution_delay);
-    set_contract_address(anyone());
+    set_contract_address(get_contract_address());
     governor.execute(id, array![transfer_call(token, anyone(), amount: 0)].span());
 
     set_contract_address(proposer());
@@ -625,7 +637,7 @@ fn test_execute_valid_proposal() {
 
     advance_time(config.voting_period + config.execution_delay);
 
-    set_contract_address(anyone());
+    set_contract_address(get_contract_address());
 
     governor
         .execute(
@@ -785,35 +797,44 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
 
     token.transfer(voter1, 49);
     token.transfer(voter2, 51);
-    set_contract_address(voter1);
+    stop_cheat_caller_address(token.contract_address);
+    start_cheat_caller_address(token.contract_address, voter1);
     token.approve(staker.contract_address, 49);
+    stop_cheat_caller_address(token.contract_address);
+    start_cheat_caller_address(staker.contract_address, voter1);
     staker.stake(voter1);
-    set_contract_address(voter2);
+    stop_cheat_caller_address(staker.contract_address);
+    start_cheat_caller_address(token.contract_address, voter2);
     token.approve(staker.contract_address, 51);
+    stop_cheat_caller_address(token.contract_address);
+    start_cheat_caller_address(staker.contract_address, voter2);
     staker.stake(voter2);
+    stop_cheat_caller_address(staker.contract_address);
 
     // the full amount of delegation should be vested over 30 seconds
     advance_time(config.voting_weight_smoothing_duration);
 
+    start_cheat_caller_address(governor.contract_address, voter2);
     let id = governor
         .propose(array![transfer_call(token: token, recipient: recipient(), amount: 100)].span());
 
     advance_time(config.voting_start_delay - (config.voting_weight_smoothing_duration / 3));
     // undelegate 1/3rd of a duration before voting starts, so only a third of voting power is
     // counted for voter1
-    set_contract_address(voter1);
+    start_cheat_caller_address(staker.contract_address, voter1);
     staker.withdraw_amount(voter1, recipient: Zero::zero(), amount: 49);
+    stop_cheat_caller_address(staker.contract_address);
 
     advance_time((config.voting_weight_smoothing_duration / 3));
 
     // vote less than quorum because of smoothing duration
-    set_contract_address(voter1);
+    start_cheat_caller_address(governor.contract_address, voter1);
     governor.vote(id, true);
     let proposal = governor.get_proposal(id);
     assert_eq!(proposal.yea, 32);
     assert_eq!(proposal.nay, 0);
 
-    set_contract_address(voter2);
+    start_cheat_caller_address(governor.contract_address, voter2);
     governor.vote(id, false);
     let proposal = governor.get_proposal(id);
     assert_eq!(proposal.yea, 32);
@@ -822,6 +843,7 @@ fn test_verify_votes_are_counted_over_voting_weight_smoothing_duration_from_star
     advance_time(config.voting_period + config.execution_delay);
 
     // Execute the proposal. If the quorum was not met, this should fail.
+    set_contract_address(get_contract_address());
     governor
         .execute(
             id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span(),
@@ -887,11 +909,13 @@ fn test_quorum_counts_only_yes_votes_exactly_met() {
 
     advance_time(config.voting_period + config.execution_delay);
 
+    set_contract_address(get_contract_address());
     governor.execute(id, calls);
 }
 
 #[test]
 fn test_execute_emits_logs_from_data() {
+    let mut logger = event_logger();
     let (staker, token, governor, config) = setup();
     let calls = array![
         transfer_call(token: token, recipient: recipient(), amount: 150),
@@ -919,17 +943,18 @@ fn test_execute_emits_logs_from_data() {
 
     advance_time(config.voting_period + config.execution_delay);
 
+    set_contract_address(get_contract_address());
     let result = governor.execute(id, calls);
     let expected = array![array![1_felt252].span(), array![1].span()].span();
     // both transfers suceeded
     assert_eq!(result, expected);
 
-    pop_log::<Governor::Reconfigured>(governor.contract_address).unwrap();
-    pop_log::<Governor::Proposed>(governor.contract_address).unwrap();
-    pop_log::<Governor::Voted>(governor.contract_address).unwrap();
-    pop_log::<Governor::Voted>(governor.contract_address).unwrap();
+    logger.pop_log::<Governor::Reconfigured>(governor.contract_address).unwrap();
+    logger.pop_log::<Governor::Proposed>(governor.contract_address).unwrap();
+    logger.pop_log::<Governor::Voted>(governor.contract_address).unwrap();
+    logger.pop_log::<Governor::Voted>(governor.contract_address).unwrap();
     // and the governor emitted it too
-    let executed = pop_log::<Governor::Executed>(governor.contract_address).unwrap();
+    let executed = logger.pop_log::<Governor::Executed>(governor.contract_address).unwrap();
     assert_eq!(executed, Governor::Executed { id, result_data: expected });
 }
 
@@ -949,7 +974,7 @@ fn test_execute_already_executed_should_fail() {
     governor.vote(id, true); // vote so that proposal reaches quorum
     advance_time(config.voting_period + config.execution_delay);
 
-    set_contract_address(anyone());
+    set_contract_address(get_contract_address());
     governor
         .execute(
             id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span(),
@@ -993,6 +1018,7 @@ fn test_upgrade_fails_if_not_self_call() {
 #[test]
 fn test_upgrade_succeeds_self_call() {
     let (staker, token, governor, config) = setup();
+    let governor_class_hash = *declare("Governor").unwrap().contract_class().class_hash;
 
     token.approve(staker.contract_address, config.quorum.into());
     staker.stake(proposer());
@@ -1005,7 +1031,7 @@ fn test_upgrade_succeeds_self_call() {
         Call {
             to: governor.contract_address,
             selector: selector!("upgrade"),
-            calldata: array![Governor::TEST_CLASS_HASH.into()].span(),
+            calldata: array![governor_class_hash.into()].span(),
         },
     );
 
@@ -1016,6 +1042,7 @@ fn test_upgrade_succeeds_self_call() {
 
     advance_time(config.voting_period + config.execution_delay);
 
+    set_contract_address(get_contract_address());
     governor
         .execute(
             id,
@@ -1023,7 +1050,7 @@ fn test_upgrade_succeeds_self_call() {
                 Call {
                     to: governor.contract_address,
                     selector: selector!("upgrade"),
-                    calldata: array![Governor::TEST_CLASS_HASH.into()].span(),
+                    calldata: array![governor_class_hash.into()].span(),
                 },
             ]
                 .span(),
@@ -1064,6 +1091,7 @@ fn test_send_message_to_l1_succeeds_self_call() {
 
     advance_time(config.voting_period + config.execution_delay);
 
+    set_contract_address(get_contract_address());
     governor
         .execute(
             id,
@@ -1125,6 +1153,7 @@ fn test_governor_execute_fails_from_non_zero() {
 #[should_panic(expected: ('Invalid TX version', 'ENTRYPOINT_FAILED'))]
 fn test_governor_execute_fails_tx_version_0() {
     let (_staker, _token, governor, _config) = setup();
+    start_cheat_caller_address(governor.contract_address, Zero::zero());
     set_version(0);
     AccountContractDispatcher { contract_address: governor.contract_address }.__execute__(array![]);
 }
@@ -1133,6 +1162,7 @@ fn test_governor_execute_fails_tx_version_0() {
 #[should_panic(expected: ('Invalid TX version', 'ENTRYPOINT_FAILED'))]
 fn test_governor_execute_fails_tx_version_1() {
     let (_staker, _token, governor, _config) = setup();
+    start_cheat_caller_address(governor.contract_address, Zero::zero());
     set_version(1);
     AccountContractDispatcher { contract_address: governor.contract_address }.__execute__(array![]);
 }
@@ -1140,12 +1170,14 @@ fn test_governor_execute_fails_tx_version_1() {
 #[test]
 fn test_governor_execute_succeeds_version_simulate() {
     let (_staker, _token, governor, _config) = setup();
+    start_cheat_caller_address(governor.contract_address, Zero::zero());
     set_version(0x100000000000000000000000000000001);
     AccountContractDispatcher { contract_address: governor.contract_address }.__execute__(array![]);
 }
 
 #[test]
 fn test_reconfigure_succeeds_self_call() {
+    let mut logger = event_logger();
     let (staker, token, governor, config) = setup();
 
     token.approve(staker.contract_address, config.quorum.into());
@@ -1182,6 +1214,7 @@ fn test_reconfigure_succeeds_self_call() {
 
     advance_time(config.voting_period + config.execution_delay);
 
+    set_contract_address(get_contract_address());
     governor
         .execute(
             id,
@@ -1196,13 +1229,13 @@ fn test_reconfigure_succeeds_self_call() {
         );
 
     // the first one is from constructor
-    pop_log::<Governor::Reconfigured>(governor.contract_address).unwrap();
-    pop_log::<Governor::Proposed>(governor.contract_address).unwrap();
-    pop_log::<Governor::Voted>(governor.contract_address).unwrap();
-    let reconfigured = pop_log::<Governor::Reconfigured>(governor.contract_address).unwrap();
+    logger.pop_log::<Governor::Reconfigured>(governor.contract_address).unwrap();
+    logger.pop_log::<Governor::Proposed>(governor.contract_address).unwrap();
+    logger.pop_log::<Governor::Voted>(governor.contract_address).unwrap();
+    let reconfigured = logger.pop_log::<Governor::Reconfigured>(governor.contract_address).unwrap();
     assert_eq!(reconfigured.new_config, new_config);
     assert_eq!(reconfigured.version, 1);
-    let executed = pop_log::<Governor::Executed>(governor.contract_address).unwrap();
+    let executed = logger.pop_log::<Governor::Executed>(governor.contract_address).unwrap();
     assert_eq!(governor.get_config_with_version(), (new_config, 1));
     assert_eq!(executed.id, id);
     assert_eq!(executed.result_data, array![array![1_felt252].span()].span());
@@ -1210,6 +1243,7 @@ fn test_reconfigure_succeeds_self_call() {
     let (_, first_proposal_config) = governor.get_proposal_with_config(id);
     assert_eq!(first_proposal_config, config);
 
+    set_contract_address(proposer());
     let id_next = governor.propose(array![].span());
     let (_, next_proposal_config) = governor.get_proposal_with_config(id_next);
     assert_eq!(next_proposal_config, new_config);

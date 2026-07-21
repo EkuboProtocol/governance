@@ -3,11 +3,11 @@ name = "governance"
 version = "0.1.0"
 description = "Contracts for governance of Starknet-native protocols"
 homepage = "https://ekubo.org"
-cairo-version = ">=2.12.0"
+cairo-version = ">=2.19.3"
 edition = '2024_07'
 
 [dependencies]
-starknet = ">=2.12.0"
+starknet = ">=2.19.3"
 
 [[target.starknet-contract]]
 allowed-libfuncs-list.name = "audited"
@@ -17,4 +17,8 @@ casm = true
 sort-module-level-items = true
 
 [dev-dependencies]
-cairo_test = ">=2.12.0"
+cairo_test = ">=2.19.3"
+snforge_std = ">=0.62.1"
+
+[scripts]
+test = "snforge test"

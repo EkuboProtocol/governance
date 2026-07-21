@@ -1,10 +1,11 @@
-use governance::interfaces::erc20::{IERC20Dispatcher};
-use starknet::{ContractAddress, syscalls::{deploy_syscall}};
+use governance::interfaces::erc20::IERC20Dispatcher;
+use snforge_std::{ContractClassTrait, DeclareResultTrait, declare};
+use starknet::ContractAddress;
 
 #[starknet::contract]
 pub(crate) mod TestToken {
-    use core::num::traits::zero::{Zero};
-    use governance::interfaces::erc20::{IERC20};
+    use core::num::traits::zero::Zero;
+    use governance::interfaces::erc20::IERC20;
     use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess};
     use starknet::{ContractAddress, get_caller_address};
 
@@ -83,9 +84,7 @@ pub(crate) fn deploy(owner: ContractAddress, amount: u256) -> IERC20Dispatcher {
     let mut constructor_args: Array<felt252> = ArrayTrait::new();
     Serde::serialize(@(owner, amount), ref constructor_args);
 
-    let (address, _) = deploy_syscall(
-        TestToken::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true,
-    )
-        .expect('DEPLOY_TOKEN_FAILED');
+    let contract = declare("TestToken").unwrap().contract_class();
+    let (address, _) = contract.deploy(@constructor_args).expect('DEPLOY_TOKEN_FAILED');
     IERC20Dispatcher { contract_address: address }
 }
