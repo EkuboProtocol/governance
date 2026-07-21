@@ -407,6 +407,36 @@ mod staker_staked_seconds_per_total_staked_calculation {
     }
 
     #[test]
+    fn test_user_share_preserves_precision_for_short_period() {
+        let (staker, token) = setup(1024);
+        let delegatee = 1234567890.try_into().unwrap();
+
+        set_block_timestamp(10);
+        token.approve(staker.contract_address, 1024);
+        staker.stake(delegatee);
+
+        assert_eq!(staker.get_user_share_of_total_staked_over_period(0, 10, 11), 0);
+        assert_eq!(staker.get_user_share_of_total_staked_over_period(1024, 10, 11), 100);
+    }
+
+    #[test]
+    fn test_user_share_preserves_weight_across_stake_changes() {
+        let (staker, token) = setup(2048);
+        let delegatee = 1234567890.try_into().unwrap();
+
+        set_block_timestamp(10);
+        token.approve(staker.contract_address, 1024);
+        staker.stake(delegatee);
+
+        set_block_timestamp(11);
+        token.approve(staker.contract_address, 1024);
+        staker.stake(delegatee);
+
+        // 100% for the first second and 50% for the second second.
+        assert_eq!(staker.get_user_share_of_total_staked_over_period(1024, 10, 12), 75);
+    }
+
+    #[test]
     #[should_panic(expected: ('INSUFFICIENT_AMOUNT_STAKED', 'ENTRYPOINT_FAILED'))]
     fn test_raises_error_if_no_history_exists_and_withdrawal_happens() {
         // TODO(biatcode): This test accidentally tests other
