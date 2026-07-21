@@ -79,7 +79,7 @@ pub trait IStakerV2<TContractState> {
 
 #[starknet::contract]
 pub mod Staker {
-    use core::num::traits::zero::Zero;
+    use core::num::traits::{OverflowingMul, zero::Zero};
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::{
         Map, MutableVecTrait, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry,
@@ -470,7 +470,11 @@ pub mod Staker {
             let start_snapshot = self.get_seconds_per_total_staked_sum_at(start);
             let end_snapshot = self.get_seconds_per_total_staked_sum_at(end);
 
-            staked * ((end_snapshot - start_snapshot) * 100).high / (end - start).into()
+            let (weighted_stake_seconds, overflow) = (end_snapshot - start_snapshot)
+                .overflowing_mul(staked.into() * 100);
+            assert(!overflow, 'SHARE_OVERFLOW');
+
+            weighted_stake_seconds.high / (end - start).into()
         }
     }
 }
