@@ -3,31 +3,32 @@ use governance::execution_state_test::assert_pack_unpack;
 use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use governance::staker::Staker::{DelegatedSnapshot, DelegatedSnapshotStorePacking};
 use governance::staker::{IStakerDispatcher, IStakerDispatcherTrait, Staker};
+use governance::test::helpers::{EventLoggerTrait, event_logger};
 use governance::test::test_token::{TestToken, deploy as deploy_token};
+use snforge_std::{
+    ContractClassTrait, DeclareResultTrait, declare,
+    start_cheat_block_timestamp_global as set_block_timestamp,
+};
 use starknet::get_contract_address;
-use starknet::syscalls::deploy_syscall;
-use starknet::testing::{pop_log, set_block_timestamp};
 
 pub(crate) fn setup(amount: u256) -> (IStakerDispatcher, IERC20Dispatcher) {
     let token = deploy_token(get_contract_address(), amount);
-    let (staker_address, _) = deploy_syscall(
-        Staker::TEST_CLASS_HASH.try_into().unwrap(),
-        0,
-        array![token.contract_address.into()].span(),
-        true,
-    )
+    let contract = declare("governance::staker::Staker").unwrap().contract_class();
+    let (staker_address, _) = contract
+        .deploy(@array![token.contract_address.into()])
         .expect('DEPLOY_TK_FAILED');
     return (IStakerDispatcher { contract_address: staker_address }, token);
 }
 
 mod stake_withdraw {
     use super::{
-        IERC20DispatcherTrait, IStakerDispatcherTrait, Staker, TestToken, Zero,
-        get_contract_address, pop_log, setup,
+        EventLoggerTrait, IERC20DispatcherTrait, IStakerDispatcherTrait, Staker, TestToken, Zero,
+        event_logger, get_contract_address, setup,
     };
 
     #[test]
     fn test_takes_approved_token() {
+        let mut logger = event_logger();
         let (staker, token) = setup(1000);
 
         token.approve(staker.contract_address, 500);
@@ -37,9 +38,9 @@ mod stake_withdraw {
         assert_eq!(staker.get_staked(get_contract_address(), Zero::zero()), 0);
         assert_eq!(staker.get_staked('delegate'.try_into().unwrap(), get_contract_address()), 0);
         // pop the transfer from 0 to deployer
-        pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+        logger.pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
         assert_eq!(
-            pop_log::<TestToken::Transfer>(token.contract_address),
+            logger.pop_log::<TestToken::Transfer>(token.contract_address),
             Option::Some(
                 TestToken::Transfer {
                     from: get_contract_address(), to: staker.contract_address, value: 500,
@@ -47,7 +48,7 @@ mod stake_withdraw {
             ),
         );
         assert_eq!(
-            pop_log::<Staker::Staked>(staker.contract_address),
+            logger.pop_log::<Staker::Staked>(staker.contract_address),
             Option::Some(
                 Staker::Staked {
                     from: get_contract_address(),

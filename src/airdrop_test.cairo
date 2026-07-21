@@ -4,9 +4,12 @@ use governance::airdrop::Airdrop::{
 };
 use governance::airdrop::{Airdrop, Claim, Config, IAirdropDispatcher, IAirdropDispatcherTrait};
 use governance::interfaces::erc20::IERC20DispatcherTrait;
+use governance::test::helpers::{EventLoggerTrait, event_logger};
 use governance::test::test_token::{TestToken, deploy as deploy_token};
-use starknet::syscalls::deploy_syscall;
-use starknet::testing::{pop_log, set_block_timestamp};
+use snforge_std::{
+    ContractClassTrait, DeclareResultTrait, declare,
+    start_cheat_block_timestamp_global as set_block_timestamp,
+};
 use starknet::{ContractAddress, get_contract_address};
 
 fn deploy_with_refundee(
@@ -17,10 +20,8 @@ fn deploy_with_refundee(
         @(token, Config { root, refundable_timestamp, refund_to }), ref constructor_args,
     );
 
-    let (address, _) = deploy_syscall(
-        Airdrop::TEST_CLASS_HASH.try_into().unwrap(), 0, constructor_args.span(), true,
-    )
-        .expect('DEPLOY_AD_FAILED');
+    let contract = declare("Airdrop").unwrap().contract_class();
+    let (address, _) = contract.deploy(@constructor_args).expect('DEPLOY_AD_FAILED');
     IAirdropDispatcher { contract_address: address }
 }
 
@@ -83,6 +84,8 @@ fn test_compute_pedersen_root_recursive() {
 
 #[test]
 fn test_claim_single_recipient() {
+    let mut airdrop_logger = event_logger();
+    let mut token_logger = event_logger();
     let token = deploy_token(get_contract_address(), 1234567);
 
     let claim = Claim { id: 0, claimee: 2345.try_into().unwrap(), amount: 6789 };
@@ -95,12 +98,12 @@ fn test_claim_single_recipient() {
 
     assert_eq!(airdrop.claim(claim, array![].span()), true);
 
-    let log = pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
+    let log = airdrop_logger.pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
     assert_eq!(log.claim, claim);
 
-    pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
-    pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
-    let log = pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+    token_logger.pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+    token_logger.pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+    let log = token_logger.pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
     assert_eq!(log.from, airdrop.contract_address);
     assert_eq!(log.to, claim.claimee);
     assert_eq!(log.value, claim.amount.into());
@@ -108,6 +111,8 @@ fn test_claim_single_recipient() {
 
 #[test]
 fn test_claim_128_single_recipient_tree() {
+    let mut airdrop_logger = event_logger();
+    let mut token_logger = event_logger();
     let token = deploy_token(get_contract_address(), 1234567);
 
     let claim = Claim { id: 0, claimee: 2345.try_into().unwrap(), amount: 6789 };
@@ -120,12 +125,12 @@ fn test_claim_128_single_recipient_tree() {
 
     assert_eq!(airdrop.claim_128(array![claim].span(), array![].span()), 1);
 
-    let log = pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
+    let log = airdrop_logger.pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
     assert_eq!(log.claim, claim);
 
-    pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
-    pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
-    let log = pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+    token_logger.pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+    token_logger.pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+    let log = token_logger.pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
     assert_eq!(log.from, airdrop.contract_address);
     assert_eq!(log.to, claim.claimee);
     assert_eq!(log.value, claim.amount.into());
@@ -290,6 +295,8 @@ fn test_claim_two_claims() {
 
 #[test]
 fn test_claim_two_claims_via_claim_128() {
+    let mut airdrop_logger = event_logger();
+    let mut token_logger = event_logger();
     let token = deploy_token(get_contract_address(), 1234567);
 
     let claim_a = Claim { id: 0, claimee: 2345.try_into().unwrap(), amount: 6789 };
@@ -305,22 +312,26 @@ fn test_claim_two_claims_via_claim_128() {
 
     assert_eq!(airdrop.claim_128(array![claim_a, claim_b].span(), array![].span()), 2);
 
-    let claim_a_log = pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
+    let claim_a_log = airdrop_logger.pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
     assert_eq!(claim_a_log.claim, claim_a);
-    let claim_b_log = pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
+    let claim_b_log = airdrop_logger.pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
     assert_eq!(claim_b_log.claim, claim_b);
 
     // pops the initial supply transfer from 0 log
-    pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+    token_logger.pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
     // pops the transfer from deployer to airdrop
-    pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+    token_logger.pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
 
-    let transfer_claim_a_log = pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+    let transfer_claim_a_log = token_logger
+        .pop_log::<TestToken::Transfer>(token.contract_address)
+        .unwrap();
     assert_eq!(transfer_claim_a_log.from, airdrop.contract_address);
     assert_eq!(transfer_claim_a_log.to, claim_a.claimee);
     assert_eq!(transfer_claim_a_log.value, claim_a.amount.into());
 
-    let transfer_claim_b_log = pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+    let transfer_claim_b_log = token_logger
+        .pop_log::<TestToken::Transfer>(token.contract_address)
+        .unwrap();
     assert_eq!(transfer_claim_b_log.from, airdrop.contract_address);
     assert_eq!(transfer_claim_b_log.to, claim_b.claimee);
     assert_eq!(transfer_claim_b_log.value, claim_b.amount.into());
@@ -349,6 +360,8 @@ fn test_claim_three_claims_one_invalid_via_claim_128() {
 }
 
 fn test_claim_is_valid(root: felt252, claim: Claim, proof: Array<felt252>) {
+    let mut airdrop_logger = event_logger();
+    let mut token_logger = event_logger();
     let pspan = proof.span();
     let token = deploy_token(get_contract_address(), claim.amount.into());
     let airdrop = deploy(token.contract_address, root);
@@ -357,14 +370,14 @@ fn test_claim_is_valid(root: felt252, claim: Claim, proof: Array<felt252>) {
     assert_eq!(airdrop.claim(claim, pspan), true);
     assert_eq!(airdrop.claim(claim, pspan), false);
 
-    let claim_log = pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
+    let claim_log = airdrop_logger.pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
     assert_eq!(claim_log.claim, claim);
 
     // pops the initial supply transfer from 0 log
-    pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+    token_logger.pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
     // pops the transfer from deployer to airdrop
-    pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
-    let transfer_log = pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+    token_logger.pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
+    let transfer_log = token_logger.pop_log::<TestToken::Transfer>(token.contract_address).unwrap();
     assert_eq!(transfer_log.from, airdrop.contract_address);
     assert_eq!(transfer_log.to, claim.claimee);
     assert_eq!(transfer_log.value, claim.amount.into());
@@ -625,6 +638,7 @@ fn test_claim_before_funded() {
 
 #[test]
 fn test_multiple_claims_from_generated_tree() {
+    let mut logger = event_logger();
     let claim_0 = Claim {
         id: 0,
         claimee: 1257981684727298919953780547925609938727371268283996697135018561811391002099
@@ -668,7 +682,7 @@ fn test_multiple_claims_from_generated_tree() {
                 .span(),
         );
 
-    let log = pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
+    let log = logger.pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
     assert_eq!(log.claim, claim_1);
 
     airdrop
@@ -690,7 +704,7 @@ fn test_multiple_claims_from_generated_tree() {
             ]
                 .span(),
         );
-    let log = pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
+    let log = logger.pop_log::<Airdrop::Claimed>(airdrop.contract_address).unwrap();
     assert_eq!(log.claim, claim_0);
 }
 
@@ -769,6 +783,7 @@ fn test_claim_128_large_tree() {
 
 #[test]
 fn test_claim_128_double_claim() {
+    let mut logger = event_logger();
     let mut i: u64 = 0;
 
     let mut claims: Array<Claim> = array![];
@@ -792,13 +807,13 @@ fn test_claim_128_double_claim() {
 
     assert_eq!(airdrop.claim_128(claims.span().slice(0, 128), array![s2, rr].span()), 128);
     let mut i: u64 = 0;
-    while let Option::Some(claimed) = pop_log::<Airdrop::Claimed>(airdrop.contract_address) {
+    while let Option::Some(claimed) = logger.pop_log::<Airdrop::Claimed>(airdrop.contract_address) {
         assert_eq!(claimed.claim, Claim { id: i, amount: 3, claimee: 0xcdee.try_into().unwrap() });
         i += 1;
     }
 
     assert_eq!(airdrop.claim_128(claims.span().slice(0, 128), array![s2, rr].span()), 0);
-    assert_eq!(pop_log::<Airdrop::Claimed>(airdrop.contract_address).is_none(), true);
+    assert_eq!(logger.pop_log::<Airdrop::Claimed>(airdrop.contract_address).is_none(), true);
 }
 
 mod refundable {
