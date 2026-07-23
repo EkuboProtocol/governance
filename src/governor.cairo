@@ -28,7 +28,7 @@ pub struct Config {
     // Over how many seconds the voting weight is averaged for proposal voting as well as
     // creation/cancellation
     pub voting_weight_smoothing_duration: u64,
-    // How many total votes must be collected for the proposal
+    // How much yea voting weight must be collected for the proposal
     pub quorum: u128,
     // The minimum amount of average votes required to create a proposal
     pub proposal_creation_threshold: u128,
