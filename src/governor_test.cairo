@@ -739,6 +739,41 @@ fn test_execute_no_majority_should_fail() {
 }
 
 #[test]
+#[should_panic(expected: ('NO_MAJORITY', 'ENTRYPOINT_FAILED'))]
+fn test_execute_tied_vote_should_fail() {
+    let (staker, token, governor, config) = setup();
+
+    token.approve(staker.contract_address, config.quorum.into());
+    staker.stake(voter1());
+    token.approve(staker.contract_address, config.quorum.into());
+    staker.stake(voter2());
+
+    advance_time(config.voting_weight_smoothing_duration);
+
+    set_contract_address(voter2());
+    let id = governor
+        .propose(array![transfer_call(token: token, recipient: recipient(), amount: 100)].span());
+
+    advance_time(config.voting_start_delay);
+
+    set_contract_address(voter1());
+    governor.vote(id, true);
+    set_contract_address(voter2());
+    governor.vote(id, false);
+
+    let proposal = governor.get_proposal(id);
+    assert_eq!(proposal.yea, config.quorum);
+    assert_eq!(proposal.nay, config.quorum);
+
+    advance_time(config.voting_period + config.execution_delay);
+
+    governor
+        .execute(
+            id, array![transfer_call(token: token, recipient: recipient(), amount: 100)].span(),
+        );
+}
+
+#[test]
 #[should_panic(expected: ('EXECUTION_WINDOW_NOT_STARTED', 'ENTRYPOINT_FAILED'))]
 fn test_execute_before_execution_window_begins() {
     let (staker, token, governor, config) = setup();

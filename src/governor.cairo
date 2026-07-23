@@ -386,7 +386,7 @@ pub mod Governor {
             assert(timestamp_current < window_end, 'EXECUTION_WINDOW_OVER');
 
             assert(proposal.yea >= config.quorum, 'QUORUM_NOT_MET');
-            assert(proposal.yea >= proposal.nay, 'NO_MAJORITY');
+            assert(proposal.yea > proposal.nay, 'NO_MAJORITY');
 
             proposal
                 .execution_state =
