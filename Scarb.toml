@@ -3,6 +3,7 @@ name = "governance"
 version = "0.1.0"
 description = "Contracts for governance of Starknet-native protocols"
 homepage = "https://ekubo.org"
+license = "MIT"
 cairo-version = ">=2.19.3"
 edition = '2024_07'
 
