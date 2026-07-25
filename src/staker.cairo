@@ -1,4 +1,4 @@
-use starknet::{ContractAddress};
+use starknet::ContractAddress;
 
 #[starknet::interface]
 pub trait IStaker<TContractState> {
@@ -56,16 +56,14 @@ pub trait IStaker<TContractState> {
 
 #[starknet::contract]
 pub mod Staker {
-    use core::num::traits::zero::{Zero};
+    use core::num::traits::zero::Zero;
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::{
         Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry,
         StoragePointerReadAccess, StoragePointerWriteAccess,
     };
-    use starknet::{
-        get_block_timestamp, get_caller_address, get_contract_address,
-        storage_access::{StorePacking},
-    };
+    use starknet::storage_access::StorePacking;
+    use starknet::{get_block_timestamp, get_caller_address, get_contract_address};
     use super::{ContractAddress, IStaker};
 
 
@@ -165,7 +163,7 @@ pub mod Staker {
                 delegate_snapshots_entry
                     .write(num_snapshots, DelegatedSnapshot { timestamp, delegated_cumulative: 0 });
                 self.delegated_cumulative_num_snapshots.write(address, 1);
-            };
+            }
 
             amount_delegated
         }

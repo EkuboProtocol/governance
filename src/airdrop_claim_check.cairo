@@ -1,4 +1,4 @@
-use governance::airdrop::{IAirdropDispatcher};
+use governance::airdrop::IAirdropDispatcher;
 
 #[derive(Serde, Copy, Drop)]
 struct CheckParams {
@@ -20,7 +20,7 @@ trait IAirdropClaimCheck<TContractState> {
 
 #[starknet::contract]
 mod AirdropClaimCheck {
-    use governance::airdrop::{IAirdropDispatcherTrait};
+    use governance::airdrop::IAirdropDispatcherTrait;
     use governance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use super::{CheckParams, CheckResult, IAirdropClaimCheck};
 
@@ -42,7 +42,7 @@ mod AirdropClaimCheck {
                         *claim_check.airdrop.contract_address,
                     ) >= ((*claim_check.amount).into());
                 result.append(CheckResult { claimed, funded });
-            };
+            }
 
             result.span()
         }

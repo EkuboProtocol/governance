@@ -1,5 +1,5 @@
-use governance::interfaces::erc20::{IERC20Dispatcher};
-use starknet::{ContractAddress};
+use governance::interfaces::erc20::IERC20Dispatcher;
+use starknet::ContractAddress;
 
 #[derive(Copy, Drop, Serde, Hash, PartialEq, Debug)]
 pub struct Claim {
@@ -54,17 +54,16 @@ pub trait IAirdrop<TContractState> {
 
 #[starknet::contract]
 pub mod Airdrop {
-    use core::hash::{LegacyHash};
-    use core::num::traits::one::{One};
-    use core::num::traits::zero::{Zero};
-    use governance::interfaces::erc20::{IERC20DispatcherTrait};
-    use governance::utils::exp2::{exp2};
+    use core::hash::LegacyHash;
+    use core::num::traits::one::One;
+    use core::num::traits::zero::Zero;
+    use governance::interfaces::erc20::IERC20DispatcherTrait;
+    use governance::utils::exp2::exp2;
     use starknet::storage::{
         Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess,
         StoragePointerWriteAccess,
     };
     use starknet::{get_block_timestamp, get_contract_address};
-
     use super::{Claim, Config, ContractAddress, IAirdrop, IERC20Dispatcher};
 
     pub fn hash_function(a: felt252, b: felt252) -> felt252 {
@@ -132,11 +131,11 @@ pub mod Airdrop {
         while let Option::Some(claim) = claims.pop_front() {
             if let Option::Some(last_id) = last_claim_id {
                 assert(last_id == (*claim.id - 1), 'SEQUENTIAL');
-            };
+            }
 
             claim_hashes.append(hash_claim(*claim));
             last_claim_id = Option::Some(*claim.id);
-        };
+        }
 
         // will eventually contain an array of length 1
         let mut current_layer: Span<felt252> = claim_hashes.span();
@@ -146,7 +145,7 @@ pub mod Airdrop {
 
             while let Option::Some(hash) = current_layer.pop_front() {
                 next_layer.append(hash_function(*hash, *current_layer.pop_front().unwrap_or(hash)));
-            };
+            }
 
             current_layer = next_layer.span();
         };
@@ -221,7 +220,7 @@ pub mod Airdrop {
                 }
 
                 index += 1;
-            };
+            }
 
             self.claimed_bitmap.write(word, bitmap);
 
@@ -233,7 +232,7 @@ pub mod Airdrop {
             while let Option::Some(claim) = unclaimed.pop_front() {
                 token.transfer(claim.claimee, claim.amount.into());
                 self.emit(Claimed { claim });
-            };
+            }
 
             // never fails because we assert claims length at the beginning so we know it's less
             // than 128
