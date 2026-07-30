@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build Cross-Chain Proposals"
+  short_description: "Construct validated governance import payloads"
+  default_prompt: "Use $build-cross-chain-proposals to construct and validate an interface-importable governance proposal across chains."
