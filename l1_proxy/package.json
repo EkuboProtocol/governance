@@ -1,0 +1,11 @@
+{
+  "name": "ekubo-governance-l1-proxy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "solhint --disc --noPoster --max-warnings 0 'src/**/*.sol' 'script/**/*.sol' 'test/**/*.sol'"
+  },
+  "devDependencies": {
+    "solhint": "6.2.4"
+  }
+}
