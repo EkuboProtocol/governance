@@ -63,6 +63,13 @@ jobs:
           forge build --sizes
         id: build
 
+      - name: Check cyclomatic complexity
+        working-directory: l1_proxy
+        run: >
+          npx -y solhint@6.2.4 --disc --noPoster -c .solhint.json --max-warnings 0
+          'src/**/*.sol' 'script/**/*.sol' 'test/**/*.sol'
+        id: complexity
+
       - name: Run Forge tests
         working-directory: l1_proxy
         run: |
