@@ -167,6 +167,14 @@ closes.
   Every listed candidate was re-verified against the live production API, but orders that ended
   after that snapshot are not covered. Re-run the enumeration against a current indexer before
   submitting, and extend the list if it grows.
+- A `purchased_amount` of 0 is only final once the pool has executed virtual orders past the
+  order's `end_time`. This was proven for `2288050`, whose pool executed 25 hours after its end.
+  It was **not** checked for `559381`, `1314066`, or `1315586` — and `1314066`'s pool still holds
+  liquidity. If one of those pools has an unexecuted window, a later `execute_virtual_orders` could
+  turn `purchased_amount` positive, making a full-deposit refund a small overpayment out of the
+  shared pot. Exposure is bounded by 1.250015 STRK, so nothing material is at risk, but the
+  re-run above should confirm `last_virtual_order_time > end_time` for each of those three pools —
+  or simply drop them and refund only `2288050`.
 
 ## Interface-importable call list
 
