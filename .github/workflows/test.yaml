@@ -63,6 +63,17 @@ jobs:
           forge build --sizes
         id: build
 
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install lint dependencies
+        working-directory: l1_proxy
+        run: bun install --frozen-lockfile
+
+      - name: Check cyclomatic complexity
+        working-directory: l1_proxy
+        run: bun run lint
+        id: complexity
+
       - name: Run Forge tests
         working-directory: l1_proxy
         run: |
