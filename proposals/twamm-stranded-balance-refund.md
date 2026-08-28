@@ -98,8 +98,10 @@ transaction to the unit.
 ## Preconditions
 
 - `TWAMMRefund` class hash `0x03d781303a16960d64c9ceedc906c6aabf8879a24f061c2d9eeb2fc7001a329f`
-  **must be declared on mainnet before this proposal executes.** It is not deployed as a contract;
-  only the class is needed.
+  is **declared on mainnet**, in transaction
+  `0x05a9d43aff7b4110322e5c45afd698bcb6a23f7b36f06588ee8cef819bb1dc1d`. It is not deployed as a
+  contract; only the class is needed. Declared from `scarb --release build`; the release and dev
+  profiles produce the same class hash.
 - The TWAMM's owner must remain the Governor. Verified: `TWAMM.get_owner()` returns
   `0x053499f7aa2706395060fe72d00388803fb2dcc111429891ad7b2d9dcea29acd`.
 - The TWAMM's live class hash must remain `0x07f60fe1d7e48bb51695f675de0475325d2d131a81fc87144023ae437fcfac32`,
@@ -158,11 +160,30 @@ closes.
 - Class hashes, TWAMM ownership, saved balances, per-order state, and pool liquidity were all read
   from mainnet at block 13,930,653.
 
-### Not yet done
+### Simulation
 
-- The call batch has **not** been simulated from the Governor. Simulation requires the
-  `TWAMMRefund` class to be declared on mainnet first, because call 1 replaces the class with it.
-  Declare the class, then simulate, before voting.
+The exact call list below was simulated from the Governor at the latest accepted block and
+**succeeded** — all three calls executed.
+
+`Governor.__execute__` asserts the transaction version is a *query* version
+(`0x1000…0001` or `0x1000…0003`, `governor.cairo:486`), so the batch is reachable only in
+simulation; a plain `0x3` invoke is rejected with `Invalid TX version`.
+
+Token movements observed, all out of Core and all matching the refund table:
+
+| Token | Amount | Recipient |
+| --- | --- | --- |
+| STRK | 1.250000 | `0x0562324206226171d83c6fea52c5bc0f7d84bda124049e62f1515a0578331b66` |
+| STRK | 0.000015 | `0x02ee3ba455b15b2f6624b993dafc4c61df4e9c96390343bea236756830a8e03b` |
+| USDC | 50,000.000000 | `0x077e016835a96edccd2405179d4c81a1f28c040b77603bd367e1e651c447eb1e` |
+
+The trace also shows `ClassHashReplaced` to `0x03d78130…329f` before the refunds and back to
+`0x07f60fe1…ac32` after. The state diff reports **`replaced_classes: []`** — empty, because the
+batch ends on the class it started from, so the net effect on the TWAMM's class is nothing.
+Execution fee ≈ 0.271 STRK.
+
+### Still to do before voting
+
 - The stranded-order enumeration used an indexer snapshot whose head was 2026-08-26 00:03 UTC.
   Every listed candidate was re-verified against the live production API, but orders that ended
   after that snapshot are not covered. Re-run the enumeration against a current indexer before
