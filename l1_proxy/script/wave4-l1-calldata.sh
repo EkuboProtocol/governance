@@ -7,7 +7,8 @@
 #
 # Usage:
 #   GNOSIS_PROXY=0x... POLYGON_PROXY=0x... PROPOSAL_CREATED=<unix seconds> FX_DEADLINE=<unix seconds> \
-#     ETH_RPC_URL=... [GNOSIS_RPC_URL=... POLYGON_RPC_URL=...] [EXPECT_NONCE=<n>] ./script/wave4-l1-calldata.sh
+#     ETH_RPC_URL=... [GNOSIS_RPC_URL=... POLYGON_RPC_URL=...] [EXPECT_NONCE=<n>] [ETH_BLOCK=<n>] \
+#     [ACTION=handover|reach] [NONCE_OFFSET=<k>] [OUTPUT=json] ./script/wave4-l1-calldata.sh
 #
 # PROPOSAL_CREATED is the Starknet timestamp at which the proposal is (or will be) created. The Governor lets the
 # L1 message be relayed no earlier than PROPOSAL_CREATED + 352800, so the script fails unless
@@ -19,12 +20,25 @@
 # checks on each chain that Positions and Orders v3.2 are owned by the company key and, if the proxy is deployed,
 # that its runtime code hash equals the reference build.
 #
-# ACTION=handover (the only action) builds [Positions.requestOwnershipHandover(), Orders.requestOwnershipHandover()].
+# ACTION=handover builds [Positions.requestOwnershipHandover(), Orders.requestOwnershipHandover()] and requires the
+# company key to own both targets.
+# ACTION=reach builds the reachability proof [Positions.owner()]: a read-only call into a contract the proxy owns. It
+# requires the proxy to be deployed with the reference code, l1Owner() == StarknetOwnerProxy and both targets owned
+# by the proxy.
+#
+# NONCE_OFFSET=<k> (default 0) is for a proposal in which these two messages follow k earlier StarknetOwnerProxy
+# messages: Gnosis gets currentNonce + k, Polygon currentNonce + k + 1.
+# OUTPUT=json prints one JSON object with the same fields instead of the markdown report.
 set -euo pipefail
 
 ACTION="${ACTION:-handover}"
-if [[ "$ACTION" != handover ]]; then
-  echo "only ACTION=handover is implemented" >&2
+if [[ "$ACTION" != handover && "$ACTION" != reach ]]; then
+  echo "ACTION must be handover or reach" >&2
+  exit 1
+fi
+NONCE_OFFSET="${NONCE_OFFSET:-0}"
+if ! [[ "$NONCE_OFFSET" =~ ^[0-9]{1,3}$ ]]; then
+  echo "NONCE_OFFSET must be a small decimal integer, got '$NONCE_OFFSET'" >&2
   exit 1
 fi
 
@@ -72,9 +86,17 @@ CALL_T='(address,uint256,bytes)[]'
 lc() { tr '[:upper:]' '[:lower:]' <<<"$1"; }
 fail() { echo "$*" >&2; exit 1; }
 
-REQ=$(cast calldata 'requestOwnershipHandover()')
-CALLS="[($POSITIONS,0,$REQ),($ORDERS,0,$REQ)]"
-EXPECTED_DECODED=$(lc "[($POSITIONS, 0, $REQ), ($ORDERS, 0, $REQ)]")
+if [[ "$ACTION" == handover ]]; then
+  REQ=$(cast calldata 'requestOwnershipHandover()')
+  CALLS="[($POSITIONS,0,$REQ),($ORDERS,0,$REQ)]"
+  EXPECTED_DECODED=$(lc "[($POSITIONS, 0, $REQ), ($ORDERS, 0, $REQ)]")
+  CALLS_JSON="[{\"target\":\"$POSITIONS\",\"value\":0,\"data\":\"$REQ\",\"signature\":\"requestOwnershipHandover()\"},{\"target\":\"$ORDERS\",\"value\":0,\"data\":\"$REQ\",\"signature\":\"requestOwnershipHandover()\"}]"
+else
+  REQ=$(cast calldata 'owner()')
+  CALLS="[($POSITIONS,0,$REQ)]"
+  EXPECTED_DECODED=$(lc "[($POSITIONS, 0, $REQ)]")
+  CALLS_JSON="[{\"target\":\"$POSITIONS\",\"value\":0,\"data\":\"$REQ\",\"signature\":\"owner()\"}]"
+fi
 
 AMB_INNER=$(cast calldata "executeBatch($CALL_T)" "$CALLS")
 AMB_DATA=$(cast calldata 'requireToPassMessage(address,bytes,uint256)' "$GNOSIS_PROXY" "$AMB_INNER" "$AMB_GAS")
@@ -89,7 +111,7 @@ mapfile -t FX_DECODED < <(cast decode-abi -i "f($CALL_T,uint64)" "$FX_MESSAGE")
 [[ "$(lc "${FX_DECODED[0]}")" == "$EXPECTED_DECODED" ]] || fail "Fx Call[] decodes to ${FX_DECODED[0]}"
 [[ "${FX_DECODED[1]%% *}" == "$FX_DEADLINE" ]] || fail "Fx deadline decodes to ${FX_DECODED[1]}"
 
-BN=$(cast block-number --rpc-url "$ETH_RPC_URL")
+BN=${ETH_BLOCK:-$(cast block-number --rpc-url "$ETH_RPC_URL")}
 BH=$(cast block "$BN" -f hash --rpc-url "$ETH_RPC_URL")
 BT=$(cast block "$BN" -f timestamp --rpc-url "$ETH_RPC_URL")
 BF=$(cast block "$BN" -f baseFeePerGas --rpc-url "$ETH_RPC_URL")
@@ -102,8 +124,8 @@ NONCE=${NONCE%% *}
 if [[ -n "${EXPECT_NONCE:-}" && "$NONCE" != "$EXPECT_NONCE" ]]; then
   fail "StarknetOwnerProxy.currentNonce() is $NONCE at block $BN, expected $EXPECT_NONCE"
 fi
-NONCE_AMB=$NONCE
-NONCE_FX=$((NONCE + 1))
+NONCE_AMB=$((NONCE + NONCE_OFFSET))
+NONCE_FX=$((NONCE + NONCE_OFFSET + 1))
 
 # Payload as decimal words, one per line.
 payload() { ecall "$L1_PROXY" 'getPayload(address,uint256,uint64,bytes)(uint256[])' "$1" 0 "$2" "$3" --json | jq -r '.[0][]'; }
@@ -130,7 +152,22 @@ AMB_ID=$(ecall --from "$L1_PROXY" "$FOREIGN_AMB" "$AMB_DATA")
 
 # Destination-chain checks (optional): company key still owns exactly these surfaces, proxy code matches reference.
 dest_check() {
-  local name=$1 rpc=$2 proxy=$3 ref=$4 o code
+  local name=$1 rpc=$2 proxy=$3 ref=$4 o code l1o extra=""
+  if [[ "$ACTION" == reach ]]; then
+    code=$(cast code --rpc-url "$rpc" "$proxy")
+    [[ "$(cast keccak "$code")" == "$ref" ]] || fail "$name: proxy $proxy code hash $(cast keccak "$code") != reference $ref"
+    l1o=$(cast call --rpc-url "$rpc" "$proxy" 'l1Owner()(address)')
+    [[ "$(lc "$l1o")" == "$L1_PROXY" ]] || fail "$name: proxy l1Owner() is $l1o, not $L1_PROXY"
+    for c in "$POSITIONS" "$ORDERS"; do
+      o=$(cast call --rpc-url "$rpc" "$c" 'owner()(address)')
+      [[ "$(lc "$o")" == "$(lc "$proxy")" ]] || fail "$name: owner() of $c is $o, not the proxy $proxy"
+    done
+    if [[ "$name" == Polygon ]]; then
+      extra="; lastStateId $(cast call --rpc-url "$rpc" "$proxy" 'lastStateId()(uint256)')"
+    fi
+    echo "$name: proxy $proxy code hash = reference $ref, l1Owner = StarknetOwnerProxy, Positions/Orders owned by the proxy$extra"
+    return
+  fi
   for c in "$POSITIONS" "$ORDERS"; do
     o=$(cast call --rpc-url "$rpc" "$c" 'owner()(address)')
     [[ "$(lc "$o")" == "$(lc "$COMPANY_KEY")" ]] || fail "$name: owner() of $c is $o, not the company key"
@@ -143,15 +180,50 @@ dest_check() {
     echo "$name: Positions/Orders owned by company key; proxy $proxy code hash = reference $ref"
   fi
 }
+if [[ "$ACTION" == reach && ( -z "${GNOSIS_RPC_URL:-}" || -z "${POLYGON_RPC_URL:-}" ) ]]; then
+  fail "ACTION=reach requires GNOSIS_RPC_URL and POLYGON_RPC_URL (destination preconditions are mandatory)"
+fi
 DEST=""
 [[ -n "${GNOSIS_RPC_URL:-}" ]] && DEST+="$(dest_check Gnosis "$GNOSIS_RPC_URL" "$GNOSIS_PROXY" "$AMB_CODEHASH")"$'\n'
 [[ -n "${POLYGON_RPC_URL:-}" ]] && DEST+="$(dest_check Polygon "$POLYGON_RPC_URL" "$POLYGON_PROXY" "$FX_CODEHASH")"$'\n'
 [[ -n "$DEST" ]] || DEST="(destination checks skipped: GNOSIS_RPC_URL / POLYGON_RPC_URL not set)"$'\n'
 
-DECODED_TABLE="| # | target | value | data |
+if [[ "$ACTION" == handover ]]; then
+  DECODED_TABLE="| # | target | value | data |
 |---|---|---|---|
 | 0 | \`$POSITIONS\` (Positions 192-bit v3.2.0) | 0 | \`$REQ\` \`requestOwnershipHandover()\` |
 | 1 | \`$ORDERS\` (Orders 192-bit v3.2.0) | 0 | \`$REQ\` \`requestOwnershipHandover()\` |"
+else
+  DECODED_TABLE="| # | target | value | data |
+|---|---|---|---|
+| 0 | \`$POSITIONS\` (Positions 192-bit v3.2.0) | 0 | \`$REQ\` \`owner()\` (view) |"
+fi
+
+if [[ "${OUTPUT:-}" == json ]]; then
+  jq -n --arg action "$ACTION" --argjson block "$BN" --arg blockHash "$BH" --argjson blockTime "$BT" \
+    --argjson baseFee "$BF" --argjson currentNonce "$NONCE" --argjson nonceOffset "$NONCE_OFFSET" \
+    --argjson proposalCreated "$PROPOSAL_CREATED" --argjson earliestRelay "$EARLIEST_RELAY" \
+    --argjson fxDeadline "$FX_DEADLINE" --argjson deadlineMax "$DEADLINE_MAX" --argjson calls "$CALLS_JSON" \
+    --arg dest "$DEST" \
+    --arg gProxy "$GNOSIS_PROXY" --argjson gNonce "$NONCE_AMB" --arg gData "$AMB_DATA" --arg gInner "$AMB_INNER" \
+    --arg gInnerHash "$(cast keccak "$AMB_INNER")" --arg gMsgHash "$AMB_MSG_HASH" --argjson gGas "$AMB_GAS_EST" \
+    --arg gId "$AMB_ID" --argjson gPayload "$(payload_json "$AMB_PAYLOAD")" \
+    --arg pProxy "$POLYGON_PROXY" --argjson pNonce "$NONCE_FX" --arg pData "$FX_DATA" --arg pMsg "$FX_MESSAGE" \
+    --arg pMsgHashInner "$(cast keccak "$FX_MESSAGE")" --arg pMsgHash "$FX_MSG_HASH" --argjson pGas "$FX_GAS_EST" \
+    --argjson pPayload "$(payload_json "$FX_PAYLOAD")" \
+    --arg foreignAmb "$FOREIGN_AMB" --arg fxRoot "$FX_ROOT" --argjson ambGas "$AMB_GAS" \
+    '{action: $action, ethBlock: $block, ethBlockHash: $blockHash, ethBlockTime: $blockTime, ethBaseFee: $baseFee,
+      currentNonce: $currentNonce, nonceOffset: $nonceOffset, proposalCreated: $proposalCreated,
+      earliestRelay: $earliestRelay, fxDeadline: $fxDeadline, fxDeadlineMax: $deadlineMax, calls: $calls,
+      destinationChecks: ($dest | rtrimstr("\n") | split("\n")),
+      gnosis: {l2Proxy: $gProxy, nonce: $gNonce, l1Target: $foreignAmb, l1Value: 0, ambGas: $ambGas, l1Calldata: $gData,
+               innerCalldata: $gInner, innerKeccak: $gInnerHash, l2ToL1MessageHash: $gMsgHash, l1GasEstimate: $gGas,
+               ethCallMessageId: $gId, payload: $gPayload},
+      polygon: {l2Proxy: $pProxy, nonce: $pNonce, l1Target: $fxRoot, l1Value: 0, l1Calldata: $pData,
+                fxMessage: $pMsg, fxMessageKeccak: $pMsgHashInner, l2ToL1MessageHash: $pMsgHash,
+                l1GasEstimate: $pGas, payload: $pPayload}}'
+  exit 0
+fi
 
 cat <<EOF
 Read at Ethereum block $BN ($BH, unix $BT), baseFee $BF wei. StarknetOwnerProxy \`$L1_PROXY\` currentNonce $NONCE, l2Owner = Governor \`$GOVERNOR\`.
