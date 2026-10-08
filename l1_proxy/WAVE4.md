@@ -38,9 +38,16 @@ the Starknet Governor can drive. Nothing in this directory deploys or sends anyt
   a stored failure that later becomes replayable, which is worse than executing it on first delivery.
 - **AMB gas.** `500000` (HomeAMB `maxGasPerTx` is 2,000,000). The two-handover batch uses well under 100k.
 - **One message per chain per proposal.** Put every call for a chain into the same batch.
-- Use `script/wave4-l1-calldata.sh` to build the Ethereum-side calls from the deployed proxy addresses and the
-  deadline; it prints them in the manifest's "Exact L1 calldata per message" format and estimates gas from the L1
-  proxy. The Governor then sends `StarknetOwnerProxy.getPayload(target, 0, nonce, data)` for each.
+- Use `script/wave4-l1-calldata.sh` to build the Ethereum-side calls from the deployed proxy addresses, the
+  proposal creation time and the deadline. It **fails** unless
+  `PROPOSAL_CREATED + 352800 < FX_DEADLINE <= PROPOSAL_CREATED + 352800 + 14 days` (CSO EKU-1064 D4a; both sides
+  are tested by `script/wave4-l1-calldata.test.sh`), reads `currentNonce()` live (Gnosis gets `currentNonce`,
+  Polygon `currentNonce + 1`; `EXPECT_NONCE` pins it), decodes both delivered messages and requires exactly
+  `requestOwnershipHandover()` on Positions and Orders v3.2, and prints per message the L1 call, the
+  `getPayload(target, 0, nonce, data)` felts the Governor sends, the L2→L1 message hash, and the inner message with
+  its keccak256, in the manifest's "Exact L1 calldata per message" format, with gas estimated from the L1 proxy.
+  With `GNOSIS_RPC_URL` / `POLYGON_RPC_URL` it also checks that the company key still owns both targets and that a
+  deployed proxy's runtime code hash equals the reference.
 
 ## Deployment (R4)
 
