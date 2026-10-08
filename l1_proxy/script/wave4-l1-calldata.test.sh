@@ -33,6 +33,26 @@ run fail "$C" "" "missing FX_DEADLINE"
 run fail "$C" "0x$(printf %x $((E + 1)))" "hex deadline rejected"
 run fail "-5" "$((E + 1))" "negative created rejected"
 
+run_env() { # expect(pass|fail) label env...
+  local expect=$1 label=$2 out rc
+  shift 2
+  out=$(env PROPOSAL_CREATED="$C" FX_DEADLINE="$((E + 1))" DEADLINE_CHECK_ONLY=1 "$@" ./wave4-l1-calldata.sh 2>&1)
+  rc=$?
+  if { [[ $expect == pass ]] && ((rc == 0)); } || { [[ $expect == fail ]] && ((rc != 0)); }; then
+    echo "ok   $expect: $label"
+  else
+    echo "FAIL expected $expect (rc=$rc): $label: $out"
+    failures=$((failures + 1))
+  fi
+}
+
+run_env pass "ACTION=reach accepted" ACTION=reach
+run_env pass "ACTION=handover accepted" ACTION=handover
+run_env fail "unknown ACTION rejected" ACTION=transfer
+run_env pass "NONCE_OFFSET=8 accepted" ACTION=reach NONCE_OFFSET=8
+run_env fail "negative NONCE_OFFSET rejected" NONCE_OFFSET=-1
+run_env fail "hex NONCE_OFFSET rejected" NONCE_OFFSET=0x8
+
 if ((failures)); then
   echo "$failures failure(s)"
   exit 1
