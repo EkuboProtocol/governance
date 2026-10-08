@@ -21,8 +21,16 @@ The `StarknetOwnerProxy.l2Owner` constructor value decodes to the Governor addre
 | ArbitrumOwnerProxy | Robinhood Chain | 4663 | `0xcd87828f4f279d3c5fd7af531370298964b5eaab` | `l1_proxy/broadcast/DeployArbitrumOwnerProxy.s.sol/4663/run-latest.json` |
 | OPStackOwnerProxy | Optimism | 10 | `0xcad6e08e0532d523c10825821d10e3f7c845b0c0` | `l1_proxy/broadcast/DeployOPStackOwnerProxy.s.sol/10/run-latest.json` |
 | OPStackOwnerProxy | Base | 8453 | `0xd46197c8c5cba977c4c287f04ddc77f2dc105067` | `l1_proxy/broadcast/DeployOPStackOwnerProxy.s.sol/8453/run-latest.json` |
+| OPStackOwnerProxy | Unichain | 130 | `0x6ed0533539b76d160f7a2c7630c1c85313d78dcc` | `l1_proxy/broadcast/DeployOPStackOwnerProxy.s.sol/130/run-latest.json` |
+| OPStackOwnerProxy | World Chain | 480 | `0xdaa3293aab3a1da4f63ffdf5d015bb761f84a065` | `l1_proxy/broadcast/DeployOPStackOwnerProxy.s.sol/480/run-latest.json` |
+| OPStackOwnerProxy | Ink | 57073 | `0x6ed0533539b76d160f7a2c7630c1c85313d78dcc` | `l1_proxy/broadcast/DeployOPStackOwnerProxy.s.sol/57073/run-latest.json` |
+| OPStackOwnerProxy | MegaETH | 4326 | `0x112ae742db22d6a579cf47b225f17c716d27c535` | `l1_proxy/broadcast/DeployOPStackOwnerProxy.s.sol/4326/run-latest.json` |
 
 Every deployment record sets the Ethereum `StarknetOwnerProxy` as owner. Confirm this live.
+
+The Unichain, World Chain, and Ink proxies are the owner proxies for Positions v3.2 and Orders
+v3.2 on those chains. The MegaETH proxy owns Positions orig, Orders orig, Positions v3.2, and
+Orders v3.2. These four were deployed on 2026-10-08 from governance commit `50cbdcf`.
 
 ## Robinhood canonical messaging
 
