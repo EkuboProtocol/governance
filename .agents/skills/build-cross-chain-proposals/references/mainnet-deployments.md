@@ -21,8 +21,21 @@ The `StarknetOwnerProxy.l2Owner` constructor value decodes to the Governor addre
 | ArbitrumOwnerProxy | Robinhood Chain | 4663 | `0xcd87828f4f279d3c5fd7af531370298964b5eaab` | `l1_proxy/broadcast/DeployArbitrumOwnerProxy.s.sol/4663/run-latest.json` |
 | OPStackOwnerProxy | Optimism | 10 | `0xcad6e08e0532d523c10825821d10e3f7c845b0c0` | `l1_proxy/broadcast/DeployOPStackOwnerProxy.s.sol/10/run-latest.json` |
 | OPStackOwnerProxy | Base | 8453 | `0xd46197c8c5cba977c4c287f04ddc77f2dc105067` | `l1_proxy/broadcast/DeployOPStackOwnerProxy.s.sol/8453/run-latest.json` |
+| AMBOwnerProxy | Gnosis | 100 | `0xdaa3293aab3a1da4f63ffdf5d015bb761f84a065` | `l1_proxy/broadcast/DeployWave4OwnerProxy.s.sol/100/run-latest.json` |
+| FxPortalOwnerProxy | Polygon PoS | 137 | `0x6ed0533539b76d160f7a2c7630c1c85313d78dcc` | `l1_proxy/broadcast/DeployWave4OwnerProxy.s.sol/137/run-latest.json` |
 
 Every deployment record sets the Ethereum `StarknetOwnerProxy` as owner. Confirm this live.
+
+The Gnosis and Polygon proxies own Positions v3.2 and Orders v3.2 on those chains. They were
+deployed on 2026-10-08 from governance commit `8057b0b`. For both, `owner()` returns the
+immutable `l1Owner`: Ethereum L1 proxy `0x1e0ef4162e42c9bf820c307218c4e41ccca6e9cc` (bridge-only).
+`transferOwnership` and the handover functions always revert; ownership is fixed to that address, and only
+messages from it, delivered by the canonical bridge, can call them.
+
+| Proxy | Bridge argument | Other constructor argument |
+| --- | --- | --- |
+| AMBOwnerProxy, Gnosis | AMB `0x75Df5AF045d91108662D8080fD1FEFAd6aA0bb59` | `sourceChainId` 1 |
+| FxPortalOwnerProxy, Polygon PoS | FxChild `0x8397259c983751DAf40400790063935a11afa28a` | none |
 
 ## Robinhood canonical messaging
 

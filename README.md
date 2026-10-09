@@ -73,6 +73,14 @@ Contracts in this repository are designed so that they may be used together _or_
 - Owner-gated calls are authorized from either the raw owner address on L2 or an L1-to-L2 message where `msg.sender` is the `L2CrossDomainMessenger` predeploy at `0x4200000000000000000000000000000000000007` and `xDomainMessageSender()` is the L1 owner
 - The owner can call `execute(target, value, data)` from either path to make arbitrary calls from the proxy
 
+#### AMBOwnerProxy.sol and FxPortalOwnerProxy.sol: Gnosis and Polygon PoS Proxies
+
+`AMBOwnerProxy` (Gnosis Arbitrary Message Bridge) and `FxPortalOwnerProxy` (Polygon FxPortal state sync) enable an Ethereum L1 address, such as a deployed `StarknetOwnerProxy`, to perform actions on chains whose bridge reports the Ethereum sender. See [`l1_proxy/WAVE4.md`](l1_proxy/WAVE4.md).
+
+- The L1 owner is immutable (`l1Owner()`, also returned by `owner()`); the proxy's own ownership functions always revert
+- Calls are authorized only through the bridge, never directly; each message executes one atomic batch of `(target, value, data)` calls
+- `FxPortalOwnerProxy` messages carry a deadline and only execute with a `stateId` above every one executed before, so a replayed failed state sync cannot override a newer message
+
 ## Testing
 
 Make sure you have [Scarb with asdf](https://docs.swmansion.com/scarb/download#install-via-asdf) installed. You can look at the _.tool-versions_ file to know which version of Scarb is currently used.
