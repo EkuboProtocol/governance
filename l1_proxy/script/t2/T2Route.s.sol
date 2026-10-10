@@ -418,7 +418,7 @@ contract T2Route is T2Config {
     }
 
     /// @notice Destination: submits the Safe cancellation with T2_SAFE_SIGNATURES (2 signatures sorted by signer),
-    ///         checked by the Safe itself before sending. Sent by T2_SAFE_SUBMITTER (one of the test signers).
+    ///         checked by the Safe itself before sending. Sent by T2_PAYER (anyone may submit valid signatures).
     function t2CancelExec(bytes32[] calldata hashes) external {
         bool testnet = _testnet();
         (bytes memory data, bytes32 h) = t2CancelTx(hashes);
@@ -426,7 +426,7 @@ contract T2Route is T2Config {
         ISafe141 safe = ISafe141(e.canceller());
         bytes memory sigs = vm.envBytes("T2_SAFE_SIGNATURES");
         safe.checkSignatures(h, data, sigs);
-        vm.broadcast(_id(testnet, "T2_SAFE_SUBMITTER"));
+        vm.broadcast(_id(testnet, "T2_PAYER"));
         safe.execTransaction(address(e), 0, data, 0, 0, 0, 0, address(0), payable(address(0)), sigs);
         for (uint256 i = 0; i < hashes.length; i++) {
             (CCIPOwnerExecutor.OpStatus st,,) = e.ops(hashes[i]);
