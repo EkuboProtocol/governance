@@ -19,9 +19,11 @@ It binds every T2 signing step to the approved scope, the bound addresses and a 
   keystore, password in a memfd), decoded with `cast decode-transaction`, every signed field (signer, chain, nonce,
   to, value, input, gas, max fee, priority fee) is compared with the reserved intent, and the signed bytes are linked
   durably BEFORE `cast publish`. A reservation that was never linked (crash while signing) is never released.
-* Starknet identity (CFO R2): the sncast account descriptor is generated from the bound public identity (address,
-  public key, class hash, salt), the keystore bytes must match the bound sha256, and the on-chain class and public
-  key are checked, all before any password access. sncast gets explicit resource bounds, tip 0 and --nonce; the
+* Starknet identity (CFO R2, R2-D): the bound account address must be the DEPLOY_ACCOUNT address derived (public
+  data only) from the pinned OpenZeppelin class, the bound salt and constructor [public key]; the sncast account
+  descriptor is generated from that bound identity, the keystore bytes must match the bound sha256, and the on-chain
+  class and public key are checked, all before any password access. EVM keystores are bound by sha256 per signing
+  role and frozen before the reservation (CSO D-2). sncast gets explicit resource bounds, tip 0 and --nonce; the
   transaction returned by the chain must match the reserved sender, nonce, payload, type and bounds before it is
   credited, and an actual fee above the reservation stops T2.
 * stop conditions (T2-2): before every attempt, all logs of the T2 contracts must come from ledger transactions
@@ -227,6 +229,7 @@ def check_binding(b: dict, lim: dict) -> None:
         refuse("binding: schema")
     if b.get("status") != "BOUND":
         refuse("binding: status is not BOUND (addresses are bound only after key generation)")
+    check_sn_account_binding(b)  # R2-D first: derived Starknet address == every bound Starknet address field
     r = b["roles"]
     evm = [r["deployer"], r["bootstrap"], r["payer"], *r["safe_owners"]]
     if len(r["safe_owners"]) != 3:
@@ -273,7 +276,7 @@ def check_binding(b: dict, lim: dict) -> None:
     if not isinstance(b.get("op_vault"), str) or not b["op_vault"].strip():
         refuse("binding: op_vault (the named 1Password vault) is required")
     check_ledger_dir(b.get("ledger_dir"))
-    check_sn_account_binding(b)
+    check_evm_keystores(b)
     check_faucet_sources(b)
 
 
@@ -293,20 +296,134 @@ def _felt(v: Any, what: str) -> int:
     return x
 
 
+# ---- Starknet DEPLOY_ACCOUNT address derivation (CFO R2-D): public data only, no RPC, no key, no sncast.
+# Stark curve y^2 = x^3 + x + beta over p, and the Pedersen constant points of starkware `pedersen_params.json`
+# (CONSTANT_POINTS[0] shift point, [2], [250], [254], [502]). Each point is checked on the curve at import.
+SN_P = 2**251 + 17 * 2**192 + 1
+SN_BETA = 0x6f21413efbe40de150e596d72f7a8c5609ad26c15c915c1f4cdfcb99cee9e89
+SN_PEDERSEN_POINTS = (
+    (0x49ee3eba8c1600700ee1b87eb599f16716b0b1022947733551fde4050ca6804,
+     0x3ca0cfe4b3bc6ddf346d49d06ea0ed34e621062c0e056c1d0405d266e10268a),
+    (0x234287dcbaffe7f969c748655fca9e58fa8120b6d56eb0c1080d17957ebe47b,
+     0x3b056f100f96fb21e889527d41f4e39940135dd7a6c94cc6ed0268ee89e5615),
+    (0x4fa56f376c83db33f9dab2656558f3399099ec1de5e3018b7a6932dba8aa378,
+     0x3fa0984c931c9e38113e0c0e47e4401562761f92a7a23b45168f4e80ff5b54d),
+    (0x4ba4cc166be8dec764910f75b45f74b40c690c74709e90f3aa372f0bd2d6997,
+     0x40301cf5c1751f4b971e46c4ede85fcac5c59a5ce5ae7c48151f27b24b219c),
+    (0x54302dcb0e6cc1c6e44cca8f61a63bb2ca65048d53fb325d36ff12c49a58202,
+     0x1b77b3e37d13504b348046268d8ae25ce98ad783c25561a879dcc77e99c2426),
+)
+assert all((y * y - x**3 - x - SN_BETA) % SN_P == 0 for x, y in SN_PEDERSEN_POINTS)
+SN_CONTRACT_ADDRESS_PREFIX = int.from_bytes(b"STARKNET_CONTRACT_ADDRESS", "big")
+SN_ADDRESS_BOUND = 2**251 - 256
+# The ONLY supported T2 account: the OpenZeppelin account class that installed sncast 0.62.1 `account create`
+# (type open-zeppelin) uses, constructor(public_key) => calldata [public_key], deployed by DEPLOY_ACCOUNT (deployer
+# address 0, salt not modified). Any other class, constructor or deployer is refused, not guessed.
+SN_OZ_ACCOUNT_CLASS = "0x05b4b537eaa2399e3aa99c4e2e0208ebd6c71bc1467938cd52c798c601e43564"
+
+
+def _ec_add(a: tuple[int, int] | None, b: tuple[int, int] | None) -> tuple[int, int] | None:
+    if a is None:
+        return b
+    if b is None:
+        return a
+    if a[0] == b[0]:
+        if (a[1] + b[1]) % SN_P == 0:
+            return None
+        lam = (3 * a[0] * a[0] + 1) * pow(2 * a[1], -1, SN_P) % SN_P
+    else:
+        lam = (b[1] - a[1]) * pow(b[0] - a[0], -1, SN_P) % SN_P
+    x = (lam * lam - a[0] - b[0]) % SN_P
+    return x, (lam * (a[0] - x) - a[1]) % SN_P
+
+
+def _ec_mul(k: int, pt: tuple[int, int]) -> tuple[int, int] | None:
+    acc = None
+    cur: tuple[int, int] | None = pt
+    while k:
+        if k & 1:
+            acc = _ec_add(acc, cur)
+        cur = _ec_add(cur, cur)
+        k >>= 1
+    return acc
+
+
+def sn_pedersen(a: int, b: int) -> int:
+    """Starknet Pedersen hash: x of shift + a_low*P0 + a_high*P1 + b_low*P2 + b_high*P3 (248-bit low parts)."""
+    if not (0 <= a < SN_P and 0 <= b < SN_P):
+        refuse("pedersen input is not a field element")
+    shift, p0, p1, p2, p3 = SN_PEDERSEN_POINTS
+    r: tuple[int, int] | None = shift
+    for v, lo, hi in ((a, p0, p1), (b, p2, p3)):
+        r = _ec_add(r, _ec_mul(v & ((1 << 248) - 1), lo))
+        r = _ec_add(r, _ec_mul(v >> 248, hi))
+    assert r is not None
+    return r[0]
+
+
+def sn_hash_on_elements(xs: list[int]) -> int:
+    h = 0
+    for x in xs:
+        h = sn_pedersen(h, x)
+    return sn_pedersen(h, len(xs))
+
+
+def sn_contract_address(class_hash: int, salt: int, ctor: list[int], deployer: int = 0) -> int:
+    """Starknet contract address: pedersen-chain(prefix, deployer, salt, class hash, H(ctor)) mod 2**251 - 256."""
+    return sn_hash_on_elements([SN_CONTRACT_ADDRESS_PREFIX, deployer, salt, class_hash,
+                                sn_hash_on_elements(ctor)]) % SN_ADDRESS_BOUND
+
+
+def sn_account_address(s: dict) -> int:
+    """The DEPLOY_ACCOUNT address of the bound (pinned) OpenZeppelin account identity."""
+    pub = _felt(s.get("account_public_key"), "starknet account public key")
+    cls = _felt(s.get("account_class_hash"), "starknet account class hash")
+    salt = _felt(s.get("account_salt"), "starknet account salt")
+    if cls != int(SN_OZ_ACCOUNT_CLASS, 16):
+        refuse(f"binding: starknet account class {s.get('account_class_hash')} is not the supported OpenZeppelin "
+               f"account class {SN_OZ_ACCOUNT_CLASS} (no other account class or constructor is supported)")
+    return sn_contract_address(cls, salt, [pub], 0)
+
+
 def check_sn_account_binding(b: dict) -> None:
-    """CFO R2: the Starknet account identity is public metadata frozen in the addendum (no secret material)."""
-    s = b["starknet"]
-    if (s.get("account") or "").lower() != b["roles"]["starknet_account"].lower():
-        refuse("binding: starknet.account != roles.starknet_account")
-    _felt(b["roles"]["starknet_account"], "starknet account address")
-    _felt(s.get("account_public_key"), "starknet account public key")
-    _felt(s.get("account_class_hash"), "starknet account class hash")
-    _felt(s.get("account_salt"), "starknet account salt")
+    """CFO R2/R2-D: the Starknet account identity is public metadata frozen in the addendum (no secret material). The
+    account address is DERIVED from the pinned class, salt and constructor calldata [public key] with deployer 0
+    (DEPLOY_ACCOUNT) and must equal roles.starknet_account, starknet.account and every Starknet funding recipient.
+    Runs in check_binding (bind, every authorized command) and again before any password or signer is constructed."""
+    s, roles = b.get("starknet") or {}, b.get("roles") or {}
     if s.get("account_type") != "open_zeppelin":
         refuse("binding: starknet account_type must be open_zeppelin")
+    derived = sn_account_address(s)
+    rcp = [f for f in b.get("funding_recipients") or [] if f.get("chain") == f"starknet:{STARKNET_SEPOLIA}"]
+    if not rcp:
+        refuse("binding: no Starknet funding recipient")
+    for what, v in (("roles.starknet_account", roles.get("starknet_account")), ("starknet.account", s.get("account")),
+                    *((f"Starknet funding recipient {f.get('role')}", f.get("address")) for f in rcp)):
+        if _felt(v, what) != derived:
+            refuse(f"binding: {what} {v} != {hex(derived)}, the DEPLOY_ACCOUNT address derived from the bound class, "
+                   "salt and public key: refused before any password or signer")
     ks = s.get("keystore_sha256") or ""
-    if len(ks) != 64 or any(c not in "0123456789abcdef" for c in ks):
+    if not _is_sha256(ks):
         refuse("binding: starknet keystore_sha256 (sha256 of the encrypted keystore file) is required")
+
+
+def _is_sha256(v: Any) -> bool:
+    return isinstance(v, str) and len(v) == 64 and all(c in "0123456789abcdef" for c in v)
+
+
+EVM_SIGNING_ROLES = ("deployer", "bootstrap", "payer")
+
+
+def check_evm_keystores(b: dict) -> None:
+    """CSO D-2: the sha256 of each EVM signing role's encrypted keystore file is bound, like the Starknet one. Safe
+    owners never sign through the guard (offline safeTxHash signatures only), so they have no bound keystore."""
+    ks = b.get("evm_keystore_sha256")
+    if not isinstance(ks, dict) or set(ks) != set(EVM_SIGNING_ROLES) or not all(_is_sha256(ks[r]) for r in ks):
+        refuse("binding: evm_keystore_sha256 needs the sha256 of the encrypted keystore of exactly deployer, "
+               "bootstrap and payer")
+    vals = [*ks.values(), (b.get("starknet") or {}).get("keystore_sha256")]
+    if len(set(vals)) != len(vals):
+        refuse("binding: keystore digests must be pairwise distinct (one keystore per role)")
 
 
 FAUCET_FIELDS = ("chain", "source", "url", "eligibility", "eligibility_checked_at", "drip_max", "login", "region",
@@ -827,13 +944,38 @@ def _init_selectors() -> None:
         SEL[k] = _topic(s)[:10]
 
 
+CHILD_ENV_KEYS = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TERM")
+CHILD_ENV_PREFIXES = ("SCARB_", "MISE_", "XDG_")
+
+
+def child_env(extra: dict[str, str] | None = None) -> dict[str, str]:
+    """CSO D-3: signer children (cast, sncast) get a minimal allowlisted environment, not the parent's: no RPC, wallet,
+    1Password or other credentials, plus only the explicit `extra` values."""
+    env = {k: v for k, v in os.environ.items() if k in CHILD_ENV_KEYS or k.startswith(CHILD_ENV_PREFIXES)}
+    return {**env, **(extra or {})}
+
+
+def _memfd(name: str, data: bytes) -> int:
+    fd = os.memfd_create(name, 0)
+    os.write(fd, data)
+    os.lseek(fd, 0, os.SEEK_SET)
+    return fd
+
+
 @dataclass
 class Signer:
-    """Signs with `cast mktx` from an encrypted keystore; the password goes through a pipe fd, never argv or env."""
+    """Signs with `cast mktx` from an encrypted keystore whose bytes match the bound sha256 (CSO D-2). The bytes are
+    read and checked once (`freeze`), before any reservation and before any password access, and cast reads exactly
+    those frozen bytes from an anonymous memfd, so swapping the file after the check changes nothing. The password
+    goes through another memfd, never argv, env or disk."""
 
     keystore_dir: Path
     vault: str
     password_source: Callable[[str], bytes] = field(default=None)  # type: ignore[assignment]
+    keystore_sha256: dict[str, str] = field(default_factory=dict)
+    exe: str = "cast"
+    timeout: float = 120
+    frozen: dict[str, bytes] = field(default_factory=dict)
 
     def password(self, role: str) -> bytes:
         if self.password_source is not None:
@@ -843,27 +985,51 @@ class Signer:
         return subprocess.run(["op", "read", f"op://{self.vault}/t2-{role}/password"], check=True,
                               capture_output=True).stdout.rstrip(b"\n")
 
-    def sign(self, role: str, cid: int, tx: PlannedTx, max_fee: int, prio: int) -> str:
+    def freeze(self, role: str) -> bytes:
+        want = self.keystore_sha256.get(role)
+        if not _is_sha256(want):
+            refuse(f"no bound keystore_sha256 for EVM role {role}: refused before any password access")
         ks = self.keystore_dir / f"t2-{role}.json"
         if not ks.is_file():
             refuse(f"keystore {ks} missing: keys are generated only after the key-preparation approval")
+        data = ks.read_bytes()
+        if sha256_hex(data) != want:
+            refuse(f"EVM keystore {ks} differs from the bound keystore_sha256 for {role}: refused before any password "
+                   "access")
+        self.frozen[role] = data
+        return data
+
+    def sign(self, role: str, cid: int, tx: PlannedTx, max_fee: int, prio: int) -> str:
+        data = self.frozen.get(role)
+        if data is None:
+            data = self.freeze(role)
+        if sha256_hex(data) != self.keystore_sha256.get(role):
+            refuse(f"frozen keystore for {role} differs from the bound keystore_sha256")
         # cast refuses pipes and process substitution for --password-file (it requires a regular file), so the
         # password goes into an anonymous in-memory file (memfd): never on disk, never in argv or the environment.
+        k = _memfd("t2-keystore", data)
         r = os.memfd_create("t2-keystore-password", 0)
-        pw = self.password(role)
-        os.write(r, pw)
-        os.lseek(r, 0, os.SEEK_SET)
-        args = ["cast", "mktx", "--keystore", str(ks), "--password-file", f"/dev/fd/{r}", "--chain", str(cid),
-                "--nonce", str(tx.nonce), "--gas-limit", str(tx.gas), "--gas-price", str(max_fee),
-                "--priority-gas-price", str(prio), "--value", str(tx.value)]
-        args += ["--create", tx.data] if tx.to is None else [tx.to, tx.data]
         try:
-            proc = subprocess.Popen(args, pass_fds=(r,), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    env={k: v for k, v in os.environ.items() if not k.startswith(("ETH_", "CAST_"))})
-            out, err = proc.communicate(timeout=120)
-        finally:
-            os.close(r)
+            pw = self.password(role)
+            os.write(r, pw)
+            os.lseek(r, 0, os.SEEK_SET)
             del pw
+            args = [self.exe, "mktx", "--keystore", f"/dev/fd/{k}", "--password-file", f"/dev/fd/{r}", "--chain",
+                    str(cid), "--nonce", str(tx.nonce), "--gas-limit", str(tx.gas), "--gas-price", str(max_fee),
+                    "--priority-gas-price", str(prio), "--value", str(tx.value)]
+            args += ["--create", tx.data] if tx.to is None else [tx.to, tx.data]
+            proc = subprocess.Popen(args, pass_fds=(k, r), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    env=child_env())
+            try:
+                out, err = proc.communicate(timeout=self.timeout)
+            except subprocess.TimeoutExpired:
+                # CSO D-3: never leave a hung signer running. The reservation stays unlinked (permanent stop, N-2).
+                proc.kill()
+                proc.communicate()
+                raise
+        finally:
+            os.close(k)
+            os.close(r)
         if proc.returncode != 0:
             refuse(f"cast mktx failed: {err.decode()[-300:]}")
         return out.decode().strip()
@@ -967,6 +1133,7 @@ def send_plan(led: Ledger, lim: dict, binding: dict, step: str, cid: int, role: 
     for tx in plan:
         if tx.frm != addr:
             refuse(f"step {step}: planned broadcaster {tx.frm} is not the single unlocked role {role} ({addr})")
+    signer.freeze(role)  # D-2: bound keystore bytes checked and frozen before any reservation or password access
     for tx, kind in zip(plan, kinds):
         latest, pending = chain.nonce(addr), chain.nonce(addr, "pending")
         if latest != pending or tx.nonce != latest or led.mined_count(cid, addr) != latest:
@@ -1265,6 +1432,8 @@ def sn_verify_tx(tx: dict, rc: dict, a: dict, bounds: dict) -> None:
                     refuse(f"resource bound {r}.{f} {tx['resource_bounds'][r][f]} != reserved {bounds[r][f]}")
         if _int(tx["tip"]) != 0 or tx["paymaster_data"] != []:
             refuse("tip or paymaster data set")
+        if (tx["nonce_data_availability_mode"], tx["fee_data_availability_mode"]) != ("L1", "L1"):
+            refuse("nonce/fee data availability mode is not L1 (CSO D-3)")
         if exp["type"] != "DEPLOY_ACCOUNT" and tx["account_deployment_data"] != []:
             refuse("account deployment data set")
         if sn_liability(tx["resource_bounds"], _int(tx["tip"])) > int(a["max_cost"]):
@@ -1326,7 +1495,9 @@ def sn_reconcile(led: Ledger, sn: StarknetRpc, account: str) -> None:
 
 def sn_account_descriptor(binding: dict, deployed: bool) -> bytes:
     """CFO R2: the sncast account descriptor is generated from the bound public identity; an operator-supplied
-    account file is never read, so it cannot be substituted."""
+    account file is never read, so it cannot be substituted. sncast's undeployed format has no address field; R2-D
+    makes the class, salt and public key it carries derive exactly the bound address."""
+    check_sn_account_binding(binding)
     s = binding["starknet"]
     dep = {"address": hex(int(binding["roles"]["starknet_account"], 16)), "class_hash": s["account_class_hash"],
            "status": "deployed"} if deployed else \
@@ -1338,7 +1509,9 @@ def sn_account_descriptor(binding: dict, deployed: bool) -> bytes:
 
 def sn_check_identity(sn: Any, binding: dict, kind: str, keystore: bytes) -> bool:
     """Before any password or key access: keystore bytes, on-chain class and public key equal the bound identity.
-    Returns whether the account is deployed."""
+    Returns whether the account is deployed. First (R2-D) the bound address must be the DEPLOY_ACCOUNT address derived
+    from the bound class, salt and public key, so funding, descriptor and deploy all name one account."""
+    check_sn_account_binding(binding)
     s, acct = binding["starknet"], binding["roles"]["starknet_account"]
     if sha256_hex(keystore) != s["keystore_sha256"]:
         refuse("Starknet keystore file differs from the bound keystore_sha256: refused before any password or key "
@@ -1369,12 +1542,10 @@ class Sncast:
         fds = []
         try:
             for name, data in (("t2-starknet-keystore", self.keystore), ("t2-starknet-account", self.descriptor)):
-                fd = os.memfd_create(name, 0)
-                os.write(fd, data)
-                os.lseek(fd, 0, os.SEEK_SET)
-                fds.append(fd)
+                fds.append(_memfd(name, data))
             pw = self.password_source()
-            env = {**os.environ, "KEYSTORE_PASSWORD": pw}  # sncast reads only this variable (CSO L-f: testnet only)
+            # sncast reads only this variable (CSO L-f: testnet only); everything else is the minimal env (D-3)
+            env = child_env({"KEYSTORE_PASSWORD": pw})
             cmd = [self.exe, "--keystore", f"/dev/fd/{fds[0]}", "--account", f"/dev/fd/{fds[1]}", "--json", *args]
             p = subprocess.run(cmd, pass_fds=tuple(fds), capture_output=True, text=True, env=env, cwd=cwd)
             del pw, env
@@ -1393,6 +1564,7 @@ def sn_send(led: Ledger, lim: dict, binding: dict, kind: str, args: list[str], s
     """Starknet: reconcile + watch -> caps -> durable reservation of the kind max (with the exact expected tx) ->
     sncast dry-run -> explicit resource bounds (liability <= reservation, durable) -> sncast send with those bounds,
     tip 0 and --nonce -> link hash -> credit only a transaction that matches the reservation."""
+    check_sn_account_binding(binding)  # R2-D: before any reservation or sncast run
     account = binding["roles"]["starknet_account"]
     require_sn_chain(sn)
     sn_reconcile(led, sn, account)
@@ -1487,7 +1659,8 @@ def cmd_send(a: argparse.Namespace) -> None:
         watch_evm(led, scope.binding, chains, None, topics)
         watch_starknet(led, scope.binding, sn)
         plan = load_plan(Path(a.plan), cid)
-        signer = Signer(Path(os.environ["T2_KEYSTORE_DIR"]), env["T2_OP_VAULT"])
+        signer = Signer(Path(os.environ["T2_KEYSTORE_DIR"]), env["T2_OP_VAULT"],
+                        keystore_sha256=dict(scope.binding["evm_keystore_sha256"]))
         send_plan(led, lim, scope.binding, a.step, cid, a.role, plan, chains[cid], signer, topics["Dispatched"],
                   fault=_fault_hook)
         watch_evm(led, scope.binding, chains, None, topics)
@@ -1572,17 +1745,27 @@ def cmd_sn(a: argparse.Namespace) -> None:
     args = a.sncast
     if args and args[0] == "--":
         args = args[1:]
+    sn_run(scope.binding, lim, a.kind, args, sn, url, Path(os.environ["T2_KEYSTORE_DIR"]) / "t2-starknet.json",
+           lambda: op_password(env["T2_OP_VAULT"], "t2-starknet"), ledger_path(scope.binding), fault=_fault_hook)
+    if a.kind in SN_KIND_CONTRACT:
+        print("\n".join(sn_check_deployment(sn, scope.binding, SN_KIND_CONTRACT[a.kind])))
+
+
+def sn_run(binding: dict, lim: dict, kind: str, args: list[str], sn: Any, url: str, keystore_path: Path,
+           password_factory: Callable[[], Callable[[], str]], ledger: Path, exe: str = "sncast",
+           fault: Callable[[str, dict], None] = _no_fault, polls: tuple[int, float] = (450, 2.0)) -> dict:
+    """The `sn` command after authorization. Order: chain id, argv shape, R2-D derived account address, keystore
+    digest, on-chain identity; only then is the password source constructed (it is first CALLED inside the sncast
+    dry-run, after the durable reservation)."""
     require_sn_chain(sn)
-    sn_validate(a.kind, args, scope.binding, url)
-    keystore = (Path(os.environ["T2_KEYSTORE_DIR"]) / "t2-starknet.json").read_bytes()
-    deployed = sn_check_identity(sn, scope.binding, a.kind, keystore)
-    runner = Sncast(keystore, sn_account_descriptor(scope.binding, deployed),
-                    op_password(env["T2_OP_VAULT"], "t2-starknet"))
-    cwd = repo_root() / SN_CONTRACTS[a.kind.split("-", 1)[1]][1] if a.kind in SN_DECLARE_NAME else None
-    with Ledger(ledger_path(scope.binding)) as led:
-        sn_send(led, lim, scope.binding, a.kind, args, sn, runner, cwd=cwd, fault=_fault_hook)
-        if a.kind in SN_KIND_CONTRACT:
-            print("\n".join(sn_check_deployment(sn, scope.binding, SN_KIND_CONTRACT[a.kind])))
+    check_sn_account_binding(binding)
+    sn_validate(kind, args, binding, url)
+    keystore = keystore_path.read_bytes()
+    deployed = sn_check_identity(sn, binding, kind, keystore)
+    runner = Sncast(keystore, sn_account_descriptor(binding, deployed), password_factory(), exe)
+    cwd = repo_root() / SN_CONTRACTS[kind.split("-", 1)[1]][1] if kind in SN_DECLARE_NAME else None
+    with Ledger(ledger) as led:
+        return sn_send(led, lim, binding, kind, args, sn, runner, cwd=cwd, fault=fault, polls=polls)
 
 
 def cmd_sn_check(_: argparse.Namespace) -> None:
@@ -1888,6 +2071,11 @@ def sn_addr(kind: str, calldata: list[str], account: str) -> str:
 def build_binding(keys: dict, lim: dict, proxy_creation_code: str) -> dict:
     d, owners = keys["deployer"], keys["safe_owners"]
     acct = keys["starknet_account"].lower()
+    ident = {"account_public_key": keys.get("starknet_public_key"), "account_class_hash":
+             keys.get("starknet_account_class_hash"), "account_salt": keys.get("starknet_account_salt")}
+    if _felt(acct, "starknet_account") != sn_account_address(ident):  # R2-D, before anything is derived from it
+        refuse(f"keys: starknet_account {acct} is not the DEPLOY_ACCOUNT address of the given class, salt and "
+               "public key")
     token = sn_addr("token", [acct], acct)
     staker = sn_addr("staker", [token], acct)
     governor = sn_addr("governor", [staker, *SN_GOVERNOR_CONFIG], acct)
@@ -1903,6 +2091,7 @@ def build_binding(keys: dict, lim: dict, proxy_creation_code: str) -> dict:
                   "starknet_account": acct},
         "safe_salt": "1232",
         "ledger_dir": keys["ledger_dir"],
+        "evm_keystore_sha256": {r: str(v or "").lower() for r, v in (keys.get("evm_keystore_sha256") or {}).items()},
         "starknet": {"account": acct, "account_public_key": keys["starknet_public_key"].lower(),
                      "account_class_hash": keys["starknet_account_class_hash"].lower(),
                      "account_salt": keys["starknet_account_salt"].lower(), "account_type": "open_zeppelin",

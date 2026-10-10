@@ -9,7 +9,8 @@
 #   2. a fresh simulation of the step, whose transactions become the plan;
 #   3. `t2_guard.py send`: ledger reconciliation and T2 stop conditions, then per transaction: nonce, base fee and
 #      cumulative caps checked, the unsigned intent and its maximum liability reserved durably in the ledger, THEN
-#      signed by the step's SINGLE role keystore (`$T2_KEYSTORE_DIR/t2-<role>.json`, password from 1Password in a
+#      signed by the step's SINGLE role keystore (`$T2_KEYSTORE_DIR/t2-<role>.json`, whose bytes must match the bound
+#      evm_keystore_sha256 and are frozen before the reservation (EKU-1272 D-2); password from 1Password in a
 #      memfd), every signed field compared with the reservation, the signed bytes linked durably, then published and
 #      reconciled from the receipt (EKU-1268);
 #   4. a read-only post-check over raw RPC.

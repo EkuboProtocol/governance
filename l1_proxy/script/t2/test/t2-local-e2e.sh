@@ -50,9 +50,10 @@ for r in deployer bootstrap payer safe-signer-a safe-signer-b safe-signer-c; do
 done
 cat > "$W/bin/op" <<EOF
 #!/bin/sh
-# TEST-ONLY 1Password shim: op read op://<vault>/<item>/password
+# TEST-ONLY 1Password shim: op read op://<vault>/<item>/password (every read is logged: password-access evidence)
 [ "\$1" = read ] || exit 2
 item=\$(printf '%s' "\$2" | cut -d/ -f4)
+echo "\$item" >> "$W/op-reads.log"
 cat "$W/pw/\$item"
 EOF
 chmod +x "$W/bin/op"
@@ -77,22 +78,35 @@ git -C "$R" -c protocol.file.allow=always submodule update --init -q
 git -C "$R" config user.name "t2-local-e2e"
 git -C "$R" config user.email "t2-local-e2e@invalid"
 T2="$R/l1_proxy/script/t2"
-SNACCT="0x0$(head -c 31 /dev/urandom | od -An -tx1 | tr -d ' \n' | cut -c1-62)"
 felt() { printf '0x0%s' "$(head -c 31 /dev/urandom | od -An -tx1 | tr -d ' \n' | cut -c1-62)"; }
-# Starknet identity: LOCAL TEST public values only (this e2e sends nothing on Starknet; no Starknet key exists).
+# Starknet identity: LOCAL TEST public values only (this e2e sends nothing on Starknet; no Starknet key exists). The
+# address is the DEPLOY_ACCOUNT address of the pinned class, salt and public key (R2-D; bind refuses anything else).
 head -c 64 /dev/urandom > "$W/sn-keystore-placeholder"
+SNPK="$(felt)"; SNSALT="$(felt)"
+SNCLASS="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import t2_guard as g; print(g.SN_OZ_ACCOUNT_CLASS)' "$T2")"
+SNACCT="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import t2_guard as g
+print(hex(g.sn_account_address({"account_public_key": sys.argv[2], "account_class_hash": sys.argv[3], "account_salt": sys.argv[4]})))' \
+  "$T2" "$SNPK" "$SNCLASS" "$SNSALT")"
+ksha() { sha256sum "$W/ks/t2-$1.json" | cut -d' ' -f1; }
 jq -n --arg d "${ADDR[deployer]}" --arg b "${ADDR[bootstrap]}" --arg p "${ADDR[payer]}" \
   --arg a "${ADDR[safe-signer-a]}" --arg bb "${ADDR[safe-signer-b]}" --arg c "${ADDR[safe-signer-c]}" --arg s "$SNACCT" \
-  --arg pk "$(felt)" --arg ch "$(felt)" --arg salt "$(felt)" --arg ks "$(sha256sum "$W/sn-keystore-placeholder" | cut -d' ' -f1)" \
+  --arg pk "$SNPK" --arg ch "$SNCLASS" --arg salt "$SNSALT" --arg ks "$(sha256sum "$W/sn-keystore-placeholder" | cut -d' ' -f1)" \
+  --arg kd "$(ksha deployer)" --arg kb "$(ksha bootstrap)" --arg kp "$(ksha payer)" \
   --arg ld "$W/ledger" \
   '{deployer:$d, bootstrap:$b, payer:$p, safe_owners:[$a,$bb,$c], starknet_account:$s, op_vault:"local-e2e",
     ledger_dir:$ld, starknet_public_key:$pk, starknet_account_class_hash:$ch, starknet_account_salt:$salt,
-    starknet_keystore_sha256:$ks,
+    starknet_keystore_sha256:$ks, evm_keystore_sha256:{deployer:$kd, bootstrap:$kb, payer:$kp},
     faucet_sources:[["eip155:11155111"],["eip155:97"],["eip155:10143"],["starknet:SN_SEPOLIA"]] | map({chain:.[0],
       source:"LOCAL TEST fixture", url:"https://faucet.invalid/", eligibility:"LOCAL TEST ONLY: no faucet is used",
       eligibility_checked_at:"2026-10-10T00:00:00Z", drip_max:"1", login:"none", region:"none",
       operator:"LOCAL TEST (no human, no request)", automated_allowed:false, paid:false, mainnet_prerequisite:false})}' \
   > "$W/keys.json"
+jq '.starknet_account_salt = "0x1"' "$W/keys.json" > "$W/keys-wrong-salt.json"
+if python3 "$T2/t2_guard.py" bind --keys "$W/keys-wrong-salt.json" --out "$W/never.json" 2> "$W/bind.log"; then
+  die "bind accepted a Starknet address that is not derived from its salt"
+fi
+grep -q "not the DEPLOY_ACCOUNT address" "$W/bind.log" && [ ! -e "$W/never.json" ] || die "wrong-salt bind: other reason"
+ok "bind refuses a Starknet address not derived from the bound class, salt and public key (R2-D)"
 python3 "$T2/t2_guard.py" bind --keys "$W/keys.json"
 git -C "$R" commit -q -am "LOCAL TEST binding (throwaway keys)"
 
@@ -144,19 +158,23 @@ T2_PAYER="${ADDR[bootstrap]}" expect_refused "differs from the bound addendum" d
 T2_MAX_FEE_WEI=3000000000000000 expect_refused "differs from the bound addendum" dispatch 0x00 \
   && ok "raised T2_MAX_FEE_WEI override refused"
 
-log "two-role ping (T2-1/F3)"
+log "two-role ping (T2-1/F3) and bound EVM keystores (D-2)"
 mkdir -p "$W/ks-swap" && cp "$W/ks/t2-payer.json" "$W/ks-swap/t2-bootstrap.json"
-cp "$W/pw/t2-payer" "$W/pw/t2-bootstrap.swap"
 b0="$(nonce "$SEPOLIA_RPC_URL" "${ADDR[bootstrap]}")"; p0="$(nonce "$SEPOLIA_RPC_URL" "${ADDR[payer]}")"
-mv "$W/pw/t2-bootstrap" "$W/pw/t2-bootstrap.real" && mv "$W/pw/t2-bootstrap.swap" "$W/pw/t2-bootstrap"
-T2_KEYSTORE_DIR="$W/ks-swap" expect_refused "signed transaction field signer" ping-request 97 259200
-mv "$W/pw/t2-bootstrap.real" "$W/pw/t2-bootstrap"
+l0="$(grep -c '"type":"reserve"' "$W"/ledger/ledger-*.jsonl)"; r0="$(wc -l < "$W/op-reads.log")"
+T2_KEYSTORE_DIR="$W/ks-swap" expect_refused "differs from the bound keystore_sha256" ping-request 97 259200
 [ "$(nonce "$SEPOLIA_RPC_URL" "${ADDR[bootstrap]}")" = "$b0" ] && [ "$(nonce "$SEPOLIA_RPC_URL" "${ADDR[payer]}")" = "$p0" ] \
-  || die "mismatched keystore published something"
-ok "payer keystore under the bootstrap role: signed bytes refused, nothing published"
+  || die "substituted keystore published something"
+[ "$(grep -c '"type":"reserve"' "$W"/ledger/ledger-*.jsonl)" = "$l0" ] && [ "$(wc -l < "$W/op-reads.log")" = "$r0" ] \
+  || die "substituted keystore reached the ledger or a password read"
+ok "payer keystore under the bootstrap role: refused before any reservation or password read, nothing published"
+mv "$W/pw/t2-bootstrap" "$W/pw/t2-bootstrap.real" && printf 'wrong' > "$W/pw/t2-bootstrap"
+expect_refused "cast mktx failed" ping-request 97 259200
+mv "$W/pw/t2-bootstrap.real" "$W/pw/t2-bootstrap"
+[ "$(nonce "$SEPOLIA_RPC_URL" "${ADDR[bootstrap]}")" = "$b0" ] || die "a failed signing published something"
 grep -q '"type":"void"' "$W"/ledger/ledger-*.jsonl && grep -q 'never published' "$W"/ledger/ledger-*.jsonl \
   || die "the refused signing attempt was not reserved and closed as void"
-ok "that attempt was reserved before signing and closed as void (attempt still counted)"
+ok "bound keystore with a wrong password: reserved before signing, closed as void (attempt counted), nothing published"
 
 python3 -c 'import fcntl, sys, time; f = open(sys.argv[1], "a"); fcntl.flock(f, fcntl.LOCK_EX); time.sleep(60)' \
   "$W/ledger/$(ls "$W/ledger" | grep '\.lock$')" & lockpid=$!

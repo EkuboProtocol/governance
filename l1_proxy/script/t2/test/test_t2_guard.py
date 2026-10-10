@@ -15,6 +15,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.dont_write_bytecode = True
 T2 = Path(__file__).resolve().parents[1]
@@ -25,7 +26,11 @@ import t2_guard as g  # noqa: E402
 LIM = json.loads((T2 / "t2-limits.json").read_text())
 A = {k: "0x" + f"{i + 1:02x}" * 20 for i, k in enumerate(
     ["deployer", "bootstrap", "payer", "sa", "sb", "sc"])}
-SN_ACCT = "0x0" + "ab" * 31
+SN_PUB, SN_CLASS, SN_SALT_A = "0x" + "5a" * 31, g.SN_OZ_ACCOUNT_CLASS, "0x" + "5c" * 8
+# R2-D: the bound address is the DEPLOY_ACCOUNT address of the fixture identity (vectors: StarknetAddressDerivationTest)
+SN_ACCT = hex(g.sn_contract_address(int(SN_CLASS, 16), int(SN_SALT_A, 16), [int(SN_PUB, 16)]))
+EVM_KS = {r: ('{"crypto":{"cipher":"aes-128-ctr"},"id":"evm-%s-fixture","version":3}' % r).encode()
+          for r in ("deployer", "bootstrap", "payer")}
 
 
 def binding() -> dict:
@@ -49,10 +54,10 @@ def binding() -> dict:
             "max": LIM["starknet"]["balance_cap_fri"]}],
         "faucet_sources": faucet_sources(),
         "op_vault": "t2-unit-test", "ledger_dir": "/nonexistent/t2-unit-test-ledger",
+        "evm_keystore_sha256": {r: g.sha256_hex(v) for r, v in EVM_KS.items()},
     }
 
 
-SN_PUB, SN_CLASS, SN_SALT_A = "0x" + "5a" * 31, "0x" + "5b" * 31, "0x" + "5c" * 8
 SN_KS = b'{"crypto":{"cipher":"aes-128-ctr"},"id":"unit-test-fixture","version":3}'
 
 
@@ -330,7 +335,8 @@ class BindingTest(unittest.TestCase):
             {"chain": "eip155:97", "role": "safe-signer-a", "address": A["sa"], "max": "1"}), "never funded")
         self.refused(lambda b: b["funding_recipients"][0].update(max=str(10**19)), "above the role cap")
         self.refused(lambda b: b["funding_recipients"][0].update(address=A["sa"]), "address != bound role")
-        self.refused(lambda b: b["funding_recipients"].pop(), "exactly the funded roles")
+        self.refused(lambda b: b["funding_recipients"].pop(0), "exactly the funded roles")
+        self.refused(lambda b: b["funding_recipients"].pop(), "no Starknet funding recipient")
         self.refused(lambda b: b["funding_recipients"][0].update(chain="eip155:1"), "not a funded role")
 
 
@@ -623,6 +629,9 @@ class FakeSigner:
     def __init__(self, ledger_path, signer_addr=None, crash=False):
         self.path, self.signer_addr, self.crash = Path(ledger_path), signer_addr, crash
         self.calls, self.decoded, self.disk_state = 0, {}, []
+
+    def freeze(self, role):
+        return b""
 
     def sign(self, role, cid, tx, max_fee, prio):
         self.calls += 1
@@ -1030,9 +1039,10 @@ class FakeRunner:
     """Key-free sncast stand-in. Every run asserts a durable, unlinked Starknet reservation is already on disk; the
     'send' builds the transaction like sncast does from the guard's argv, then `tamper` may corrupt it."""
 
-    def __init__(self, ledger_path, sn, tamper=None, fee=None, est=None, crash_on_send=False):
+    def __init__(self, ledger_path, sn, tamper=None, fee=None, est=None, crash_on_send=False, pending=False):
         self.path, self.sn, self.tamper, self.fee, self.est, self.crash = Path(ledger_path), sn, tamper, fee, est, \
             crash_on_send
+        self.pending = pending  # sent but not yet included: no receipt, nonce unchanged
         self.keystore, self.descriptor = SN_KS, g.sn_account_descriptor(sn_binding(), True)
         self.calls = []
 
@@ -1060,8 +1070,10 @@ class FakeRunner:
         if self.tamper:
             self.tamper(tx, rc)
         h = "0x" + os.urandom(31).hex()
-        self.sn.txs[h], self.sn.rcs[h] = tx, rc
-        self.sn.nonce_v += 1
+        self.sn.txs[h] = tx
+        if not self.pending:
+            self.sn.rcs[h] = rc
+            self.sn.nonce_v += 1
         return [{"command": "invoke", "transaction_hash": h, "type": "response"}]
 
 
@@ -1139,7 +1151,8 @@ class StarknetSendTest(LedgerCase):
     def test_signed_liability_above_reservation_refused(self):
         b = {r: {"max_amount": "0x10", "max_price_per_unit": "0x10"} for r in g.SN_RESOURCES}
         txd = {"type": "INVOKE", "version": "0x3", "nonce": "0x0", "sender_address": "0x1", "resource_bounds": b,
-               "tip": "0x0", "paymaster_data": [], "account_deployment_data": []}
+               "tip": "0x0", "paymaster_data": [], "account_deployment_data": [], "nonce_data_availability_mode": "L1",
+               "fee_data_availability_mode": "L1"}
         a = {"nonce": 0, "max_cost": str(3 * 256), "expect": {"type": "INVOKE", "sender_address": "0x1"}}
         g.sn_verify_tx(txd, {}, a, b)
         with self.assertRaisesRegex(g.Refused, "liability"):
@@ -1223,14 +1236,19 @@ class StarknetIdentityTest(unittest.TestCase):
                            "ks = open(a[a.index('--keystore') + 1], 'rb').read()\n"
                            "acct = open(a[a.index('--account') + 1]).read()\n"
                            f"json.dump({{'argv': a, 'ks': ks.decode(), 'acct': acct, "
-                           f"'pw': os.environ.get('KEYSTORE_PASSWORD')}}, open({str(out)!r}, 'w'))\n"
+                           f"'pw': os.environ.get('KEYSTORE_PASSWORD'), 'env_keys': sorted(os.environ)}}, "
+                           f"open({str(out)!r}, 'w'))\n"
                            "print(json.dumps({'transaction_hash': '0x1'}))\n")
             exe.chmod(0o700)
             pw_calls = []
             r = g.Sncast(SN_KS, g.sn_account_descriptor(sn_binding(), True), lambda: pw_calls.append(1) or "pw", str(exe))
             self.assertEqual(pw_calls, [])  # constructing the runner reads no password
-            self.assertEqual(g._find_hash(r.run(["invoke"])), "0x1")
+            with mock.patch.dict(os.environ, {"T2_D3_SENTINEL": "x", "STARKNET_ACCOUNTS_FILE": "/x"}):
+                self.assertEqual(g._find_hash(r.run(["invoke"])), "0x1")
             seen = json.loads(out.read_text())
+            # D-3: minimal environment (allowlist + KEYSTORE_PASSWORD only)
+            self.assertTrue(all(k == "KEYSTORE_PASSWORD" or k in g.CHILD_ENV_KEYS or k.startswith(g.CHILD_ENV_PREFIXES)
+                                for k in seen["env_keys"]), seen["env_keys"])
             self.assertEqual((seen["ks"].encode(), seen["acct"].encode(), seen["pw"]),
                              (SN_KS, g.sn_account_descriptor(sn_binding(), True), "pw"))
             self.assertTrue(seen["argv"][seen["argv"].index("--account") + 1].startswith("/dev/fd/"))
@@ -1349,6 +1367,472 @@ class FaucetRegisterTest(LedgerCase):
         self.assertLess(0, mx)
 
 
+# ---------------------------------------------------------------- R2-D: DEPLOY_ACCOUNT address derived before secrets
+# Independent vectors. PEDERSEN: starkware crypto test vector. REAL: DEPLOY_ACCOUNT transactions ACCEPTED_ON_L1 on
+# Starknet Sepolia (read-only public RPC, EKU-1272): tx hash, block, class, salt, constructor calldata, receipt
+# contract_address. The first uses the pinned OpenZeppelin class with an sncast-style 8-byte salt; the other two are
+# other account classes (single- and multi-felt constructors) that the guard must refuse to bind. SNCAST: address
+# printed by installed sncast 0.62.1 `account create` (local fake node, throwaway key since deleted).
+PEDERSEN_VECTOR = (0x03d937c035c878245caf64531a5756109c53068da139362728feb561405371cb,
+                   0x0208a0a10250e382e1e4bbe2880906c2791bf6275695e02fbbc6aeff9cd8b31a,
+                   0x030e480bed5fe53fa909cc0f8c4d99b8f9f2c016be4c41e13a4848797979c662)
+REAL_DEPLOY_ACCOUNT = (
+    ("0x12ba9a89eaf532eb980040dd30bb999ff9a045c8e666918dac91f5cf90c9d4b", 16117795,
+     "0x5b4b537eaa2399e3aa99c4e2e0208ebd6c71bc1467938cd52c798c601e43564", "0x5bdb506a105905a3",
+     ["0x2ab910bc01ba2b04a38aab0a8e689a0f37c59888b90776e0a192461c2dfc77c"],
+     "0x1279b582fca886d3d17ea4f57bebafe80072acfa0bd92189017f8994d9fe954"),
+    ("0x5b567957d260b0d285be72cf3cb2fe69b5ad7cb45007f8dd8db720aac5b00f4", 16315969,
+     "0x5400e90f7e0ae78bd02c77cd75527280470e2fe19c54970dd79dc37a9d3645c",
+     "0x4956b5add51684853fed1b7ae9f8b4893d1944a7b03a0b201c6dad477fae97d",
+     ["0x4956b5add51684853fed1b7ae9f8b4893d1944a7b03a0b201c6dad477fae97d"],
+     "0x1f81c43c1d86b5d12978f52143c99b06798c3095688a8698471cbaf6ca7dd0d"),
+    ("0x482a355cf4637c6b22c88ec0784daa29a254168f9b0b28843ffdc06aa302072", 16331907,
+     "0x6e150953b26271a740bf2b6e9bca17cc52c68d765f761295de51ceb8526ee72",
+     "0x2cd7471358418aa7c420fb09e939fd70c7c149593a1941cb25718d2e789fd93",
+     ["0x1", "0x2", "0x2cd7471358418aa7c420fb09e939fd70c7c149593a1941cb25718d2e789fd93",
+      "0x1b765299a040e6ab10e483baaa75b6b705135e4fee4ec909b7c2c6847fffbf3"],
+     "0x54e7f81b46ce9a250daed8198e72b00ba5b72136b25e176c48a9b6296b99741"),
+)
+SNCAST_CREATE_VECTOR = ("0x6a6daaf5102cb6ac", "0x11a31162172947f8c5331f2b117ca6c08ab77896fd520b0b1c2ed28a1c0fd8b",
+                        "0x03d630abda0eb052b3f18d01df5530d8b22b691fd7ba4bdb2008d7a8496096e8")
+
+
+def set_sn_address(b, addr, recipient=True):
+    b["roles"]["starknet_account"] = b["starknet"]["account"] = addr
+    if recipient:
+        next(f for f in b["funding_recipients"] if f["chain"] == "starknet:SN_SEPOLIA")["address"] = addr
+    return b
+
+
+def r2d_mutations():
+    """(name, mutate, refusal pattern): each makes the bound address differ from the derived one or drops a field."""
+    other = "0x0" + "ab" * 31
+    pub, cls, salt = int(SN_PUB, 16), int(SN_CLASS, 16), int(SN_SALT_A, 16)
+    ctor_variant = hex(g.sn_contract_address(cls, salt, [pub, 0]))
+    deployer_variant = hex(g.sn_contract_address(cls, salt, [pub], 0x1))
+    derived = "DEPLOY_ACCOUNT address derived"
+    st = lambda **kw: (lambda b: b["starknet"].update(kw))  # noqa: E731
+    rcp = lambda b: next(f for f in b["funding_recipients"] if f["chain"] == "starknet:SN_SEPOLIA")  # noqa: E731
+    return [
+        ("all address fields wrong", lambda b: set_sn_address(b, other), derived),
+        ("roles.starknet_account wrong", lambda b: b["roles"].update(starknet_account=other), derived),
+        ("starknet.account wrong", st(account=other), derived),
+        ("funding recipient wrong", lambda b: rcp(b).update(address=other), derived),
+        ("salt 0x1 (CFO probe)", st(account_salt="0x1"), derived),
+        ("salt 0x2 (CFO probe)", st(account_salt="0x2"), derived),
+        ("public key wrong", st(account_public_key="0x" + "77" * 31), derived),
+        ("unsupported class (real Sepolia account class)", st(account_class_hash=REAL_DEPLOY_ACCOUNT[1][2]),
+         "not the supported OpenZeppelin account class"),
+        ("arbitrary class", st(account_class_hash="0x" + "5b" * 31), "not the supported OpenZeppelin account class"),
+        ("address of another constructor [pub, 0]", lambda b: set_sn_address(b, ctor_variant), derived),
+        ("address with a non-zero deployer", lambda b: set_sn_address(b, deployer_variant), derived),
+        ("missing public key", lambda b: b["starknet"].pop("account_public_key"), "public key is not a non-zero felt"),
+        ("missing class hash", lambda b: b["starknet"].pop("account_class_hash"), "class hash is not a non-zero felt"),
+        ("missing salt", lambda b: b["starknet"].pop("account_salt"), "salt is not a non-zero felt"),
+        ("missing starknet.account", lambda b: b["starknet"].pop("account"), "starknet.account is not a non-zero felt"),
+        ("missing roles.starknet_account", lambda b: b["roles"].pop("starknet_account"),
+         "roles.starknet_account is not a non-zero felt"),
+        ("missing Starknet funding recipient", lambda b: b.update(funding_recipients=[
+            f for f in b["funding_recipients"] if f["chain"] != "starknet:SN_SEPOLIA"]), "no Starknet funding recipient"),
+        ("missing account_type", lambda b: b["starknet"].pop("account_type"), "account_type"),
+    ]
+
+
+class StarknetAddressDerivationTest(unittest.TestCase):
+    """CFO R2-D: the DEPLOY_ACCOUNT address is derived from public data and matched before any secret is touched."""
+
+    def test_known_independent_vectors(self):
+        a, b, h = PEDERSEN_VECTOR
+        self.assertEqual(g.sn_pedersen(a, b), h)
+        for txh, _blk, cls, salt, ctor, addr in REAL_DEPLOY_ACCOUNT:
+            with self.subTest(tx=txh):
+                self.assertEqual(g.sn_contract_address(int(cls, 16), int(salt, 16), [int(x, 16) for x in ctor]),
+                                 int(addr, 16))
+        txh, _blk, cls, salt, (pub,), addr = REAL_DEPLOY_ACCOUNT[0]
+        self.assertEqual(int(cls, 16), int(g.SN_OZ_ACCOUNT_CLASS, 16))  # the pinned class is a real Sepolia account
+        self.assertEqual(g.sn_account_address({"account_public_key": pub, "account_class_hash": cls,
+                                               "account_salt": salt}), int(addr, 16))
+        salt, pub, addr = SNCAST_CREATE_VECTOR
+        self.assertEqual(g.sn_account_address({"account_public_key": pub, "account_class_hash": g.SN_OZ_ACCOUNT_CLASS,
+                                               "account_salt": salt}), int(addr, 16))
+        for txh, _blk, cls, salt, ctor, _addr in REAL_DEPLOY_ACCOUNT[1:]:  # other classes: refused, not guessed
+            with self.assertRaisesRegex(g.Refused, "not the supported OpenZeppelin account class"):
+                g.sn_account_address({"account_public_key": ctor[-1], "account_class_hash": cls, "account_salt": salt})
+
+    def test_address_is_reduced_below_the_l2_address_bound(self):
+        real = g.sn_hash_on_elements
+        with mock.patch.object(g, "sn_hash_on_elements", lambda xs: g.SN_ADDRESS_BOUND + 5 if len(xs) == 5 else real(xs)):
+            self.assertEqual(g.sn_contract_address(1, 2, [3]), 5)
+
+    def test_valid_binding_passes_every_boundary(self):
+        b = sn_binding()
+        g.check_binding(b, LIM)
+        g.check_sn_account_binding(b)
+        self.assertEqual(int(b["roles"]["starknet_account"], 16), g.sn_account_address(b["starknet"]))
+        sn = FakeSn()
+        self.assertTrue(g.sn_check_identity(sn, b, "vote", SN_KS))
+        sn.classes.clear()
+        self.assertFalse(g.sn_check_identity(sn, b, "account-deploy", SN_KS))
+
+    def test_every_mismatch_refused_in_binding_identity_and_descriptor(self):
+        for name, mutate, pat in r2d_mutations():
+            with self.subTest(name=name):
+                b = sn_binding()
+                mutate(b)
+                with self.assertRaises(g.Refused):
+                    g.check_binding(b, LIM)  # full binding validation (bind and every authorized command)
+                with self.assertRaisesRegex(g.Refused, pat):
+                    g.check_sn_account_binding(b)
+                sn = FakeSn()
+                sn.classes.clear()
+                with self.assertRaisesRegex(g.Refused, pat):
+                    g.sn_check_identity(sn, b, "account-deploy", SN_KS)
+                with self.assertRaisesRegex(g.Refused, pat):
+                    g.sn_account_descriptor(b, False)
+
+    def test_bind_refuses_inconsistent_keys_before_deriving_anything(self):
+        b = sn_binding()
+        keys = {"deployer": A["deployer"], "bootstrap": A["bootstrap"], "payer": A["payer"],
+                "safe_owners": [A["sa"], A["sb"], A["sc"]], "starknet_account": SN_ACCT, "op_vault": "t2-unit-test",
+                "ledger_dir": b["ledger_dir"], "starknet_public_key": SN_PUB, "starknet_account_class_hash": SN_CLASS,
+                "starknet_account_salt": SN_SALT_A, "starknet_keystore_sha256": g.sha256_hex(SN_KS),
+                "evm_keystore_sha256": b["evm_keystore_sha256"], "faucet_sources": faucet_sources()}
+        calls = []
+        stubs = {"sn_addr": lambda kind, cd, acct: calls.append(kind) or "0x" + f"{len(calls):02x}" * 31,
+                 "create_addr": lambda d, n: "0x" + f"{0x60 + n:02x}" * 20,
+                 "safe_addr": lambda o, s, c: "0x" + "70" * 20}
+        with mock.patch.multiple(g, **stubs):
+            out = g.build_binding(keys, LIM, "0x00")
+            self.assertEqual((out["evm_keystore_sha256"], len(calls)), (b["evm_keystore_sha256"], 3))
+            for k, v in (("starknet_account_salt", "0x1"), ("starknet_public_key", "0x" + "77" * 31),
+                         ("starknet_account", "0x0" + "ab" * 31), ("starknet_account_class_hash", "0x" + "5b" * 31)):
+                calls.clear()
+                with self.subTest(k=k), self.assertRaises(g.Refused):
+                    g.build_binding(dict(keys, **{k: v}), LIM, "0x00")
+                self.assertEqual(calls, [])  # refused before any token/staker/governor derivation
+            with self.assertRaisesRegex(g.Refused, "evm_keystore_sha256"):
+                g.build_binding(dict(keys, evm_keystore_sha256={"deployer": "ab" * 32}), LIM, "0x00")
+
+
+FAKE_SNCAST = r'''#!/usr/bin/env python3
+import json, os, sys
+open(os.environ.get("T2_TEST_CALLS") or sys.argv[0] + ".calls", "a").write(json.dumps(sys.argv[1:]) + "\n")
+print(json.dumps({"type": "error", "error": "fake sncast: nothing is signed or sent"}))
+'''
+
+
+class SnRunPrePasswordTest(unittest.TestCase):
+    """R2-D at the `sn` command boundary (sn_run): with a wrong or incomplete identity, the password source is never
+    constructed or called, sncast never runs (no dry-run, no account deploy) and the ledger is never written."""
+
+    URL = "http://sn.invalid"
+
+    def setUp(self):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        self.w = Path(d.name)
+        (self.w / "t2-starknet.json").write_bytes(SN_KS)
+        self.exe = self.w / "sncast"
+        self.exe.write_text(FAKE_SNCAST)
+        self.exe.chmod(0o700)
+
+    def run_sn(self, b):
+        made, pw = [], []
+
+        def factory():
+            made.append(1)
+            return lambda: pw.append(1) or "pw"
+        sn = FakeSn()
+        sn.classes.clear()  # undeployed account
+        led = self.w / "ledger" / "l.jsonl"
+        err = None
+        try:
+            g.sn_run(b, LIM, "account-deploy", ["account", "deploy", "--url", self.URL], sn, self.URL,
+                     self.w / "t2-starknet.json", factory, led, exe=str(self.exe), polls=(1, 0))
+        except g.Refused as e:
+            err = str(e)
+        calls = Path(str(self.exe) + ".calls")
+        n = len(calls.read_text().splitlines()) if calls.exists() else 0
+        recs = [json.loads(x)["type"] for x in led.read_text().splitlines()] if led.exists() else []
+        if calls.exists():
+            calls.unlink()
+        return err, len(made), len(pw), n, recs
+
+    def test_mismatch_reaches_no_password_signer_or_ledger(self):
+        for name, mutate, pat in r2d_mutations():
+            with self.subTest(name=name):
+                b = sn_binding()
+                mutate(b)
+                err, made, pw, n, recs = self.run_sn(b)
+                self.assertRegex(err or "", pat)
+                self.assertEqual((made, pw, n, recs), (0, 0, 0, []))
+
+    def test_sn_send_itself_refuses_before_any_reservation(self):
+        for name, mutate, pat in r2d_mutations()[:11]:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as d:
+                b = sn_binding()
+                mutate(b)
+                sn = FakeSn()
+                p = Path(d) / "l.jsonl"
+                with g.Ledger(p) as led:
+                    r = FakeRunner(p, sn)
+                    with self.assertRaisesRegex(g.Refused, pat):
+                        g.sn_send(led, LIM, b, "vote", vote_args(), sn, r, out=lambda s: None, polls=(1, 0))
+                    self.assertEqual((r.calls, led.records), ([], []))
+
+    def test_valid_identity_reaches_password_only_after_the_reservation(self):
+        err, made, pw, n, recs = self.run_sn(sn_binding())
+        self.assertIn("sncast failed", err)
+        self.assertEqual((made, pw, n, recs), (1, 1, 1, ["reserve", "void"]))  # one dry-run, then void
+
+
+# ---------------------------------------------------------------- D-1: killing tests for the CSO EKU-1270 survivors
+class DeltaCoverageTest(LedgerCase):
+    """One test per surviving mutant of cso_delta_mutants.py (EKU-1270 D-1)."""
+
+    def test_sn_linked_but_unincluded_send_blocks_the_next_send(self):  # SN open_reserves precheck
+        sn = FakeSn()
+        with self.assertRaisesRegex(g.Refused, "no receipt"):
+            sn_vote(self.led, sn, FakeRunner(self.path, sn, pending=True))
+        (a,) = self.led.open_reserves(g.STARKNET_SEPOLIA)
+        self.assertTrue(self.led.tx_hash(a))
+        self.assertEqual(sn.nonce_v, self.led.mined_count(g.STARKNET_SEPOLIA, SN_ACCT))  # nonce does not block it
+        r2 = FakeRunner(self.path, sn)
+        with self.assertRaisesRegex(g.Refused, "unknown outcome"):
+            sn_vote(self.led, sn, r2)
+        self.assertEqual((r2.calls, len(self.led.attempts(g.STARKNET_SEPOLIA))), ([], 1))
+
+    def test_sn_receipt_without_finality_is_not_credited(self):  # SN finality required
+        for status in ("RECEIVED", "PRE_CONFIRMED", "CANDIDATE", None):
+            with self.subTest(status=status):
+                self.setUp()
+                sn = FakeSn()
+                with self.assertRaisesRegex(g.Refused, "no receipt"):
+                    sn_vote(self.led, sn, FakeRunner(self.path, sn, tamper=lambda tx, rc: rc.update(
+                        finality_status=status)))
+                (a,) = self.led.open_reserves(g.STARKNET_SEPOLIA)
+                self.assertEqual((self.led.outcome(a["seq"]), self.led.incidents()), (None, []))
+                self.assertEqual(self.led.exposure(g.STARKNET_SEPOLIA), int(a["max_cost"]))
+                self.tearDown()
+
+    def test_sn_account_deployment_data_on_invoke(self):  # SN account_deployment_data checked
+        StarknetSendTest.tampered(self, lambda tx, rc: tx.update(account_deployment_data=["0x1"]),
+                                  "account deployment data")
+
+    def test_sn_data_availability_mode(self):  # D-3 containment
+        for k in ("nonce_data_availability_mode", "fee_data_availability_mode"):
+            with self.subTest(k=k):
+                self.setUp()
+                StarknetSendTest.tampered(self, lambda tx, rc, k=k: tx.update({k: "L2"}), "data availability")
+                self.tearDown()
+
+    def test_sn_tx_without_bounds_record_is_not_credited(self):  # SN sn-bounds required
+        sn, b = FakeSn(), sn_binding()
+        cap = int(LIM["starknet"]["kinds"]["vote"]["max_fee_fri"])
+        rec = self.led.append({"type": "reserve", "chain": g.STARKNET_SEPOLIA, "role": "starknet", "from": SN_ACCT,
+                               "kind": "vote", "step": "vote", "nonce": 0, "value": "0", "max_cost": str(cap),
+                               "hash": "", "expect": g.sn_expected("vote", vote_args(), b)})
+        h = "0x" + "4e" * 31
+        self.led.append({"type": "sn-sent", "ref": rec["seq"], "hash": h})
+        bounds = g.sn_bounds(SN_FEE_EST, cap)
+        sn.txs[h] = {"type": "INVOKE", "version": "0x3", "sender_address": SN_ACCT, "nonce": "0x0",
+                     "calldata": [hex(x) for x in [1, int(SN_GOV, 16), SNCAST_VOTE_SELECTOR, 2, 5, 1]],
+                     "resource_bounds": {r: {f: hex(v) for f, v in bounds[r].items()} for r in g.SN_RESOURCES},
+                     "tip": "0x0", "paymaster_data": [], "account_deployment_data": [],
+                     "nonce_data_availability_mode": "L1", "fee_data_availability_mode": "L1"}
+        sn.rcs[h] = {"finality_status": "ACCEPTED_ON_L2", "execution_status": "SUCCEEDED", "block_number": 7,
+                     "actual_fee": {"amount": hex(10**15), "unit": "FRI"}}
+        with self.assertRaisesRegex(g.Refused, "no reserved resource bounds"):
+            g.sn_settle(self.led, sn, rec)
+        self.assertEqual((self.led.outcome(rec["seq"]), len(self.led.incidents())), (None, 1))
+        with self.assertRaisesRegex(g.Refused, "incident"):
+            sn_vote(self.led, sn, FakeRunner(self.path, sn))
+
+    def test_evm_publish_failure_keeps_the_reservation(self):  # EVM publish failure is not a void
+        class Down(EvmFake):
+            def publish(self, raw):
+                self.published.append(raw)
+                raise ConnectionError("node unreachable")
+        ch, s = Down(g.SEPOLIA, A["payer"]), FakeSigner(self.path)
+        with self.assertRaisesRegex(g.Refused, "stays reserved"):
+            run_send(self.led, ch, s)
+        (a,) = self.led.open_reserves(g.SEPOLIA)
+        self.assertEqual([r["type"] for r in self.led.records], ["reserve", "signed"])
+        self.assertEqual(self.led.exposure(g.SEPOLIA, "payer"), int(a["max_cost"]))
+        s2 = FakeSigner(self.path)
+        with self.assertRaisesRegex(g.Refused, "unknown outcome"):
+            run_send(self.led, EvmFake(g.SEPOLIA, A["payer"]), s2)
+        self.assertEqual(s2.calls, 0)
+        g.reconcile_evm(self.led, {g.SEPOLIA: EvmFake(g.SEPOLIA, A["payer"], mine=False)}, {"payer": A["payer"]},
+                        False, "0xdd", out=lambda s: None)
+        self.assertEqual(self.led.open_reserves(g.SEPOLIA), [a])  # an absent receipt never releases it
+
+    def test_evm_twin_void_needs_the_twins_receipt(self):  # EVM twin void without receipt
+        a = self.reserve(97, "payer", "execute", 100_000, open_=True, n=0)
+        b = self.reserve(97, "payer", "execute", 100_000, open_=True, n=0)
+        ch = FakeChain(97)
+        ch.nonces[A["payer"]] = 1
+        with self.assertRaisesRegex(g.Refused, "NOT in the ledger"):
+            g.reconcile_evm(self.led, {97: ch}, {"payer": A["payer"]}, False, "0xd", out=lambda s: None)
+        self.assertEqual((self.led.outcome(a["seq"]), self.led.outcome(b["seq"])), (None, None))
+        ch.receipts[b["hash"]] = {"status": "0x1", "gasUsed": hex(21_000), "effectiveGasPrice": hex(g.GWEI),
+                                  "from": A["payer"], "transactionHash": b["hash"], "blockNumber": "0x5", "logs": []}
+        g.reconcile_evm(self.led, {97: ch}, {"payer": A["payer"]}, False, "0xd", out=lambda s: None)
+        self.assertEqual((self.led.outcome(a["seq"])["type"], self.led.outcome(b["seq"])["type"]), ("void", "outcome"))
+
+    def test_evm_receipt_from_or_hash_must_match(self):  # EVM receipt from/hash matched
+        for k, bad in (("from", A["bootstrap"]), ("transactionHash", "0x" + "ee" * 32)):
+            with self.subTest(k=k):
+                self.setUp()
+                a = self.reserve(97, "payer", "execute", 100_000, open_=True)
+                ch = FakeChain(97)
+                ch.nonces[A["payer"]] = 1
+                rc = {"status": "0x1", "gasUsed": hex(21_000), "effectiveGasPrice": hex(g.GWEI), "from": A["payer"],
+                      "transactionHash": a["hash"], "blockNumber": "0x5", "logs": []}
+                ch.receipts[a["hash"]] = dict(rc, **{k: bad})
+                with self.assertRaisesRegex(g.Refused, "does not match the reserved signer or hash"):
+                    g.reconcile_evm(self.led, {97: ch}, {"payer": A["payer"]}, False, "0xd", out=lambda s: None)
+                self.assertIsNone(self.led.outcome(a["seq"]))
+                self.tearDown()
+
+    def test_evm_pending_nonce_differs_from_latest(self):  # EVM pending != latest refused
+        class Pending(EvmFake):
+            def nonce(self, a, tag="latest"):
+                return super().nonce(a) + (1 if tag == "pending" else 0)
+        ch, s = Pending(g.SEPOLIA, A["payer"]), FakeSigner(self.path)
+        with self.assertRaisesRegex(g.Refused, "nonce ambiguity"):
+            run_send(self.led, ch, s)
+        self.assertEqual((s.calls, self.led.records, ch.published), (0, [], []))
+
+    def test_faucet_result_needs_a_matching_open_request(self):  # faucet result without request
+        b, c, src = binding(), "eip155:97", "free-eip155:97"
+        r = g.faucet_record(self.led, b, c, "payer", src, "requested")
+        for ref in (999, r["seq"] + 1, None):
+            for status in ("received", "denied"):
+                with self.subTest(ref=ref, status=status), self.assertRaisesRegex(g.Refused, "one open request"):
+                    g.faucet_record(self.led, b, c, "payer", src, status, amount=1, ref=ref)
+        with self.assertRaisesRegex(g.Refused, "one open request"):  # open request of another recipient
+            g.faucet_record(self.led, b, c, "deployer", src, "received", amount=1, ref=r["seq"])
+        self.assertEqual(g.faucet_register(self.led)[(c, "payer")]["pending"], 1)
+        self.assertEqual(len(self.led.records), 1)
+
+
+# ---------------------------------------------------------------- D-2: bound EVM keystores; D-3 containment
+FAKE_CAST = r'''#!/usr/bin/env python3
+import json, os, sys, time
+a = sys.argv
+out = os.environ.get("T2_TEST_OUT") or a[0] + ".seen"
+ks = open(a[a.index("--keystore") + 1], "rb").read()
+pw = open(a[a.index("--password-file") + 1], "rb").read()
+json.dump({"ks": ks.decode(), "pw": pw.decode(), "env_keys": sorted(os.environ), "pid": os.getpid(),
+           "keystore_arg": a[a.index("--keystore") + 1]}, open(out, "w"))
+if os.path.exists(a[0] + ".hang"):
+    time.sleep(60)
+print("0x02f8")
+'''
+
+
+class EvmKeystoreBindingTest(LedgerCase):
+    def mk(self, role="payer", data=None):
+        d = Path(self.dir.name) / "ks"
+        d.mkdir(exist_ok=True)
+        (d / f"t2-{role}.json").write_bytes(EVM_KS[role] if data is None else data)
+        exe = Path(self.dir.name) / "cast"
+        exe.write_text(FAKE_CAST)
+        exe.chmod(0o700)
+        self.pw = []
+        return g.Signer(d, "v", lambda r: self.pw.append(r) or b"pw-" + r.encode(),
+                        keystore_sha256=binding()["evm_keystore_sha256"], exe=str(exe)), d, exe
+
+    def test_binding_requires_distinct_digests_for_the_signing_roles(self):
+        def refused(mutate):
+            b = binding()
+            mutate(b)
+            with self.assertRaisesRegex(g.Refused, "keystore"):
+                g.check_binding(b, LIM)
+        refused(lambda b: b.pop("evm_keystore_sha256"))
+        refused(lambda b: b["evm_keystore_sha256"].pop("bootstrap"))
+        refused(lambda b: b["evm_keystore_sha256"].update({"safe-signer-a": "ab" * 32}))
+        refused(lambda b: b["evm_keystore_sha256"].update(payer="AB" * 32))
+        refused(lambda b: b["evm_keystore_sha256"].update(payer=None))
+        refused(lambda b: b["evm_keystore_sha256"].update(payer=b["evm_keystore_sha256"]["deployer"]))
+        refused(lambda b: b["evm_keystore_sha256"].update(payer=b["starknet"]["keystore_sha256"]))
+        t = json.loads((T2 / "binding/t2-binding.json").read_text())
+        self.assertEqual(t["evm_keystore_sha256"], {"deployer": None, "bootstrap": None, "payer": None})  # UNBOUND
+
+    def test_wrong_missing_or_unbound_keystore_refused_before_password_and_reservation(self):
+        for name, data, digests, pat in (
+                ("substituted bytes", EVM_KS["bootstrap"], None, "differs from the bound keystore_sha256"),
+                ("one extra byte", EVM_KS["payer"] + b" ", None, "differs from the bound keystore_sha256"),
+                ("missing file", None, None, "missing"),
+                ("no bound digest", EVM_KS["payer"], {}, "no bound keystore_sha256"),
+                ("empty bound digest", EVM_KS["payer"], {"payer": ""}, "no bound keystore_sha256")):
+            with self.subTest(name=name):
+                self.setUp()
+                s, d, exe = self.mk(data=data)
+                if data is None:
+                    (d / "t2-payer.json").unlink()
+                if digests is not None:
+                    s.keystore_sha256 = digests
+                ch = EvmFake(g.SEPOLIA, A["payer"])
+                with self.assertRaisesRegex(g.Refused, pat):
+                    g.send_plan(self.led, LIM, binding(), "l1exec", g.SEPOLIA, "payer", [l1exec_tx()], ch, s, "0xdd",
+                                out=lambda s: None)
+                self.assertEqual((self.pw, self.led.records, ch.published), ([], [], []))
+                self.assertFalse(Path(str(exe) + ".seen").exists())  # cast never ran
+                self.tearDown()
+
+    def test_frozen_bytes_are_signed_even_if_the_file_is_swapped_after_the_check(self):
+        s, d, exe = self.mk()
+        s.freeze("payer")
+        (d / "t2-payer.json").write_bytes(EVM_KS["bootstrap"])  # path swap between check and decrypt
+        self.assertEqual(s.sign("payer", g.SEPOLIA, l1exec_tx(), g.GWEI, 0), "0x02f8")
+        seen = json.loads(Path(str(exe) + ".seen").read_text())
+        self.assertEqual((seen["ks"].encode(), seen["pw"], self.pw), (EVM_KS["payer"], "pw-payer", ["payer"]))
+        self.assertTrue(seen["keystore_arg"].startswith("/dev/fd/"))
+
+    def test_signer_child_gets_a_minimal_environment(self):  # D-3
+        s, d, exe = self.mk()
+        with mock.patch.dict(os.environ, {"T2_D3_SENTINEL": "x", "ETH_RPC_URL": "http://x.invalid",
+                                          "STARKNET_SEPOLIA_RPC_URL": "http://y.invalid"}):
+            s.sign("payer", g.SEPOLIA, l1exec_tx(), g.GWEI, 0)
+        keys = json.loads(Path(str(exe) + ".seen").read_text())["env_keys"]
+        self.assertTrue(all(k in g.CHILD_ENV_KEYS or k.startswith(g.CHILD_ENV_PREFIXES) for k in keys), keys)
+        self.assertIn("PATH", keys)
+
+    def test_hung_signer_child_is_killed_and_the_slot_stays_unlinked(self):  # D-3
+        s, d, exe = self.mk()
+        Path(str(exe) + ".hang").write_text("")
+        s.timeout = 1
+        with self.assertRaises(subprocess.TimeoutExpired):
+            run_send(self.led, EvmFake(g.SEPOLIA, A["payer"]), s)
+        pid = json.loads(Path(str(exe) + ".seen").read_text())["pid"]
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)  # killed and reaped, not left running
+        (a,) = self.led.open_reserves(g.SEPOLIA)
+        self.assertIsNone(self.led.link(a))
+        with self.assertRaisesRegex(g.Refused, "permanent stop"):
+            g.reconcile_evm(self.led, {g.SEPOLIA: EvmFake(g.SEPOLIA, A["payer"])}, {"payer": A["payer"]}, True,
+                            "0xdd", out=lambda s: None)
+
+    @unittest.skipUnless(shutil.which("cast"), "cast needed")
+    def test_real_cast_signs_from_the_frozen_memfd_keystore(self):
+        """Throwaway local keystore (never funded, deleted with the temp dir): cast reads the keystore from /dev/fd."""
+        d = Path(self.dir.name) / "real"
+        d.mkdir()
+        pw = "eku-1272-throwaway-" + os.urandom(6).hex()
+        out = subprocess.run(["cast", "wallet", "new", str(d), "t2-payer.json"], capture_output=True, text=True,
+                             env={**os.environ, "CAST_PASSWORD": pw}, check=True)
+        out = out.stdout + out.stderr
+        addr = next(line.split()[-1] for line in out.splitlines() if line.startswith("Address:")).lower()
+        data = (d / "t2-payer.json").read_bytes()
+        s = g.Signer(d, "v", lambda r: pw.encode(), keystore_sha256={"payer": g.sha256_hex(data)})
+        s.freeze("payer")
+        (d / "t2-payer.json").write_bytes(b"{}")  # the swapped file is never read again
+        t = g.PlannedTx(addr, "0x" + "aa" * 20, 0, "0xdeadbeef", 2, 50_000)
+        g.verify_signed(g.decode_signed(s.sign("payer", 97, t, 3 * g.GWEI, 1)), 97, t, 3 * g.GWEI, 1)
+
+
 # ---------------------------------------------------------------- installed sncast compatibility (local fake node)
 class _Node(http.server.BaseHTTPRequestHandler):
     state: dict = {}
@@ -1462,14 +1946,17 @@ class SncastCompatTest(unittest.TestCase):
         created = json.loads((w / "acct.json").read_text())
         addr = next(json.loads(line[line.index("{"):])["address"] for line in out.splitlines()
                     if '"address"' in line)
-        b = sn_binding()
-        b["roles"]["starknet_account"] = b["starknet"]["account"] = addr
+        b = set_sn_address(sn_binding(), addr)
         b["starknet"].update(account_public_key=created["variant"]["public_key"],
                              account_class_hash=created["deployment"]["class_hash"],
                              account_salt=created["deployment"]["salt"],
                              keystore_sha256=g.sha256_hex((w / "ks.json").read_bytes()))
         _Node.state.update(account=int(addr, 16), account_class=int(created["deployment"]["class_hash"], 16),
                            pubkey=int(created["variant"]["public_key"], 16))
+        # R2-D: sncast's own address for the created account equals the guard's public-only derivation
+        self.assertEqual(int(addr, 16), g.sn_account_address(b["starknet"]))
+        self.assertEqual(int(created["deployment"]["class_hash"], 16), int(g.SN_OZ_ACCOUNT_CLASS, 16))
+        g.check_sn_account_binding(b)
         sn = g.StarknetRpc(url)
         ks = (w / "ks.json").read_bytes()
         with g.Ledger(w / "ledger.jsonl") as led:
