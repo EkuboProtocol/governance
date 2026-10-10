@@ -8,9 +8,10 @@
 #      salt, Governor felt and fee cap FROM the bound addendum (a conflicting pre-set value is refused);
 #   2. a fresh simulation of the step, whose transactions become the plan;
 #   3. `t2_guard.py send`: ledger reconciliation and T2 stop conditions, then per transaction: nonce, base fee and
-#      cumulative caps checked, signed by the step's SINGLE role keystore (`$T2_KEYSTORE_DIR/t2-<role>.json`, password
-#      streamed from 1Password through a pipe), every signed field compared with the plan, liability reserved in the
-#      durable ledger, then published and reconciled from the receipt;
+#      cumulative caps checked, the unsigned intent and its maximum liability reserved durably in the ledger, THEN
+#      signed by the step's SINGLE role keystore (`$T2_KEYSTORE_DIR/t2-<role>.json`, password from 1Password in a
+#      memfd), every signed field compared with the reservation, the signed bytes linked durably, then published and
+#      reconciled from the receipt (EKU-1268);
 #   4. a read-only post-check over raw RPC.
 # No private key or password is ever typed, printed, written in plaintext, put in argv or in a cast environment.
 #

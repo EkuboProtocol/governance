@@ -38,14 +38,30 @@ def binding() -> dict:
              "safe_owners": [A["sa"], A["sb"], A["sc"]], "starknet_account": SN_ACCT}
     return {
         "schema": "ekubo-t2-binding-v1", "status": "BOUND", "roles": roles, "safe_salt": "1232",
-        "starknet": {"governor": "0x0123", "token": "0x1", "staker": "0x2", "stake_amount": LIM["starknet"]["stake_amount"]},
+        "starknet": {"governor": "0x0123", "token": "0x1", "staker": "0x2", "stake_amount": LIM["starknet"]["stake_amount"],
+                     "account": SN_ACCT, "account_public_key": SN_PUB, "account_class_hash": SN_CLASS,
+                     "account_salt": SN_SALT_A, "account_type": "open_zeppelin",
+                     "keystore_sha256": g.sha256_hex(SN_KS)},
         "predicted": p, "limits": {"ccip_fee_max_wei": LIM["ccip"]["fee_max_wei"]},
         "funding_recipients": [{"chain": f"eip155:{c}", "role": r, "address": roles[r], "max": v}
                                for c, rc in caps.items() for r, v in rc.items()]
         + [{"chain": "starknet:SN_SEPOLIA", "role": "starknet", "address": SN_ACCT,
             "max": LIM["starknet"]["balance_cap_fri"]}],
-        "faucet_sources": [],
+        "faucet_sources": faucet_sources(),
+        "op_vault": "t2-unit-test", "ledger_dir": "/nonexistent/t2-unit-test-ledger",
     }
+
+
+SN_PUB, SN_CLASS, SN_SALT_A = "0x" + "5a" * 31, "0x" + "5b" * 31, "0x" + "5c" * 8
+SN_KS = b'{"crypto":{"cipher":"aes-128-ctr"},"id":"unit-test-fixture","version":3}'
+
+
+def faucet_sources() -> list[dict]:
+    return [{"chain": c, "source": f"free-{c}", "url": "https://faucet.invalid/", "eligibility": "unit-test fixture",
+             "eligibility_checked_at": "2026-10-10T00:00:00Z", "drip_max": "1", "login": "none", "region": "any",
+             "operator": "named human (fixture)", "automated_allowed": False, "paid": False,
+             "mainnet_prerequisite": False}
+            for c in ("eip155:11155111", "eip155:97", "eip155:10143", "starknet:SN_SEPOLIA")]
 
 
 class LedgerCase(unittest.TestCase):
@@ -113,7 +129,7 @@ class PrecheckTest(LedgerCase):
 
     def test_role_cap(self):
         cap = int(LIM["evm"]["11155111"]["role_cap_wei"]["bootstrap"])
-        self.reserve(g.SEPOLIA, "bootstrap", "ping-request", 1, cost=cap - 10**12)
+        self.reserve(g.SEPOLIA, "bootstrap", "ping-request", 500_000, cost=cap - 10**12)
         with self.assertRaisesRegex(g.Refused, "role bootstrap"):
             g.precheck(self.led, LIM, g.SEPOLIA, "bootstrap", "ping-request", tx(frm="bootstrap", gas=100_000), g.GWEI, 0)
 
@@ -360,12 +376,16 @@ class StarknetBudgetTest(LedgerCase):
                              "cost": str(cost), "block": 1})
 
     def test_per_tx_estimate_above_max_refused(self):
-        with self.assertRaisesRegex(g.Refused, "fresh fee estimate"):
-            g.sn_precheck(self.led, LIM, "execute-p2b", 7 * 10**18 + 1)
+        est = {"l1_gas_consumed": 1, "l1_gas_price": 1, "l2_gas_consumed": 7 * 10**18, "l2_gas_price": 1,
+               "l1_data_gas_consumed": 1, "l1_data_gas_price": 1}
+        with self.assertRaisesRegex(g.Refused, "fresh estimate"):
+            g.sn_bounds(est, 7 * 10**18)
+        b = g.sn_bounds(dict(est, l2_gas_consumed=10**18), 7 * 10**18)
+        self.assertLessEqual(g.sn_liability(b), 7 * 10**18)
 
     def test_unknown_kind_refused(self):
         with self.assertRaisesRegex(g.Refused, "approved schedule"):
-            g.sn_precheck(self.led, LIM, "transfer-strk", 1)
+            g.sn_precheck(self.led, LIM, "transfer-strk")
 
     def test_retry_budget_and_aggregate(self):
         for k in ("execute-p1", "execute-p2a", "execute-p2b"):
@@ -373,7 +393,7 @@ class StarknetBudgetTest(LedgerCase):
         self.sn("execute-p1", 7 * 10**18, status=0)  # retry 1
         self.sn("execute-p2a", 7 * 10**18, status=0)  # retry 2
         with self.assertRaisesRegex(g.Refused, "attempt cap|retry budget|exceed"):
-            g.sn_precheck(self.led, LIM, "execute-p2b", 10**18)
+            g.sn_precheck(self.led, LIM, "execute-p2b")
 
     def test_aggregate_48(self):
         for k in ("declare-governor", "declare-staker", "declare-token", "execute-p1", "execute-p2a", "execute-p2b"):
@@ -384,7 +404,7 @@ class StarknetBudgetTest(LedgerCase):
         lim = copy.deepcopy(LIM)
         lim["starknet"]["fee_cap_fri"] = str(335 * 10**17)
         with self.assertRaisesRegex(g.Refused, "exceed"):
-            g.sn_precheck(self.led, lim, "deploy-token", 10**17)
+            g.sn_precheck(self.led, lim, "deploy-token")
 
 
 class ApprovalTest(unittest.TestCase):
@@ -548,6 +568,947 @@ class StarknetArgvTest(unittest.TestCase):
     def test_unknown_kind_refused(self):
         with self.assertRaises(g.Refused):
             self.inv("transfer", self.b["starknet"]["token"], "transfer", [1, 2, 0])
+
+
+# ==================================================================================================== EKU-1268
+# CFO R1/R2, CSO N-1..N-8. Local only: fake chains, fake signers/sncast runners, scratch ledgers; the optional sncast
+# compatibility test uses a throwaway local keystore against a local fake JSON-RPC node (nothing leaves the machine).
+import http.server  # noqa: E402
+import shutil  # noqa: E402
+import threading  # noqa: E402
+
+TESTS = Path(__file__).resolve().parent
+
+
+def raw_hash(raw: str) -> str:
+    return "0x" + g.sha256_hex(raw.encode())
+
+
+class EvmFake:
+    """Chain fake for send_plan/reconcile: publish() mines immediately and returns the fake hash of the raw bytes."""
+
+    def __init__(self, cid, sender, reported_chain_id=None, mine=True):
+        self.cid, self.sender, self.reported = cid, sender.lower(), reported_chain_id or cid
+        self.nonces, self.receipts, self.published, self.mine = {}, {}, [], mine
+
+    def chain_id(self):
+        return self.reported
+
+    def nonce(self, a, tag="latest"):
+        return self.nonces.get(a.lower(), 0)
+
+    def base_fee(self):
+        return g.GWEI
+
+    def priority_fee(self):
+        return 0
+
+    def receipt(self, h):
+        return self.receipts.get(h)
+
+    def publish(self, raw):
+        self.published.append(raw)
+        h = raw_hash(raw)
+        if self.mine:
+            self.receipts[h] = {"status": "0x1", "gasUsed": hex(100_000), "effectiveGasPrice": hex(g.GWEI),
+                                "from": self.sender, "transactionHash": h, "blockNumber": "0x9", "logs": []}
+            self.nonces[self.sender] = self.nonces.get(self.sender, 0) + 1
+        return h
+
+
+class FakeSigner:
+    """Key-free signer: returns opaque bytes and their 'decoded' fields. At call time it reads the ledger FROM DISK
+    and records whether a durable, unlinked reservation for exactly this intent already exists (CFO R1)."""
+
+    def __init__(self, ledger_path, signer_addr=None, crash=False):
+        self.path, self.signer_addr, self.crash = Path(ledger_path), signer_addr, crash
+        self.calls, self.decoded, self.disk_state = 0, {}, []
+
+    def sign(self, role, cid, tx, max_fee, prio):
+        self.calls += 1
+        recs = [json.loads(line) for line in self.path.read_text().splitlines()]
+        last = recs[-1]
+        linked = any(r["type"] in ("signed", "void", "outcome") and r.get("ref") == last["seq"] for r in recs)
+        self.disk_state.append((last["type"], last["chain"], last["role"], last["nonce"], last["hash"],
+                                int(last["max_cost"]), linked))
+        if self.crash:
+            os._exit(97)  # simulated crash DURING signing
+        raw = "0x" + os.urandom(40).hex()
+        self.decoded[raw] = {"signer": self.signer_addr or tx.frm, "chainId": hex(cid), "nonce": hex(tx.nonce),
+                             "gas": hex(tx.gas), "maxFeePerGas": hex(max_fee), "maxPriorityFeePerGas": hex(prio),
+                             "to": tx.to, "value": hex(tx.value), "input": tx.data, "type": "0x2",
+                             "accessList": [], "hash": raw_hash(raw)}
+        return raw
+
+
+def l1exec_tx(n=0):
+    g._init_selectors()
+    return g.PlannedTx(A["payer"], binding()["predicted"]["proxy"], 0, g.SEL["proxyExecute"] + "00" * 4, n, 200_000)
+
+
+def run_send(led, chain, signer, plan=None, fault=g._no_fault, role="payer", step="l1exec"):
+    g.send_plan(led, LIM, binding(), step, g.SEPOLIA, role, plan or [l1exec_tx(chain.nonce(A["payer"]))], chain,
+                signer, "0xdd", out=lambda s: None, fault=fault, decode=lambda raw: signer.decoded[raw])
+
+
+class PreSignReservationTest(LedgerCase):
+    """CFO R1: reservation fsync'd before the signer runs; signed bytes linked afterwards; no sign-then-reserve."""
+
+    def test_reservation_is_on_disk_before_the_signer_runs(self):
+        ch, s = EvmFake(g.SEPOLIA, A["payer"]), FakeSigner(self.path)
+        run_send(self.led, ch, s)
+        self.assertEqual(s.calls, 1)
+        typ, cid, role, nonce, h, max_cost, linked = s.disk_state[0]
+        self.assertEqual((typ, cid, role, nonce, h, linked), ("reserve", g.SEPOLIA, "payer", 0, "", False))
+        self.assertEqual(max_cost, 200_000 * 20 * g.GWEI)
+        types = [r["type"] for r in self.led.records]
+        self.assertEqual(types, ["reserve", "signed", "outcome"])
+        res = self.led.records[0]
+        self.assertEqual(res["attempt"], 1)
+        self.assertEqual(res["intent_sha256"], g.sha256_hex(json.dumps(
+            {k: res[k] for k in ("chain", "role", "from", "kind", "step", "nonce", "gas", "max_fee", "priority",
+                                 "value", "to", "input_sha256")}, sort_keys=True).encode()))
+        self.assertEqual(self.led.tx_hash(res), raw_hash(ch.published[0]))
+
+    def test_in_process_signed_field_refusal_voids_but_counts_the_attempt(self):
+        ch, s = EvmFake(g.SEPOLIA, A["payer"]), FakeSigner(self.path, signer_addr=A["bootstrap"])
+        with self.assertRaisesRegex(g.Refused, "field signer"):
+            run_send(self.led, ch, s)
+        self.assertEqual(ch.published, [])
+        self.assertEqual([r["type"] for r in self.led.records], ["reserve", "void"])
+        self.assertIn("never published", self.led.records[1]["reason"])
+        self.assertEqual(self.led.kind_count(g.SEPOLIA, "l1-execute"), 1)
+        self.assertEqual(self.led.exposure(g.SEPOLIA), 0)
+        run_send(self.led, ch, FakeSigner(self.path))  # the next attempt is allowed and counted as attempt 2
+        self.assertEqual(self.led.attempts(g.SEPOLIA)[-1]["attempt"], 2)
+
+    def test_signer_error_that_is_not_a_refusal_leaves_the_slot_unresolved(self):
+        class Boom(FakeSigner):
+            def sign(self, *a):
+                super().sign(*a)
+                raise subprocess.TimeoutExpired("cast mktx", 120)  # e.g. a hung signer: outcome unknown
+        ch, s = EvmFake(g.SEPOLIA, A["payer"]), Boom(self.path)
+        with self.assertRaises(subprocess.TimeoutExpired):
+            run_send(self.led, ch, s)
+        (a,) = self.led.open_reserves(g.SEPOLIA)
+        self.assertEqual((self.led.link(a), ch.published), (None, []))
+        with self.assertRaisesRegex(g.Refused, "permanent stop"):
+            g.reconcile_evm(self.led, {g.SEPOLIA: ch}, {"payer": A["payer"]}, True, "0xdd", out=lambda s: None)
+
+    def test_broadcaster_not_role_refused_before_any_signer_or_reservation(self):
+        ch, s = EvmFake(g.SEPOLIA, A["payer"]), FakeSigner(self.path)
+        g._init_selectors()
+        tx = g.PlannedTx(A["deployer"], binding()["predicted"]["proxy"], 0, g.SEL["proxyExecute"], 0, 200_000)
+        with self.assertRaisesRegex(g.Refused, "not the single unlocked role"):
+            run_send(self.led, ch, s, plan=[tx])
+        self.assertEqual((s.calls, self.led.records, ch.published), (0, [], []))
+
+    def test_precheck_refusal_reaches_no_signer(self):
+        ch, s = EvmFake(g.SEPOLIA, A["payer"]), FakeSigner(self.path)
+        tx = l1exec_tx()
+        tx.gas = 10**6  # above the kind maximum
+        with self.assertRaisesRegex(g.Refused, "per-transaction maximum"):
+            run_send(self.led, ch, s, plan=[tx])
+        self.assertEqual((s.calls, self.led.records), (0, []))
+
+    def test_wrong_chain_id_refused_before_any_signer(self):
+        ch, s = EvmFake(g.SEPOLIA, A["payer"], reported_chain_id=1), FakeSigner(self.path)
+        with self.assertRaisesRegex(g.Refused, "reports chain id 1"):
+            run_send(self.led, ch, s)
+        self.assertEqual((s.calls, self.led.records), (0, []))
+
+    def test_linked_then_crash_republish_is_same_liability(self):
+        ch, s = EvmFake(g.SEPOLIA, A["payer"], mine=False), FakeSigner(self.path)
+
+        def boom(point, _rec):
+            if point == "linked":
+                raise KeyboardInterrupt  # in-process stand-in; the subprocess probe below uses a real exit
+        with self.assertRaises(KeyboardInterrupt):
+            run_send(self.led, ch, s, fault=boom)
+        a = self.led.attempts(g.SEPOLIA)[0]
+        self.assertEqual(self.led.open_reserves(g.SEPOLIA), [a])
+        before = (len(self.led.attempts()), self.led.exposure(g.SEPOLIA))
+        ch.mine = True
+        g.reconcile_evm(self.led, {g.SEPOLIA: ch}, {"payer": A["payer"]}, True, "0xdd", out=lambda s: None)
+        self.assertEqual(ch.published, [self.led.raw(a)])  # the identical linked bytes, once
+        self.assertEqual(len(self.led.attempts()), before[0])  # no new slot
+        self.assertLessEqual(self.led.exposure(g.SEPOLIA), before[1])
+
+
+CHILD = r'''
+import json, os, sys
+sys.path[:0] = [sys.argv[1], sys.argv[2]]
+sys.dont_write_bytecode = True
+import t2_guard as g
+import test_t2_guard as T
+from pathlib import Path
+mode, path = sys.argv[3], Path(sys.argv[4])
+with g.Ledger(path) as led:
+    if mode.startswith("evm-"):
+        point = mode[4:]
+        ch = T.EvmFake(g.SEPOLIA, T.A["payer"], mine=False)
+        s = T.FakeSigner(path, crash=(point == "during-sign"))
+        def fault(p, rec):
+            if p == point:
+                os._exit(97)
+        T.run_send(led, ch, s, fault=fault)
+    else:
+        point = mode[3:]
+        sn = T.FakeSn()
+        r = T.FakeRunner(path, sn, crash_on_send=(point == "during-send"))
+        def fault(p, rec):
+            if p == point:
+                os._exit(97)
+        T.sn_vote(led, sn, r, fault=fault)
+print("NO CRASH")
+'''
+
+
+def crash_child(mode: str, ledger: Path) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, "-c", CHILD, str(T2), str(TESTS), mode, str(ledger)],
+                          capture_output=True, text=True)
+
+
+class CrashBoundaryTest(unittest.TestCase):
+    """CFO R1 / N-2 with a REAL process exit (os._exit, no cleanup): the durable reservation survives and blocks."""
+
+    def probe(self, mode):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        p = Path(d.name) / "ledger.jsonl"
+        r = crash_child(mode, p)
+        self.assertEqual(r.returncode, 97, r.stdout + r.stderr)
+        return g.Ledger(p).__enter__(), p
+
+    def test_evm_crash_during_signing_and_before_link(self):
+        for point in ("during-sign", "signed"):
+            with self.subTest(point=point):
+                led, p = self.probe(f"evm-{point}")
+                self.addCleanup(led.__exit__)
+                (a,) = led.open_reserves(g.SEPOLIA)
+                self.assertEqual((a["kind"], a["nonce"], led.tx_hash(a), led.link(a)), ("l1-execute", 0, "", None))
+                self.assertEqual(led.exposure(g.SEPOLIA, "payer"), int(a["max_cost"]))
+                s = FakeSigner(p)
+                with self.assertRaisesRegex(g.Refused, "unknown outcome"):
+                    run_send(led, EvmFake(g.SEPOLIA, A["payer"]), s)
+                self.assertEqual(s.calls, 0)
+                with self.assertRaisesRegex(g.Refused, r"no linked signed transaction.*permanent stop \(N-2\)"):
+                    g.reconcile_evm(led, {g.SEPOLIA: EvmFake(g.SEPOLIA, A["payer"])}, {"payer": A["payer"]}, True,
+                                    "0xdd", out=lambda s: None)
+                self.assertEqual(led.open_reserves(g.SEPOLIA), [a])  # never released by an absent transaction
+
+    def test_evm_crash_after_link_republishes_identical_bytes(self):
+        led, p = self.probe("evm-linked")
+        self.addCleanup(led.__exit__)
+        (a,) = led.open_reserves(g.SEPOLIA)
+        self.assertTrue(led.raw(a))
+        ch = EvmFake(g.SEPOLIA, A["payer"])
+        g.reconcile_evm(led, {g.SEPOLIA: ch}, {"payer": A["payer"]}, True, "0xdd", out=lambda s: None)
+        self.assertEqual(ch.published, [led.raw(a)])
+        self.assertEqual((led.open_reserves(), len(led.attempts())), ([], 1))
+
+    def test_starknet_crash_after_reservation_and_after_send(self):
+        for point in ("reserved", "bounded", "during-send", "signed"):
+            with self.subTest(point=point):
+                led, p = self.probe(f"sn-{point}")
+                self.addCleanup(led.__exit__)
+                (a,) = led.open_reserves(g.STARKNET_SEPOLIA)
+                self.assertEqual((led.tx_hash(a), led.exposure(g.STARKNET_SEPOLIA)), ("", int(a["max_cost"])))
+                sn, r = FakeSn(), FakeRunner(p, FakeSn())
+                with self.assertRaisesRegex(g.Refused, r"no linked transaction hash.*permanent stop \(N-2\)"):
+                    sn_vote(led, sn, r)
+                self.assertEqual(r.calls, [])
+
+
+class ConcurrencyTest(unittest.TestCase):
+    def test_second_runner_refused_before_any_signer(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "ledger.jsonl"
+            holder = subprocess.Popen([sys.executable, "-c", "import fcntl,sys,time; f=open(sys.argv[1],'a'); "
+                                       "fcntl.flock(f, fcntl.LOCK_EX); print('locked', flush=True); time.sleep(30)",
+                                       str(p.with_suffix(".lock"))], stdout=subprocess.PIPE, text=True)
+            try:
+                self.assertEqual(holder.stdout.readline().strip(), "locked")
+                with self.assertRaisesRegex(g.Refused, "locked by another T2 runner"):
+                    g.Ledger(p).__enter__()
+            finally:
+                holder.kill()
+                holder.wait()
+
+
+# ---------------------------------------------------------------- N-1: committed stop-condition tests (CSO probe)
+WP = {"proxy": "0x" + "10" * 20, "sender": "0x" + "11" * 20, "targets_97": ["0x" + "20" * 20],
+      "safe_97": "0x" + "30" * 20, "executor_97": "0x" + "31" * 20, "targets_10143": ["0x" + "40" * 20],
+      "safe_10143": "0x" + "50" * 20, "executor_10143": "0x" + "51" * 20}
+WB = {"predicted": WP, "roles": {"deployer": "0x" + "01" * 20, "bootstrap": "0x" + "02" * 20, "payer": "0x" + "03" * 20,
+                                 "safe_owners": ["0x" + "0a" * 20, "0x" + "0b" * 20, "0x" + "0c" * 20],
+                                 "starknet_account": "0x0" + "ab" * 31},
+      "starknet": {"token": "0x111", "staker": "0x222", "governor": "0x333"}}
+OURS, OTHER = "0x" + "aa" * 32, "0x" + "bb" * 32
+
+
+class _WRpc:
+    def call(self, m, p):
+        return "0x60" if m == "eth_getCode" else None
+
+
+class WatchChain:
+    def __init__(self, cid, logs=(), nonces=None, proxy_nonce=0, reported=None):
+        self.cid, self._logs, self.nonces, self.pn, self.rpc = cid, list(logs), nonces or {}, proxy_nonce, _WRpc()
+        self.reported = reported or cid
+
+    def chain_id(self):
+        return self.reported
+
+    def nonce(self, a, tag="latest"):
+        return self.nonces.get(a.lower(), 0)
+
+    def block_number(self):
+        return 200
+
+    def logs(self, addr, f, t):
+        return [x for x in self._logs if x["address"].lower() == addr.lower() and f <= x["bn"] <= t]
+
+    def call(self, to, data):
+        return hex(self.pn)
+
+
+def wlog(addr, topic0, t1, tx, bn=150):
+    return {"address": addr, "topics": [topic0, t1], "transactionHash": tx, "bn": bn}
+
+
+class StopConditionTest(unittest.TestCase):
+    """CSO N-1: watch_evm / watch_starknet / sn_reconcile stop conditions (adopted from EKU-1262 cso_watch_test)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.top = {"Pinged": g._topic("Pinged(bytes32,bytes32,uint64)"),
+                   "Queued": g._topic("Queued(bytes32,bytes32,uint64,uint64,uint64,bytes)"), "Dispatched": "0xdd"}
+        g.SEL_CURRENT_NONCE[0] = g._topic("currentNonce()")[:10]
+
+    def ledger(self, d, chain=97, mined_hash="0x" + "cc" * 32, dispatched=(OURS,), l1exec=0):
+        L = g.Ledger(Path(d) / "l.jsonl").__enter__()
+        self.addCleanup(L.__exit__)
+        r = L.append({"type": "reserve", "chain": g.SEPOLIA, "role": "payer", "from": WB["roles"]["payer"],
+                      "kind": "dispatch", "nonce": 0, "value": "0", "max_cost": "1", "hash": "0x" + "dd" * 32})
+        L.append({"type": "outcome", "ref": r["seq"], "chain": g.SEPOLIA, "status": 1, "block": 100, "cost": "1",
+                  "dispatched": list(dispatched)})
+        for i in range(l1exec):
+            r = L.append({"type": "reserve", "chain": g.SEPOLIA, "role": "payer", "from": WB["roles"]["payer"],
+                          "kind": "l1-execute", "nonce": i + 1, "value": "0", "max_cost": "1", "hash": f"0x{i:064x}"})
+            L.append({"type": "outcome", "ref": r["seq"], "chain": g.SEPOLIA, "status": 1, "block": 101, "cost": "1"})
+        r = L.append({"type": "reserve", "chain": chain, "role": "deployer", "from": WB["roles"]["deployer"],
+                      "kind": "x", "nonce": 0, "value": "0", "max_cost": "1", "hash": mined_hash})
+        L.append({"type": "outcome", "ref": r["seq"], "chain": chain, "status": 1, "block": 100, "cost": "1"})
+        return L
+
+    def watch(self, chains, **kw):
+        with tempfile.TemporaryDirectory() as d:
+            g.watch_evm(self.ledger(d, **kw), WB, chains, None, self.top, out=lambda s: None)
+
+    def test_clean_executor_event_for_our_payload(self):
+        self.watch({97: WatchChain(97, [wlog(WP["executor_97"], self.top["Queued"], OURS, "0x" + "ee" * 32)])})
+        self.watch({97: WatchChain(97, [wlog(WP["executor_97"], self.top["Pinged"], OURS, "0x" + "ee" * 32)])})
+
+    def test_unknown_payload_queued_or_pinged_stops(self):
+        for t in ("Queued", "Pinged"):
+            with self.assertRaisesRegex(g.Refused, "UNKNOWN payload"):
+                self.watch({97: WatchChain(97, [wlog(WP["executor_97"], self.top[t], OTHER, "0x" + "ee" * 32)])})
+
+    def test_foreign_tx_log_stops(self):
+        with self.assertRaisesRegex(g.Refused, "not in the ledger"):
+            self.watch({g.SEPOLIA: WatchChain(g.SEPOLIA, [wlog(WP["sender"], "0x01", OTHER, "0x" + "ef" * 32)])},
+                       chain=g.SEPOLIA)
+        with self.assertRaisesRegex(g.Refused, "not in the ledger"):
+            self.watch({97: WatchChain(97, [wlog(WP["safe_97"], "0x02", OTHER, "0x" + "ef" * 32)])})
+        self.watch({97: WatchChain(97, [wlog(WP["safe_97"], "0x02", OTHER, "0x" + "cc" * 32)])})  # ledger tx: ok
+
+    def test_safe_signer_nonce_stops(self):
+        with self.assertRaisesRegex(g.Refused, "Safe signer"):
+            self.watch({97: WatchChain(97, nonces={WB["roles"]["safe_owners"][1]: 1})})
+
+    def test_proxy_nonce_consumed_stops_and_matching_passes(self):
+        with self.assertRaisesRegex(g.Refused, "currentNonce"):
+            self.watch({g.SEPOLIA: WatchChain(g.SEPOLIA, proxy_nonce=1)}, chain=g.SEPOLIA)
+        self.watch({g.SEPOLIA: WatchChain(g.SEPOLIA, proxy_nonce=2)}, chain=g.SEPOLIA, l1exec=2)
+        with self.assertRaisesRegex(g.Refused, "currentNonce"):
+            self.watch({g.SEPOLIA: WatchChain(g.SEPOLIA, proxy_nonce=1)}, chain=g.SEPOLIA, l1exec=2)
+
+    def test_watch_chain_id_on_every_chain(self):  # N-4
+        with self.assertRaisesRegex(g.Refused, "reports chain id 56"):
+            self.watch({97: WatchChain(97), 10143: WatchChain(10143, reported=56)})
+
+    def test_starknet_foreign_event_stops_and_own_passes(self):
+        for tx, ok in (("0x999", False), ("0x123", True)):
+            sn = FakeSn()
+            sn.ev = {"0x333": [{"transaction_hash": tx}]}
+            with tempfile.TemporaryDirectory() as d:
+                L = g.Ledger(Path(d) / "l.jsonl").__enter__()
+                self.addCleanup(L.__exit__)
+                r = L.append({"type": "reserve", "chain": g.STARKNET_SEPOLIA, "role": "starknet", "from": "0x1",
+                              "kind": "vote", "nonce": 0, "value": "0", "max_cost": "1", "hash": ""})
+                L.append({"type": "sn-sent", "ref": r["seq"], "hash": "0x123"})
+                L.append({"type": "outcome", "ref": r["seq"], "chain": g.STARKNET_SEPOLIA, "status": 1, "cost": "1",
+                          "block": 5})
+                if ok:
+                    g.watch_starknet(L, WB, sn)
+                else:
+                    with self.assertRaisesRegex(g.Refused, "not in the ledger"):
+                        g.watch_starknet(L, WB, sn)
+
+    def test_starknet_nonce_mismatch_and_wrong_chain_stop(self):
+        with tempfile.TemporaryDirectory() as d:
+            L = g.Ledger(Path(d) / "l.jsonl").__enter__()
+            self.addCleanup(L.__exit__)
+            sn = FakeSn()
+            sn.nonce_v = 1
+            with self.assertRaisesRegex(g.Refused, "nonce"):
+                g.sn_reconcile(L, sn, "0x1")
+            sn.nonce_v, sn.cid = 0, "0x534e5f4d41494e"
+            with self.assertRaisesRegex(g.Refused, "not SN_SEPOLIA"):
+                g.sn_reconcile(L, sn, "0x1")
+            with self.assertRaisesRegex(g.Refused, "not SN_SEPOLIA"):
+                g.watch_starknet(L, WB, sn)
+
+    def test_reconcile_chain_id_on_every_chain(self):  # N-4
+        with tempfile.TemporaryDirectory() as d:
+            L = g.Ledger(Path(d) / "l.jsonl").__enter__()
+            self.addCleanup(L.__exit__)
+            chains = {g.SEPOLIA: EvmFake(g.SEPOLIA, A["payer"]), 97: EvmFake(97, A["payer"], reported_chain_id=56)}
+            with self.assertRaisesRegex(g.Refused, "chain 97 reports chain id 56"):
+                g.reconcile_evm(L, chains, {"payer": A["payer"]}, False, "0xdd", out=lambda s: None)
+
+
+# ---------------------------------------------------------------- Starknet identity, sends and reconciliation (R2)
+SN_GOV = "0x" + "a3" * 31
+SN_FEE_EST = {"command": "invoke", "l1_gas_consumed": 16, "l1_gas_price": 10**9, "l2_gas_consumed": 10**6,
+              "l2_gas_price": 10**10, "l1_data_gas_consumed": 128, "l1_data_gas_price": 10**9, "overall_fee": 0}
+# Observed from the installed sncast 0.62.1 against a local fake node (EKU-1268 evidence): independent constants.
+SNCAST_VOTE_SELECTOR = 0x132bdf85fc8aa10ac3c22f02317f8f53d4b4f52235ed1eabb3a4cbbe08b5c41
+SNCAST_DEPLOY_SELECTOR = 0x1987cbd17808b9a23693d4de7e246a443cfe37e6e7fbaeabd7d7e6532b07c3d
+
+
+def sn_binding():
+    b = binding()
+    b["starknet"].update({"token": "0x" + "a1" * 31, "staker": "0x" + "a2" * 31, "governor": SN_GOV})
+    return b
+
+
+class FakeSn:
+    """Starknet RPC fake: chain id, nonce, class/public key of the account, stored txs/receipts and events."""
+
+    def __init__(self):
+        self.cid, self.nonce_v, self.pub = g.SN_CHAIN_ID_SEPOLIA, 0, SN_PUB
+        self.classes = {int(SN_ACCT, 16): int(SN_CLASS, 16)}
+        self.txs, self.rcs, self.ev = {}, {}, {}
+        self.rpc = self
+
+    def chain_id(self):
+        return self.cid
+
+    def nonce(self, a):
+        return self.nonce_v
+
+    def receipt(self, h):
+        return self.rcs.get(h)
+
+    def transaction(self, h):
+        return self.txs.get(h)
+
+    def events(self, addr, frm, tok=None):
+        return {"events": self.ev.get(addr, [])}
+
+    def class_hash_at(self, a):
+        return self.classes.get(int(a, 16))
+
+    def call(self, method, params):
+        assert method == "starknet_call"
+        return [self.pub]
+
+
+class FakeRunner:
+    """Key-free sncast stand-in. Every run asserts a durable, unlinked Starknet reservation is already on disk; the
+    'send' builds the transaction like sncast does from the guard's argv, then `tamper` may corrupt it."""
+
+    def __init__(self, ledger_path, sn, tamper=None, fee=None, est=None, crash_on_send=False):
+        self.path, self.sn, self.tamper, self.fee, self.est, self.crash = Path(ledger_path), sn, tamper, fee, est, \
+            crash_on_send
+        self.keystore, self.descriptor = SN_KS, g.sn_account_descriptor(sn_binding(), True)
+        self.calls = []
+
+    def run(self, args, cwd=None):
+        recs = [json.loads(line) for line in self.path.read_text().splitlines()]
+        res = [r for r in recs if r["type"] == "reserve" and r["chain"] == g.STARKNET_SEPOLIA
+               and not any(x.get("ref") == r["seq"] and x["type"] in ("sn-sent", "outcome", "void") for x in recs)]
+        assert len(res) == 1, "sncast ran without exactly one durable unlinked reservation"
+        self.calls.append(list(args))
+        if "--dry-run" in args:
+            return [dict(self.est or SN_FEE_EST)]
+        if self.crash:
+            os._exit(97)
+        opt = {args[i]: args[i + 1] for i in range(len(args) - 1) if args[i].startswith("--")}
+        cd = [int(x) for x in args[args.index("--calldata") + 1:args.index("--l1-gas")]]
+        tx = {"type": "INVOKE", "version": "0x3", "sender_address": SN_ACCT, "nonce": hex(int(opt["--nonce"])),
+              "calldata": [hex(x) for x in [1, int(opt["--contract-address"], 16), SNCAST_VOTE_SELECTOR, len(cd), *cd]],
+              "resource_bounds": {r: {"max_amount": hex(int(opt[f"--{r.replace('_', '-')}"])),
+                                      "max_price_per_unit": hex(int(opt[f"--{r.replace('_', '-')}-price"]))}
+                                  for r in g.SN_RESOURCES},
+              "tip": hex(int(opt["--tip"])), "paymaster_data": [], "account_deployment_data": [],
+              "signature": ["0x1", "0x2"], "nonce_data_availability_mode": "L1", "fee_data_availability_mode": "L1"}
+        rc = {"finality_status": "ACCEPTED_ON_L2", "execution_status": "SUCCEEDED", "block_number": 7,
+              "actual_fee": {"amount": hex(self.fee if self.fee is not None else 10**15), "unit": "FRI"}}
+        if self.tamper:
+            self.tamper(tx, rc)
+        h = "0x" + os.urandom(31).hex()
+        self.sn.txs[h], self.sn.rcs[h] = tx, rc
+        self.sn.nonce_v += 1
+        return [{"command": "invoke", "transaction_hash": h, "type": "response"}]
+
+
+def vote_args():
+    return ["invoke", "--url", "http://sn.invalid", "--contract-address", SN_GOV, "--function", "vote",
+            "--calldata", "5", "1"]
+
+
+def sn_vote(led, sn, runner, fault=g._no_fault):
+    return g.sn_send(led, LIM, sn_binding(), "vote", vote_args(), sn, runner, out=lambda s: None, fault=fault,
+                     polls=(2, 0))
+
+
+class StarknetSendTest(LedgerCase):
+    def test_selectors_match_installed_sncast(self):
+        self.assertEqual(g.sn_selector("vote"), SNCAST_VOTE_SELECTOR)
+        self.assertEqual(g.sn_selector("deployContract"), SNCAST_DEPLOY_SELECTOR)
+
+    def test_vote_ok_explicit_bounds_nonce_and_reservation_first(self):
+        sn = FakeSn()
+        sn.nonce_v = 0
+        r = FakeRunner(self.path, sn)
+        o = sn_vote(self.led, sn, r)
+        self.assertEqual((o["status"], o["cost"]), (1, str(10**15)))
+        self.assertIn("--dry-run", r.calls[0])
+        send = r.calls[1]
+        self.assertNotIn("--max-fee", send)
+        self.assertEqual(send[send.index("--nonce") + 1], "0")
+        self.assertEqual(send[send.index("--tip") + 1], "0")
+        types = [x["type"] for x in self.led.records]
+        self.assertEqual(types, ["reserve", "sn-bounds", "sn-sent", "outcome"])
+        cap = int(LIM["starknet"]["kinds"]["vote"]["max_fee_fri"])
+        self.assertEqual(int(self.led.records[0]["max_cost"]), cap)
+        self.assertLessEqual(int(self.led.records[1]["max_liability"]), cap)
+
+    def tampered(self, tamper, pat):
+        sn = FakeSn()
+        r = FakeRunner(self.path, sn, tamper=tamper)
+        with self.assertRaisesRegex(g.Refused, pat):
+            sn_vote(self.led, sn, r)
+        (a,) = self.led.open_reserves(g.STARKNET_SEPOLIA)  # not credited
+        self.assertIsNone(self.led.outcome(a["seq"]))
+        self.assertEqual(self.led.exposure(g.STARKNET_SEPOLIA), int(a["max_cost"]))
+        self.assertTrue(self.led.incidents())
+        r2 = FakeRunner(self.path, sn)
+        with self.assertRaisesRegex(g.Refused, "incident"):
+            sn_vote(self.led, sn, r2)  # persistent stop; sncast never runs again
+        self.assertEqual(r2.calls, [])
+
+    def test_wrong_sender(self):
+        self.tampered(lambda tx, rc: tx.update(sender_address="0x" + "99" * 31), "sender_address")
+
+    def test_wrong_nonce(self):
+        self.tampered(lambda tx, rc: tx.update(nonce="0x5"), "nonce")
+
+    def test_wrong_payload(self):
+        self.tampered(lambda tx, rc: tx["calldata"].__setitem__(-1, "0x0"), "calldata")
+
+    def test_wrong_resource_bounds_or_tip_or_type(self):
+        self.tampered(lambda tx, rc: tx["resource_bounds"]["l2_gas"].update(max_amount=hex(10**12)), "resource bound")
+
+    def test_tip_set(self):
+        self.tampered(lambda tx, rc: tx.update(tip="0x1"), "tip")
+
+    def test_wrong_type_or_version(self):
+        self.tampered(lambda tx, rc: tx.update(version="0x1"), "type/version")
+
+    def test_missing_fields(self):
+        for k in ("sender_address", "resource_bounds", "nonce", "calldata", "paymaster_data"):
+            with self.subTest(k=k):
+                self.setUp()
+                self.tampered(lambda tx, rc, k=k: tx.pop(k), "missing or malformed")
+                self.tearDown()
+
+    def test_signed_liability_above_reservation_refused(self):
+        b = {r: {"max_amount": "0x10", "max_price_per_unit": "0x10"} for r in g.SN_RESOURCES}
+        txd = {"type": "INVOKE", "version": "0x3", "nonce": "0x0", "sender_address": "0x1", "resource_bounds": b,
+               "tip": "0x0", "paymaster_data": [], "account_deployment_data": []}
+        a = {"nonce": 0, "max_cost": str(3 * 256), "expect": {"type": "INVOKE", "sender_address": "0x1"}}
+        g.sn_verify_tx(txd, {}, a, b)
+        with self.assertRaisesRegex(g.Refused, "liability"):
+            g.sn_verify_tx(txd, {}, dict(a, max_cost=str(3 * 256 - 1)), b)
+
+    def test_receipt_fee_unit_missing_or_wrong(self):
+        self.tampered(lambda tx, rc: rc["actual_fee"].update(unit="WEI"), "not FRI")
+
+    def test_actual_fee_above_cap_recorded_and_stops(self):  # N-5
+        cap = int(LIM["starknet"]["kinds"]["vote"]["max_fee_fri"])
+        sn = FakeSn()
+        with self.assertRaisesRegex(g.Refused, r"above the reserved maximum.*\(N-5\)"):
+            sn_vote(self.led, sn, FakeRunner(self.path, sn, fee=cap + 1))
+        (a,) = self.led.attempts(g.STARKNET_SEPOLIA)
+        self.assertEqual(int(self.led.outcome(a["seq"])["cost"]), cap + 1)  # accurate ledger, not silent credit
+        r2 = FakeRunner(self.path, sn)
+        with self.assertRaisesRegex(g.Refused, "N-5"):
+            sn_vote(self.led, sn, r2)
+        with self.assertRaisesRegex(g.Refused, "N-5"):
+            g.precheck(self.led, LIM, g.SEPOLIA, "payer", "l1-execute", tx(), g.GWEI, 0)
+        self.assertEqual(r2.calls, [])
+
+    def test_estimate_above_cap_voids_after_dry_run_only(self):
+        sn = FakeSn()
+        r = FakeRunner(self.path, sn, est=dict(SN_FEE_EST, l2_gas_consumed=10**8))
+        with self.assertRaisesRegex(g.Refused, "fresh estimate"):
+            sn_vote(self.led, sn, r)
+        self.assertEqual(len(r.calls), 1)
+        self.assertIn("--dry-run", r.calls[0])
+        self.assertEqual([x["type"] for x in self.led.records], ["reserve", "void"])
+
+    def test_precheck_refusal_reaches_no_sncast(self):
+        sn = FakeSn()
+        for _ in range(int(LIM["starknet"]["kinds"]["vote"]["attempts_max"])):
+            rr = self.led.append({"type": "reserve", "chain": g.STARKNET_SEPOLIA, "role": "starknet", "from": SN_ACCT,
+                                  "kind": "vote", "nonce": 0, "value": "0", "max_cost": "1", "hash": ""})
+            self.led.append({"type": "void", "ref": rr["seq"], "chain": g.STARKNET_SEPOLIA, "reason": "t"})
+        r = FakeRunner(self.path, sn)
+        with self.assertRaisesRegex(g.Refused, "attempt cap"):
+            sn_vote(self.led, sn, r)
+        self.assertEqual(r.calls, [])
+
+
+class StarknetIdentityTest(unittest.TestCase):
+    def test_identity_checked_before_key_access(self):
+        b, sn = sn_binding(), FakeSn()
+        self.assertTrue(g.sn_check_identity(sn, b, "vote", SN_KS))
+        with self.assertRaisesRegex(g.Refused, "keystore_sha256"):
+            g.sn_check_identity(sn, b, "vote", SN_KS + b" ")
+        sn.pub = "0x" + "77" * 31
+        with self.assertRaisesRegex(g.Refused, "public key"):
+            g.sn_check_identity(sn, b, "vote", SN_KS)
+        sn = FakeSn()
+        sn.classes[int(SN_ACCT, 16)] = 0x1234
+        with self.assertRaisesRegex(g.Refused, "class"):
+            g.sn_check_identity(sn, b, "vote", SN_KS)
+        with self.assertRaisesRegex(g.Refused, "already has code"):
+            g.sn_check_identity(sn, b, "account-deploy", SN_KS)
+        sn.classes.clear()
+        self.assertFalse(g.sn_check_identity(sn, b, "account-deploy", SN_KS))
+        with self.assertRaisesRegex(g.Refused, "class None"):
+            g.sn_check_identity(sn, b, "vote", SN_KS)
+
+    def test_descriptor_is_generated_from_the_binding(self):
+        b = sn_binding()
+        for deployed in (True, False):
+            d = json.loads(g.sn_account_descriptor(b, deployed))
+            self.assertEqual(d["variant"], {"legacy": False, "public_key": SN_PUB, "type": "open_zeppelin",
+                                            "version": 1})
+            self.assertEqual(d["deployment"]["class_hash"], SN_CLASS)
+            if deployed:
+                self.assertEqual(int(d["deployment"]["address"], 16), int(SN_ACCT, 16))
+            else:
+                self.assertEqual(d["deployment"]["salt"], SN_SALT_A)
+
+    def test_sncast_runner_uses_frozen_bytes_and_late_password(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "seen.json"
+            exe = Path(d) / "fake-sncast"
+            exe.write_text("#!/usr/bin/env python3\nimport json, os, sys\na = sys.argv\n"
+                           "ks = open(a[a.index('--keystore') + 1], 'rb').read()\n"
+                           "acct = open(a[a.index('--account') + 1]).read()\n"
+                           f"json.dump({{'argv': a, 'ks': ks.decode(), 'acct': acct, "
+                           f"'pw': os.environ.get('KEYSTORE_PASSWORD')}}, open({str(out)!r}, 'w'))\n"
+                           "print(json.dumps({'transaction_hash': '0x1'}))\n")
+            exe.chmod(0o700)
+            pw_calls = []
+            r = g.Sncast(SN_KS, g.sn_account_descriptor(sn_binding(), True), lambda: pw_calls.append(1) or "pw", str(exe))
+            self.assertEqual(pw_calls, [])  # constructing the runner reads no password
+            self.assertEqual(g._find_hash(r.run(["invoke"])), "0x1")
+            seen = json.loads(out.read_text())
+            self.assertEqual((seen["ks"].encode(), seen["acct"].encode(), seen["pw"]),
+                             (SN_KS, g.sn_account_descriptor(sn_binding(), True), "pw"))
+            self.assertTrue(seen["argv"][seen["argv"].index("--account") + 1].startswith("/dev/fd/"))
+            self.assertEqual(pw_calls, [1])
+
+
+class StarknetRpcErrorTest(unittest.TestCase):  # N-6
+    def rpc(self, err):
+        class R:
+            def call(self, method, params):
+                raise g.RpcError(method, err)
+        s = g.StarknetRpc("http://x.invalid")
+        s.rpc = R()
+        return s
+
+    def test_exact_code_20_only(self):
+        self.assertEqual(self.rpc({"code": 20, "message": "Contract not found"}).nonce("0x1"), 0)
+        for err in ({"code": 21, "message": "error 20"}, {"code": 24, "message": "Block not found (20)"},
+                    {"code": -32603, "message": "Contract not found"}, "20"):
+            with self.assertRaisesRegex(g.Refused, "not CONTRACT_NOT_FOUND"):
+                self.rpc(err).nonce("0x1")
+
+    def test_receipt_and_tx_only_code_29_is_unknown(self):
+        self.assertIsNone(self.rpc({"code": 29, "message": "Transaction hash not found"}).receipt("0x1"))
+        self.assertIsNone(self.rpc({"code": 29, "message": "Transaction hash not found"}).transaction("0x1"))
+        with self.assertRaises(g.Refused):
+            self.rpc({"code": -32603, "message": "x"}).receipt("0x1")
+        with self.assertRaises(g.Refused):
+            self.rpc({"code": 21, "message": "x"}).class_hash_at("0x1")
+        self.assertIsNone(self.rpc({"code": 20, "message": "x"}).class_hash_at("0x1"))
+
+
+# ---------------------------------------------------------------- N-3 ledger dir, F4/N-7 faucet sources + register
+class LedgerDirTest(unittest.TestCase):
+    def test_bound_dir_and_override_refused(self):
+        b = binding()
+        self.assertEqual(g.ledger_path(b).parent, Path(b["ledger_dir"]))
+        scope = g.Scope("m", "b", "t", "d", b, json.dumps(b), "h")
+        env = g.bound_env(scope, LIM)
+        self.assertEqual(env["T2_LEDGER_DIR"], b["ledger_dir"])
+        with self.assertRaisesRegex(g.Refused, "T2_LEDGER_DIR is pre-set"):
+            g.refuse_overrides(env, {"T2_LEDGER_DIR": "/tmp/other-ledger"})
+        with self.assertRaisesRegex(g.Refused, "T2_OP_VAULT is pre-set"):
+            g.refuse_overrides(env, {"T2_OP_VAULT": "other-vault"})
+        os.environ["T2_LEDGER_DIR"] = "/tmp/other-ledger"
+        try:
+            self.assertEqual(g.ledger_path(b).parent, Path(b["ledger_dir"]))  # the environment never selects it
+        finally:
+            del os.environ["T2_LEDGER_DIR"]
+        for bad in ("relative/dir", "~/.local/state/ekubo-t2", "/a/../b", "/a/", "", None):
+            with self.assertRaisesRegex(g.Refused, "ledger_dir"):
+                g.ledger_path(dict(b, ledger_dir=bad))
+
+
+class FaucetBindingTest(unittest.TestCase):
+    def refused(self, mutate, pat):
+        b = binding()
+        mutate(b)
+        with self.assertRaisesRegex(g.Refused, pat):
+            g.check_binding(b, LIM)
+
+    def test_empty_or_incomplete_sources_refused(self):
+        self.refused(lambda b: b.update(faucet_sources=[]), "faucet_sources is empty")
+        self.refused(lambda b: b["faucet_sources"][0].update(eligibility=""), "lacks eligibility")
+        self.refused(lambda b: b["faucet_sources"][0].update(operator=""), "lacks operator")
+        self.refused(lambda b: b["faucet_sources"][0].update(paid=True), "must be free")
+        self.refused(lambda b: b["faucet_sources"][0].update(mainnet_prerequisite=True), "must be free")
+        self.refused(lambda b: b["faucet_sources"][0].update(operator="agent"), "named human operator")
+        self.refused(lambda b: b["faucet_sources"].pop(), "needs one or two")
+        self.refused(lambda b: b["faucet_sources"].extend(
+            [dict(b["faucet_sources"][1], source=f"extra-{i}") for i in range(2)]), "needs one or two")
+        self.refused(lambda b: b["faucet_sources"][0].update(chain="eip155:1"), "unfunded chain")
+        self.refused(lambda b: b.update(op_vault=""), "op_vault")
+        self.refused(lambda b: b["starknet"].update(keystore_sha256=None), "keystore_sha256")
+        self.refused(lambda b: b["starknet"].update(account_public_key="0x0"), "public key")
+
+    def test_unbound_template_refused(self):
+        b = json.loads((T2 / "binding/t2-binding.json").read_text())
+        with self.assertRaisesRegex(g.Refused, "not BOUND"):
+            g.check_binding(b, LIM)
+        self.assertEqual(b["faucet_sources"], [])
+        self.assertIsNone(b["starknet"]["keystore_sha256"])
+
+
+class FaucetRegisterTest(LedgerCase):
+    def test_register_rules(self):
+        b, c, src = binding(), "eip155:97", "free-eip155:97"
+        mx = int(next(f["max"] for f in b["funding_recipients"] if f["chain"] == c and f["role"] == "payer"))
+        r1 = g.faucet_record(self.led, b, c, "payer", src, "requested")
+        with self.assertRaisesRegex(g.Refused, "already requested"):
+            g.faucet_record(self.led, b, c, "payer", src, "requested")
+        with self.assertRaisesRegex(g.Refused, "not a bound free source"):
+            g.faucet_record(self.led, b, c, "payer", "paid-faucet", "requested")
+        with self.assertRaisesRegex(g.Refused, "not a bound funding recipient"):
+            g.faucet_record(self.led, b, c, "safe-signer-a", src, "requested")
+        self.assertEqual(g.faucet_register(self.led)[(c, "payer")]["pending"], 1)
+        b2 = copy.deepcopy(b)
+        b2["faucet_sources"].append(dict(b2["faucet_sources"][1], source="second-97"))
+        g.check_binding(b2, LIM)
+        with self.assertRaisesRegex(g.Refused, "still pending"):  # a second source while the first is pending
+            g.faucet_record(self.led, b2, c, "payer", "second-97", "requested")
+        g.faucet_record(self.led, b, c, "payer", src, "denied", ref=r1["seq"])
+        reg = g.faucet_register(self.led)[(c, "payer")]
+        self.assertEqual((reg["requests"], reg["pending"], reg["denied"], reg["received"]), (1, 0, 1, 0))
+        with self.assertRaisesRegex(g.Refused, "already requested"):  # denied still counts: no repeat
+            g.faucet_record(self.led, b, c, "payer", src, "requested")
+        r2 = g.faucet_record(self.led, b, c, "deployer", src, "requested")
+        with self.assertRaisesRegex(g.Refused, "one open request"):
+            g.faucet_record(self.led, b, c, "deployer", src, "received", amount=1, ref=r1["seq"])
+        dmx = int(next(f["max"] for f in b["funding_recipients"] if f["chain"] == c and f["role"] == "deployer"))
+        with self.assertRaisesRegex(g.Refused, "above its maximum"):
+            g.faucet_record(self.led, b, c, "deployer", src, "received", amount=dmx + 1, ref=r2["seq"])
+        self.assertEqual(g.faucet_register(self.led)[(c, "deployer")]["received"], dmx + 1)  # recorded truthfully
+        with self.assertRaisesRegex(g.Refused, "incident"):
+            g.precheck(self.led, LIM, 97, "payer", "execute", tx(gas=100_000), g.GWEI, 0)
+        self.assertLess(0, mx)
+
+
+# ---------------------------------------------------------------- installed sncast compatibility (local fake node)
+class _Node(http.server.BaseHTTPRequestHandler):
+    state: dict = {}
+
+    def log_message(self, *a):
+        pass
+
+    def do_POST(self):
+        req = json.loads(self.rfile.read(int(self.headers["content-length"])))
+        st = self.state
+        m, p = req["method"], req.get("params")
+        if isinstance(p, list):  # the guard sends positional params, sncast named ones
+            names = {"starknet_getNonce": ("block_id", "contract_address"),
+                     "starknet_getClassHashAt": ("block_id", "contract_address"),
+                     "starknet_getTransactionReceipt": ("transaction_hash",),
+                     "starknet_getTransactionByHash": ("transaction_hash",)}.get(m, ())
+            p = dict(zip(names, p))
+        p = p if isinstance(p, dict) else {}
+        res, err = None, None
+        acct = st["account"]
+        if m == "starknet_specVersion":
+            res = "0.10.0"
+        elif m == "starknet_chainId":
+            res = g.SN_CHAIN_ID_SEPOLIA
+        elif m == "starknet_getNonce":
+            a = int(p.get("contract_address", "0x0"), 16)
+            if a == acct and not st["deployed"]:
+                err = {"code": 20, "message": "Contract not found"}
+            else:
+                res = hex(st["nonce"])
+        elif m == "starknet_getClassHashAt":
+            a = int(p.get("contract_address", "0x0"), 16)
+            if a == acct and not st["deployed"]:
+                err = {"code": 20, "message": "Contract not found"}
+            else:
+                res = hex(st["account_class"]) if a == acct else "0x61dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f"
+        elif m == "starknet_getClass":
+            res = {"sierra_program": ["0x1"], "contract_class_version": "0.1.0",
+                   "entry_points_by_type": {"EXTERNAL": [], "L1_HANDLER": [], "CONSTRUCTOR": []}, "abi": "[]"}
+        elif m == "starknet_estimateFee":
+            res = [{"l1_gas_consumed": "0x10", "l1_gas_price": "0x3b9aca00", "l2_gas_consumed": "0xf4240",
+                    "l2_gas_price": "0x2540be400", "l1_data_gas_consumed": "0x80", "l1_data_gas_price": "0x3b9aca00",
+                    "overall_fee": "0x0", "unit": "FRI"}]
+        elif m in ("starknet_addInvokeTransaction", "starknet_addDeployAccountTransaction"):
+            tx = dict(next(iter(p.values())))
+            h = "0x" + os.urandom(31).hex()
+            st["sent"].append(tx)
+            st["txs"][int(h, 16)] = tx
+            if m == "starknet_addDeployAccountTransaction":
+                st["deployed"] = True
+                res = {"transaction_hash": h, "contract_address": hex(acct)}
+            else:
+                res = {"transaction_hash": h}
+            st["nonce"] += 1
+        elif m == "starknet_getTransactionByHash":
+            tx = st["txs"].get(int(p.get("transaction_hash", "0x0"), 16))
+            res = tx
+            if tx is None:
+                err = {"code": 29, "message": "Transaction hash not found"}
+        elif m == "starknet_getTransactionReceipt":
+            if int(p.get("transaction_hash", "0x0"), 16) in st["txs"]:
+                res = {"finality_status": "ACCEPTED_ON_L2", "execution_status": "SUCCEEDED", "block_number": 9,
+                       "actual_fee": {"amount": hex(10**14), "unit": "FRI"}, "contract_address": hex(acct)}
+            else:
+                err = {"code": 29, "message": "Transaction hash not found"}
+        elif m == "starknet_getEvents":
+            res = {"events": []}
+        elif m == "starknet_call":
+            res = [hex(st["pubkey"])]
+        elif m == "starknet_blockNumber":
+            res = 9
+        else:
+            err = {"code": -32601, "message": f"unsupported {m}"}
+        out = {"jsonrpc": "2.0", "id": req.get("id")}
+        if err:
+            out["error"] = err
+        else:
+            out["result"] = res
+        b = json.dumps(out).encode()
+        self.send_response(200)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+
+
+@unittest.skipUnless(shutil.which("sncast") and shutil.which("script") and os.environ.get("T2_SKIP_SNCAST") != "1",
+                     "installed sncast + util-linux script needed")
+class SncastCompatTest(unittest.TestCase):
+    """The guard's real Sncast runner + sn_send against the INSTALLED sncast and a local fake node, with a throwaway
+    keystore created for this test only (never funded, never sent anywhere): argv, explicit bounds, --nonce, the
+    generated descriptor and the on-chain transaction verification all agree with sncast's actual behaviour."""
+
+    def test_account_deploy_vote_and_udc_deploy(self):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        w = Path(d.name)
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Node)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.shutdown)
+        url = f"http://127.0.0.1:{srv.server_address[1]}"
+        _Node.state = {"account": -1, "deployed": False, "nonce": 0, "sent": [], "txs": {}, "account_class": 0,
+                       "pubkey": 0}
+        pw = "eku-1268-throwaway-" + os.urandom(6).hex()
+        cmd = f"{shutil.which('sncast')} --keystore {w}/ks.json --account {w}/acct.json --json account create --url {url}"
+        feed = subprocess.Popen(["script", "-q", "-c", cmd, "/dev/null"], stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        import time as _t
+        _t.sleep(3)
+        out, _ = feed.communicate(f"{pw}\n{pw}\n", timeout=60)
+        created = json.loads((w / "acct.json").read_text())
+        addr = next(json.loads(line[line.index("{"):])["address"] for line in out.splitlines()
+                    if '"address"' in line)
+        b = sn_binding()
+        b["roles"]["starknet_account"] = b["starknet"]["account"] = addr
+        b["starknet"].update(account_public_key=created["variant"]["public_key"],
+                             account_class_hash=created["deployment"]["class_hash"],
+                             account_salt=created["deployment"]["salt"],
+                             keystore_sha256=g.sha256_hex((w / "ks.json").read_bytes()))
+        _Node.state.update(account=int(addr, 16), account_class=int(created["deployment"]["class_hash"], 16),
+                           pubkey=int(created["variant"]["public_key"], 16))
+        sn = g.StarknetRpc(url)
+        ks = (w / "ks.json").read_bytes()
+        with g.Ledger(w / "ledger.jsonl") as led:
+            for kind, args in (
+                ("account-deploy", ["account", "deploy", "--url", url]),
+                ("vote", ["invoke", "--url", url, "--contract-address", SN_GOV, "--function", "vote", "--calldata",
+                          "5", "1"]),
+                ("deploy-staker", ["deploy", "--url", url, "--class-hash", g.SN_CLASSES["staker"], "--salt", g.SN_SALT,
+                                   "--unique", "--constructor-calldata", b["starknet"]["token"]]),
+            ):
+                g.sn_validate(kind, args, b, url)
+                deployed = g.sn_check_identity(sn, b, kind, ks)
+                runner = g.Sncast(ks, g.sn_account_descriptor(b, deployed), lambda: pw)
+                o = g.sn_send(led, LIM, b, kind, args, sn, runner, out=lambda s: None, polls=(3, 0.2))
+                self.assertEqual(o["status"], 1, kind)
+                sent = _Node.state["sent"][-1]
+                bounds = next(r["bounds"] for r in led.records if r["type"] == "sn-bounds"
+                              and r["ref"] == led.attempts(g.STARKNET_SEPOLIA)[-1]["seq"])
+                for r in g.SN_RESOURCES:  # sncast signed exactly the guard's explicit bounds
+                    self.assertEqual(int(sent["resource_bounds"][r]["max_amount"], 16), int(bounds[r]["max_amount"]))
+                self.assertEqual(int(sent["tip"], 16), 0)
+            self.assertEqual(int(_Node.state["sent"][0]["constructor_calldata"][0], 16),
+                             int(created["variant"]["public_key"], 16))
+            self.assertEqual(int(_Node.state["sent"][1]["sender_address"], 16), int(addr, 16))
+            self.assertEqual(int(_Node.state["sent"][1]["nonce"], 16), 1)
+            self.assertEqual([int(x, 16) for x in _Node.state["sent"][2]["calldata"][1:3]],
+                             [int(g.SN_UDC, 16), SNCAST_DEPLOY_SELECTOR])
+            # a substituted keystore is refused before any password access
+            with self.assertRaisesRegex(g.Refused, "keystore_sha256"):
+                g.sn_check_identity(sn, b, "vote", ks.replace(b"{", b"{ ", 1))
+            # a wrong password makes sncast fail on the dry-run: in-process void, nothing sent
+            n0 = len(_Node.state["sent"])
+            runner = g.Sncast(ks, g.sn_account_descriptor(b, True), lambda: "wrong-password")
+            with self.assertRaisesRegex(g.Refused, "sncast failed"):
+                g.sn_send(led, LIM, b, "vote", ["invoke", "--url", url, "--contract-address", SN_GOV, "--function",
+                                                "vote", "--calldata", "6", "1"], sn, runner, out=lambda s: None,
+                          polls=(3, 0.2))
+            self.assertEqual(len(_Node.state["sent"]), n0)
+            self.assertEqual(led.records[-1]["type"], "void")
 
 
 if __name__ == "__main__":

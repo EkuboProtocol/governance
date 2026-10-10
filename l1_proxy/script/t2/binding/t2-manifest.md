@@ -1,8 +1,8 @@
-# EKU-1261 T2 real-delivery testnet manifest, bounded budget and binding rules (A′-CCIP owner route)
+# EKU-1268 T2 real-delivery testnet manifest, bounded budget and binding rules (A′-CCIP owner route)
 
 **Status: PREPARED, NOT AUTHORIZED.** No key was generated, fetched or used. No faucet was requested. No testnet or mainnet transaction was signed or sent. Nothing was merged or deployed. Every test ran on a local EVM, local anvil forks, local snforge or read-only public RPC.
 
-This revision replaces the EKU-1232 manifest (`21e8bc9b…65feb`, PR #87 head `a483a79`). It closes CSO EKU-1233 T2-1..T2-3 and L-a..L-f and CFO EKU-1234 F1..F4. Production gate items L-4..L-7 are unchanged and still enforced.
+This revision (EKU-1268) replaces the EKU-1261 manifest (`dcd5a142…d44e`, PR #87 head `5bab186`). It closes CFO EKU-1263 R1 (durable reservation **before** signing) and R2 (Starknet account identity and returned-transaction checks), adopts the CSO EKU-1262 N-1 stop-condition tests, and addresses N-2..N-8 (§7, §8, §10, §12). The EKU-1261 revision closed CSO EKU-1233 T2-1..T2-3 and L-a..L-f and CFO EKU-1234 F1..F4. Production gate items L-4..L-7 and the L-c/L-d gate code are byte-unchanged in this revision.
 
 - **Route:** Starknet Sepolia Governor → Starknet messaging → Ethereum Sepolia test `StarknetOwnerProxy` → `CCIPGovernanceSender` → CCIP → `CCIPOwnerExecutor` on BNB Chain testnet (97) and Monad testnet (10143). This is the Ethereum-hop fallback, not direct Starknet CCIP.
 - **Revision:** the exact commit containing this file. The reviewed head SHA and this file's SHA-256 are recorded on the PR and the EKU-1261 issue, because a file cannot contain its own commit hash. The scope digest (§5) binds this file, the binding addendum and every tooling byte.
@@ -13,7 +13,8 @@ Evidence labels: **MOCKED** (local EVM with mocks), **REAL CODE ON FORK**, **IMP
 
 | Item | Value |
 |---|---|
-| Base | `a483a79` (EKU-1232), stacked on PR #86 `2161f7a` |
+| Base | `5bab186` (EKU-1261) on `a483a79` (EKU-1232), stacked on PR #86 `2161f7a` |
+| This revision's diff vs `5bab186` | Test-only T2 tooling only: `script/t2/t2_guard.py`, `script/t2/test/test_t2_guard.py`, `script/t2/test/t2-local-e2e.sh`, `script/t2/t2-run.sh` and `script/t2/t2-starknet.sh` (comments), `script/t2/binding/t2-binding.json` (UNBOUND template: new null identity fields), this manifest. **No** change under `l1_proxy/src`, `vendor`, `lib`, `foundry.toml`, `script/CCIPRouteGates.s.sol`, `script/t2/*.sol`, `script/t2/cairo`, `t2-limits.json`, `t2_budget.py`, `src/*.cairo` or `Scarb.*`. |
 | Contract sources | **Unchanged.** The `l1_proxy/src`, `l1_proxy/vendor`, `l1_proxy/lib`, `foundry.toml`, `Scarb.toml`, `Scarb.lock` and `src/*.cairo` diff (other than `cfg(test)` files) against `2161f7a` is empty. |
 | Production gate tooling (needs CSO review) | `script/CCIPRouteGates.s.sol`: **L-c** `requireDistinctHosts(AUDIT_RPC_URL_1, AUDIT_RPC_URL_2)` on the provider path; **L-d** `checkTransferReceipt` / `checkTransferTiming` (`AUDIT_MODE=post` needs `TRANSFER_TX_HASH` + `PRESIGN_AUDIT_TS`; `checkPostTransfer` needs `TRANSFER_TX_BLOCK` + `PRESIGN_AUDIT_TS`). L-4..L-7 code is untouched. |
 | New test-only Cairo (needs exact-SHA review) | `l1_proxy/script/t2/cairo` (separate Scarb package `t2_voting_token`): `T2VotingToken`, fixed supply 1000e18 minted once in the constructor to the bound `t2-starknet` account. No mint, burn, owner, admin, upgrade or pause. Class hash `0x03c9587aec2a445af1ab5b8876287c7358cfa293bccaa8c20ddb54392bd0ff44`. 124 lines of snforge tests. |
@@ -139,8 +140,8 @@ All six EVM roles must be pairwise distinct. None may be the company key, the pr
 
 1. **Stage A: key preparation (a later human gate).** This approves only creating and storing the 7 testnet keys in a named 1Password vault. It approves no transaction and no faucet request. The keys are created as follows:
    - EVM roles: `op item create --vault <V> --category password --title t2-<role> --generate-password`, then `CAST_PASSWORD="$(op read …)" cast wallet new "$T2_KEYSTORE_DIR" t2-<role>.json`.
-   - Starknet: `sncast account create` with a keystore.
-   - Only public addresses leave the machine.
+   - Starknet: `sncast --keystore $T2_KEYSTORE_DIR/t2-starknet.json --account <scratch>.json account create` (open_zeppelin). Its output and account file give the public identity: address, public key, account class hash and salt. `sha256sum t2-starknet.json` gives the keystore digest (a digest of the encrypted file, not key material).
+   - Only public addresses, the Starknet public identity and the keystore digest leave the machine (`keys.json`: `starknet_public_key`, `starknet_account_class_hash`, `starknet_account_salt`, `starknet_keystore_sha256`, plus `ledger_dir`, the absolute ledger directory on the single signing host).
 
    An approval record with `stage: key-preparation` is refused by every signing command.
 2. **Binding.** `t2_guard.py bind --keys public-addresses.json` writes `binding/t2-binding.json` with status `BOUND`. It contains:
@@ -149,8 +150,10 @@ All six EVM roles must be pairwise distinct. None may be the company key, the pr
    - the token, staker and Governor addresses (UDC, unique, salt `0x1232`)
    - pinned class hashes and the Governor config
    - the stake amount and fee cap
+   - the **Starknet account identity** (CFO R2): address, public key, account class hash, salt, type `open_zeppelin`, and the keystore sha256
+   - the **ledger directory** `ledger_dir` (N-3): one absolute, normalized path; `T2_LEDGER_DIR` is exported from it and a different pre-set value is refused, as is a different `T2_OP_VAULT`
    - **chain-qualified funding recipients** (`eip155:<cid>` or `starknet:SN_SEPOLIA`, with role, address and max). These are exactly the funded roles per chain, each at most its subcap; Safe owners can never be recipients.
-   - the eligible free faucet sources
+   - the eligible free faucet sources (F4/N-7). `bind` and every signing command **refuse** an empty list, a source missing any of `url`, `eligibility`, `eligibility_checked_at`, `drip_max`, `login`, `region`, `operator`, a source with `paid` or `mainnet_prerequisite` not `false`, an `operator: agent` source without `automated_allowed: true`, a source for an unfunded chain, and a funded chain with zero or more than two sources.
 
    Before stage B, these checks are recorded in the addendum review: deployer nonce 0 on all three chains, no code at any predicted address, and Safe CREATE2 matching on 97 and 10143. The addendum is committed.
 3. **Scope digest.** `t2_guard.py digest` = sha256 of `ekubo-t2-scope-v1`, manifest sha256, addendum sha256 and tooling sha256. The tooling sha256 covers every tracked byte under `l1_proxy/script`, `src`, `vendor`, `lib`, `foundry.toml`, `src/`, `Scarb.toml` and `Scarb.lock`, with submodules by commit. It is computed from a clean tree, and any uncommitted byte refuses.
@@ -165,7 +168,7 @@ All six EVM roles must be pairwise distinct. None may be the company key, the pr
 
 **Limit of the interlock.** The guard proves that the saved record names exactly this scope. It cannot prove that a human wrote the record. The operator must copy the record from the immutable Paperclip approval named in `approval_ref`, and reviewers compare the two.
 
-**Funding sequence (F4).** Funding happens only after stage B, only to the bound recipients, only up to their caps, and only from the bound free sources.
+**Funding sequence (F4).** Funding happens only after stage B, only to the bound recipients, only up to their caps, and only from the bound free sources. Every request and its result is recorded in the cumulative register in the ledger with `t2_guard.py faucet --chain <c> --role <r> --source <s> --status requested|received|denied [--ref <seq>] [--amount <n>] [--evidence <text>]` (stage-B approval required). The register refuses a second request for the same source, chain and recipient (a denied request still counts), any new request for a chain and role while one is pending, a request once the recipient holds its maximum, and a result that does not reference one open request. A receipt above the recipient's bound maximum is recorded truthfully and is an **incident that stops T2** (no reallocation, sweep or top-up). `t2-run.sh status` prints per chain and role: requests, pending, denied, received count and amount.
 
 - Prohibited: mainnet balances or eligibility transfers, paid faucets or services, credential sharing, and top-ups or internal reallocations. Each of these has a cap of 0.
 - At most one request per eligible source, chain and recipient, and at most two named sources per chain. There is no repeat while a request is pending or rate-limited.
@@ -233,60 +236,82 @@ The 2 STRK non-fee reserve is kept as a balance margin. No STRK is staked any mo
 | propose / vote | 3 each | 4 each | 0.5 / 0.3 |
 | execute-p1 / execute-p2a / execute-p2b | 1 each | 2 each | 7 each |
 
-These Starknet fee bounds are estimates: L2→L1 message L1 gas is measured by snforge, and the Starknet Sepolia L1 gas price is from 2026-10-10. Before every send, the guard takes a fresh `--dry-run` estimate. Any estimate above the kind's max refuses, and T2 stops and is revised; nothing is raised.
+These Starknet fee bounds are estimates: L2→L1 message L1 gas is measured by snforge, and the Starknet Sepolia L1 gas price is from 2026-10-10. Before every send, the guard takes a fresh `--dry-run` estimate (after the durable reservation, §7). Any estimate above the kind's max refuses, and T2 stops and is revised; nothing is raised.
 
-## 7. Durable attempt ledger and pre-sign enforcement (F1)
+**Budget stop, not a completion guarantee.** The caps are ceilings that the guard enforces; they do not guarantee that every planned step fits. Planned Starknet max fees are 39.4 STRK; the two largest retry slots need 14 STRK more, so planned + two largest retries = 53.4 STRK > the 48 STRK aggregate. If retries are needed, the aggregate precheck (and every EVM role/chain cap likewise) **refuses and T2 stops incomplete**; caps, acquisitions and the schedule are never raised to finish it. Bootstrap has margin 0 on Sepolia. An in-process refused signing attempt (`void`) still consumes its attempt slot. A stop before completion is an acceptable T2 outcome, reported as such.
 
-**Ledger file.** `$T2_LEDGER_DIR/ledger-<sha256(roles)[:16]>.jsonl` (default `~/.local/state/ekubo-t2`, mode 0700/0600). It is held under an exclusive non-blocking `flock`, so a second runner is refused. Records are append-only. Each line carries `seq` and `prev` (the sha256 of the previous line), is written with `O_APPEND`, and is followed by an fsync of both the file and the directory. On load, a torn final line, a broken chain or a broken sequence refuses.
+## 7. Durable attempt ledger and pre-sign enforcement (F1, CFO R1/R2)
+
+**Ledger file.** `<ledger_dir>/ledger-<sha256(roles)[:16]>.jsonl`, where `ledger_dir` comes **only** from the bound addendum (N-3; mode 0700/0600). `T2_LEDGER_DIR` is a bound environment value: a different pre-set value refuses, so two runners on the signing host cannot select separate ledgers or locks. The ledger is held under an exclusive non-blocking `flock`, so a second runner is refused. Records are append-only. Each line carries `seq` and `prev` (the sha256 of the previous line), is written with `O_APPEND`, and is followed by an fsync of both the file and the directory. On load, a torn final line, a broken chain or a broken sequence refuses. Limit: `flock` is per host; runners on different hosts are bounded only by the on-chain nonce anchoring (at most one transaction in a race, after which both refuse).
 
 **Record types:**
 
 | type | fields |
 |---|---|
-| `reserve` | `chain`, `role`, `from`, `kind`, `step`, `nonce`, `gas`, `max_fee`, `priority`, `value`, `max_cost` (= gas × max fee + value, or the Starknet max fee), `hash`, `raw` (signed bytes), `to`, `input_sha256` (EVM); Starknet adds `argv_sha256` |
-| `sn-sent` | `ref`, `hash` (Starknet only; the hash is known only after sncast) |
+| `reserve` | Written **before any signer runs**. `chain`, `role`, `from`, `kind`, `step`, `nonce`, `attempt` (kind attempt number), `max_cost` (= gas × max fee + value, or the Starknet kind max fee), `hash: ""`. EVM adds the unsigned intent `gas`, `max_fee`, `priority`, `value`, `to`, `input_sha256` and `intent_sha256`; Starknet adds `argv_sha256`, `expect` (the exact transaction the kind may produce), `descriptor_sha256`, `keystore_sha256` |
+| `signed` | EVM only, written after the signed bytes were verified against the reservation and **before** publishing: `ref`, `hash`, `raw`, `raw_sha256` |
+| `sn-bounds` | Starknet only, after the dry-run and before the real send: `ref`, explicit `bounds` (L1 gas, L2 gas, L1 data gas: max amount and max price), `tip: 0`, `max_liability` (≤ the reservation) |
+| `sn-sent` | Starknet only: `ref`, `hash` returned by sncast |
 | `outcome` | `ref`, `chain`, `status`, `gas_used`, `block`, `cost` (receipt actual; on Monad the gas limit), `dispatched` (CCIP payload ids), `contract` |
-| `void` | `ref`, `reason` (only when the same nonce was mined by another *ledger* transaction) |
+| `void` | `ref`, `reason`. Only (a) the same nonce was mined by another *ledger* transaction, or (b) an **in-process** refusal by the signer or the signed-field comparison (EVM), or by the sncast dry-run or the estimate check (Starknet), where nothing was published and the bytes were discarded. A void attempt still counts against the kind and chain attempt caps. |
+| `incident` | `ref`, `reason`: a returned Starknet transaction that does not match its reservation, a malformed receipt, or a faucet receipt above its maximum. Any incident is a permanent stop. |
+| `faucet` | the cumulative faucet register (§5) |
 | `watch` | `chain`, `from`, `to` (log ranges already checked for unknown events) |
 
 **Order of every EVM signing step** (`t2-run.sh` → `t2_guard.py`):
 
 1. `env`: scope and approval are checked, and the bound environment is exported.
-2. `preflight` refuses on any open reservation and on any role nonce that differs from the ledger's mined count.
+2. `preflight` refuses on any incident or fee overrun, any open reservation, any RPC whose `eth_chainId` differs, and any role nonce that differs from the ledger's mined count.
 3. A fresh forge simulation becomes the plan.
-4. `send` starts with `reconcile` (receipts for open reservations, nonce equality, void only for ledger twins).
-5. Then the stop watches run (§8).
-6. Every planned transaction is classified into exactly one allowed kind for this step, and its broadcaster must be the step's single role.
-7. **Per transaction, immediately before signing:**
+4. `send` starts with `reconcile` (chain id of **every** EVM RPC, receipts for open reservations, nonce equality, void only for ledger twins; an unlinked reservation refuses permanently, below).
+5. Then the stop watches run (§8), again checking the chain id of every EVM and the Starknet RPC.
+6. Every planned transaction is classified into exactly one allowed kind for this step, and its broadcaster must be the step's single role. A wrong broadcaster refuses before any reservation or signer.
+7. **Per transaction, before anything is reserved:**
    - latest nonce == pending nonce == plan nonce == ledger mined count
    - fresh base fee ≤ ceiling; max fee = ceiling; priority clipped
    - gas limit ≤ kind max; value ≤ kind max (only `dispatch` carries value, ≤ 0.002 ETH)
-   - kind attempt cap and chain attempt cap
+   - kind attempt cap and chain attempt cap; no incident, no fee overrun
    - no open reservation
    - **spent + reserved + candidate max cost ≤ role subcap and ≤ chain cap**
    - for dispatch: messages + 1 ≤ 9 and fees ≤ 0.018 ETH
-8. `cast mktx` signs with the role keystore. The password goes through an anonymous memfd, never argv, env or disk. `cast decode-transaction` then decodes the signed bytes, and every field must equal the plan: signer, chain, nonce, to, value, input, gas, maxFee, priority, type 2, no access list.
-9. The reservation is written durably, **then** `cast publish` is called. The step then waits for the receipt and records the outcome. A revert is counted at its real cost, and T2 stops.
+8. **The unsigned intent and its maximum liability are appended and fsync'd (`reserve`) BEFORE the signer is invoked** (CFO R1). No code path signs and then reserves.
+9. `cast mktx` signs with the role keystore. The password goes through an anonymous memfd, never argv, env or disk. `cast decode-transaction` decodes the signed bytes, and every field must equal the reserved intent: signer, chain, nonce, to, value, input, gas, maxFee, priority, type 2, no access list. A refusal here is in-process: the bytes are discarded unpublished and the reservation is closed as `void` (attempt still counted).
+10. The verified signed bytes are appended and fsync'd (`signed`), **then** `cast publish` is called. The step waits for the receipt and records the outcome. A revert is counted at its real cost, and T2 stops.
 
-Crash at any point: the reservation stays open at its maximum. The next step refuses until `reconcile` (optionally `--republish` of the identical signed bytes, which adds no liability) records the receipt. A nonce consumed outside the ledger refuses permanently.
+**Crash or stop at each boundary** (local evidence in §11):
 
-**Starknet.** `t2_guard.py sn --kind <k>` follows the same order:
+| Boundary | Ledger state | What happens next |
+|---|---|---|
+| after `reserve`, before or **during** signing | open, unlinked, counted at its maximum | Every later attempt refuses ("unknown outcome"); `reconcile` refuses **permanently** (N-2) |
+| after signing, before the `signed` link | open, unlinked | same: permanent stop. A signature may exist; whether it was published cannot be reconstructed |
+| a signer error that is not a refusal (e.g. timeout) | open, unlinked | same: permanent stop |
+| after the `signed` link, before or after publish | open, linked | `reconcile` reads the receipt; `reconcile --republish` re-sends the **identical** signed bytes (same hash, same reservation, no new slot or liability) |
+| linked but dropped and never mined, nonce unchanged | open, linked | stays reserved; if republishing cannot land it, T2 stops permanently (N-2) |
 
-- the Starknet Sepolia chain id is checked
-- the exact argv shape for the kind is checked (target, function, calldata, class hash, salt, unique)
-- every proposal and execute call must be `send_message_to_l1` on the T2 Governor to the bound proxy
-- signer options are refused if the caller supplies them
-- reconcile and the account nonce are checked against the ledger
-- every token, Staker and Governor event must come from a ledger transaction
-- a fresh estimate must be ≤ the kind max; the attempt, retry and aggregate checks apply
-- the reservation is written, then sncast is called with `--max-fee` and `--nonce` (account deploy has no nonce option)
-- the outcome is recorded from the receipt, and deployments are re-checked (L-b)
+**N-2 (accepted conservative stop).** An unlinked or hashless reservation, and a linked transaction that is dropped and cannot be landed by republishing the same bytes, are **never released**. An absent transaction or an unchanged nonce is not treated as proof that nothing was signed or sent. T2 then stops permanently: resuming requires a code change, a new exact-SHA review and a new approval. This revision requests **no** void or recovery authority for these cases.
+
+**Starknet** (`t2_guard.py sn --kind <k>`, CFO R2):
+
+1. The Starknet Sepolia chain id is checked, and the exact argv shape for the kind (target, function, calldata, class hash, salt, unique). Every proposal and execute call must be `send_message_to_l1` on the T2 Governor to the bound proxy. Signer, fee, nonce, account, keystore, network, wait, dry-run and json options are refused if the caller supplies them.
+2. **Identity, before any password or key access:** the keystore file's sha256 must equal the bound `keystore_sha256`. For every kind except `account-deploy`, the on-chain class hash of the bound account must equal the bound account class hash, and its `get_public_key` must equal the bound public key; `account-deploy` requires that the bound address has no code yet. The sncast account descriptor is **generated from the bound identity** (address, public key, class hash, salt): an operator-supplied account file is never read, so it cannot be substituted. The keystore bytes and the descriptor are frozen in anonymous memfds that sncast reads through `/dev/fd`.
+3. reconcile (chain id; open reservations are credited only as in step 8) and the account nonce are checked against the ledger; every token, Staker and Governor event must come from a ledger transaction.
+4. The attempt, retry and 48 STRK aggregate checks apply to the kind's max fee. **The reservation (kind max, nonce, expected transaction) is fsync'd before sncast runs at all**, dry-run included.
+5. `sncast --dry-run` (the first password access; it signs only a query-version transaction that the network never executes). The guard derives explicit resource bounds from the fresh estimate, with the first margin whose maximum liability fits the reservation (amount × 1.5 and price × 2, then smaller, down to the bare estimate); an estimate above the kind max refuses. A dry-run failure or an estimate refusal closes the reservation as `void`.
+6. The bounds and their maximum liability are fsync'd (`sn-bounds`), then sncast sends with exactly those bounds, `--tip 0` and `--nonce` (account deploy has no nonce option; its nonce is checked in step 8). Installed sncast 0.62.1 signs exactly the given bounds and skips its own estimate (§11).
+7. The returned hash is linked (`sn-sent`). A crash or sncast failure before the link leaves an unlinked reservation: permanent stop (N-2).
+8. **Before crediting**, the transaction returned by the chain must match the reservation: type (`INVOKE`, `DECLARE` or `DEPLOY_ACCOUNT`) and version 3; nonce; sender (or, for account deploy, class hash, salt, constructor calldata = public key, and the receipt's contract address); the exact `__execute__` calldata (the single call, or the UDC `deployContract` call with class hash, salt, unique and constructor calldata) or the pinned declared class; resource bounds equal to the reserved bounds; tip 0; no paymaster or account-deployment data; signed maximum liability ≤ the reservation. The receipt fee must be in FRI. Any mismatch or missing field is an `incident`: the transaction is **not credited**, the reservation stays open at its maximum, and T2 stops permanently. The chain is identified by the checked RPC chain id (the guard does not recompute the transaction hash).
+9. The outcome is recorded at the actual fee. An actual fee above the reservation is recorded truthfully and **stops T2** (N-5) at that point and on every later command. Deployments are re-checked (L-b).
+
+**JSON-RPC errors (N-6).** Only the exact Starknet error code 20 (`CONTRACT_NOT_FOUND`) means "no account yet, nonce 0" or "no code"; only code 29 (`TXN_HASH_NOT_FOUND`) means "unknown transaction". Any other error refuses; error text is never matched.
 
 ## 8. Stop conditions (enforced before every attempt unless marked procedural)
 
 - Any read-back, nonce, address, runtime keccak, class hash or config mismatch.
 - A lane change versus §2, including a registered OffRamp set that differs from the pinned set (**L-a**: 97 = {1.2.0, 1.5.0, 2.0.0}, 10143 = {1.6.0, 2.0.0}, exact and in order).
 - A gas price above its ceiling; a fee estimate above the kind max; a cap or count that would be exceeded; an open reservation; a nonce or ledger mismatch; a locked or tampered ledger; an altered scope byte; an expired approval.
+- Any RPC (every EVM chain and Starknet, not only the sending chain) reporting another chain id (N-4); any JSON-RPC error other than the exact codes in §7 (N-6).
+- An unlinked or unresolvable reservation (N-2, permanent); an `incident` (returned Starknet transaction that does not match its reservation, malformed receipt, faucet receipt above its maximum); an actual fee above its reservation (N-5). These persist: every later command refuses.
+- A Starknet keystore whose sha256 differs from the binding, or an on-chain account class or public key that differs (refused before any password access).
 - **T2-2:**
   - any executor `Pinged`/`Queued` for a payload id this ledger did not dispatch (the Safe cancels, T2 stops, CSO is notified)
   - any log on the proxy, sender, Safe, dummies or executor from a transaction outside the ledger (unknown `Requested`, message or call)
@@ -301,7 +326,7 @@ Crash at any point: the reservation stays open at its maximum. The next step ref
 
 ## 9. Concrete T2 authorization scope (proposed; two stages)
 
-> **Stage A (key preparation):** create 7 testnet-only keys (`t2-deployer`, `t2-bootstrap`, `t2-payer`, `t2-safe-signer-a/b/c`, `t2-starknet`) as encrypted keystores, with passwords in 1Password vault `<V>`. Publish only their public addresses, then run `t2_guard.py bind` and commit the addendum. No funding, no transaction.
+> **Stage A (key preparation):** create 7 testnet-only keys (`t2-deployer`, `t2-bootstrap`, `t2-payer`, `t2-safe-signer-a/b/c`, `t2-starknet`) as encrypted keystores, with passwords in 1Password vault `<V>`. Publish only their public addresses, the Starknet public identity (public key, account class hash, salt) and the keystore sha256, then validate the free faucet sources, run `t2_guard.py bind` and commit the addendum. No funding, no faucet request, no transaction.
 >
 > **Stage B (final transactions):** for scope digest `<t2_guard.py digest>` (manifest `<sha256>`, addendum `<sha256>`, tooling `<sha256>`) at head `<sha>`:
 >
@@ -324,6 +349,13 @@ New in this revision:
 | L-e | Real out-of-gas manual execution is no longer attempted; evidence stays IMPERSONATED (§4). | – |
 | L-f | sncast still receives `KEYSTORE_PASSWORD` in its own process environment. This is acceptable for testnet-only keys and **must not** be reused for production. EVM signing now uses a memfd. | – |
 
+**Production runbook items carried forward (CSO N-7, N-8; procedural, not enforced by this tooling):**
+
+- **N-7 provider, not only host.** `requireDistinctHosts` proves only that `AUDIT_RPC_URL_1` and `AUDIT_RPC_URL_2` have different hostnames. The final production manifest must name the **operator** of each endpoint and show they are independent providers (not two hostnames, gateways or resellers of the same backend), with that evidence attached.
+- **N-7 fork URL.** `AUDIT_RPC_URL_1` is a declared value; the gate cannot prove it is the `--fork-url` forge used. The production runbook runs the gate through one wrapper that passes `--fork-url "$AUDIT_RPC_URL_1"` from the same variable, records the full command line, and the reviewer checks `eth_chainId` and the latest block hash of the fork against both endpoints at the audit block.
+- **N-8 approval origin.** Before the first T2 signing (and in the production manifest for its approval record), CSO or CTO compares the committed `binding/t2-approval.json` byte for byte with the record in the immutable Paperclip approval named in `approval_ref` and posts both sha256 values. The guard proves only that the record names this exact scope; a recomputed digest is not an approval.
+- **F4 before stage B.** No stage-B request without a BOUND addendum whose faucet sources pass the checks in §5 (eligibility evidence, operator, free, no mainnet prerequisite, one or two per funded chain), and without the empty cumulative register that will record requests, pending, denied and received per chain and role. Real-money, paid-service, mainnet and credential-sharing caps stay **0**; acquisition and production caps are unchanged.
+
 T6 command per transfer:
 
 ```
@@ -338,7 +370,9 @@ Afterwards, run again with `AUDIT_MODE=post TRANSFER_TX_HASH=<h> TRANSFER_TX_BLO
 ```sh
 cd l1_proxy
 forge test                                           # unit + gate tests (fork suites skip without RPC env)
-python3 script/t2/test/test_t2_guard.py -v           # guard/budget unit, negative and property tests (no RPC, no key)
+python3 script/t2/test/test_t2_guard.py -v           # guard/budget unit, negative, property, crash and identity tests (no RPC,
+                                                     # no real key; SncastCompatTest: installed sncast + local fake node +
+                                                     # throwaway keystore; T2_SKIP_SNCAST=1 skips it)
 python3 script/t2/t2_budget.py --check && python3 script/t2/t2_budget.py
 (cd script/t2/cairo && snforge test)                 # T2VotingToken: fixed supply, no mint, transfers/allowances
 (cd .. && snforge test t2_)                          # Governor emits the exact L2->L1 felts
@@ -353,16 +387,36 @@ The local e2e drives the real `t2-run.sh` → forge → `t2_guard.py` → `cast 
 - no approval, a key-preparation stage, an expired approval and a window over 14 days are all refused, and nonce 0 is preserved
 - the deployer deploys the proxy, both destinations and the sender, each with a post-check
 - one uncommitted byte, a pre-set `T2_PAYER` and a raised `T2_MAX_FEE_WEI` are refused
-- **the payer keystore under the bootstrap role is refused at the signed-field check, and nothing is published**
+- **the payer keystore under the bootstrap role is refused at the signed-field check, and nothing is published**; that attempt was reserved before signing and closed as `void`
 - a concurrent runner and a base fee above the ceiling are refused
 - **two-role ping**: the bootstrap requests and the payer dispatches
-- crash after the reservation: the next attempt is refused, then `reconcile --republish` and continue
+- crash after the durable signed link and before publish (`T2_FAULT=linked`): the next attempt is refused, then `reconcile --republish` sends the identical bytes and the flow continues
+- the real ledger: every EVM reservation was written without a hash and precedes its `signed` link
 - a deleted ledger is refused
 - the handoff succeeds; a bootstrap request after the handoff is refused
 - an out-of-band payer transaction is refused
 - an edited binding with the old approval is refused
 
+**Boundary-specific evidence for this revision (EKU-1268).** `test_t2_guard.py` adds, all key-free:
+
+| Requirement | Test (class) | What it proves |
+|---|---|---|
+| R1 reserve before sign | `PreSignReservationTest` | The fake signer reads the ledger **from disk** when it is called: the last record is an unlinked `reserve` of exactly this chain, role, nonce and max cost. Order is `reserve`, `signed`, `outcome`. A precheck or broadcaster refusal reaches no signer and writes nothing. A signed-field refusal is `void`, unpublished, still counted. A signer error that is not a refusal leaves the slot unresolved. |
+| R1 crash boundaries | `CrashBoundaryTest` | A child process exits with `os._exit` (no cleanup) **during signing**, **after signing before the link**, and after the link. The reservation is durable at its maximum; the next attempt refuses before any signer call; reconcile refuses permanently for the first two; the third republishes the identical bytes with no new slot. Starknet: exits after the reservation, after the bounds, during the send and after sncast returned; all leave a durable unlinked reservation and a permanent stop, with no sncast call. |
+| concurrency | `ConcurrencyTest`, e2e | A second process cannot take the ledger lock. |
+| N-1 stop conditions | `StopConditionTest` (adopted from CSO `cso_watch_test.py`) | Unknown payload (`Queued` and `Pinged`), foreign transaction logs (sender, Safe), Safe signer nonce, proxy `currentNonce` (mismatch and match), Starknet foreign event (and own event passes), Starknet nonce mismatch, clean cases. |
+| N-4 | `StopConditionTest`, `PreSignReservationTest` | A wrong `eth_chainId` on a non-sending chain refuses in reconcile and watch; a wrong Starknet chain id refuses in reconcile and watch; the sending chain refuses before the signer. |
+| R2 identity | `StarknetIdentityTest` | Keystore sha256, on-chain class and public key refusals; account-deploy needs no code; the descriptor is generated from the binding; the runner passes the frozen bytes through `/dev/fd` and reads the password only inside `run()`. |
+| R2 returned transaction, N-5 | `StarknetSendTest` | Wrong sender, nonce, payload, resource bounds, tip, version, fee unit, and each missing field: not credited, incident, reservation kept at max, and the next command refuses with no sncast call. Actual fee above the reservation: recorded at the actual fee, then every Starknet and EVM precheck refuses. Estimate above the cap: dry-run only, `void`. sncast is never run before the reservation. |
+| N-6 | `StarknetRpcErrorTest` | Only code 20 gives nonce 0 / no code; code 21, 24, -32603 and a bare "20" refuse; only code 29 means an unknown transaction. |
+| N-3, F4/N-7 | `LedgerDirTest`, `FaucetBindingTest`, `FaucetRegisterTest` | The ledger directory comes from the binding even with `T2_LEDGER_DIR` set; `T2_LEDGER_DIR`/`T2_OP_VAULT` overrides refuse; bad paths refuse. An empty or incomplete faucet source list refuses (the committed UNBOUND template has none and is refused); the register's one-request, pending, denied and over-maximum rules. |
+| installed sncast | `SncastCompatTest` | The real `Sncast` runner and `sn_send` drive **installed sncast 0.62.1** against a local fake JSON-RPC node with a throwaway keystore created for the test: account deploy, vote and UDC deploy. sncast signs exactly the guard's bounds and tip 0, uses `--nonce`, builds the calldata `sn_expected` predicts, and the guard's on-chain verification accepts it; a wrong password fails at the dry-run (`void`, nothing sent). sncast `account deploy` itself refuses a keystore whose key does not match the descriptor public key. Declare is not exercised (it needs a local build against a node). |
+
+Mutation: `cso_mutants.py` (CSO EKU-1262, 18 mutants, including the four earlier survivors) and `presign_mutants.py` (EKU-1268, 35 mutants of the new checks) are kept with the EKU-1268 evidence.
+
 ## 12. Remaining human decisions (none is requested by this revision)
+
+0. **N-2:** accept that an unlinked, hashless or dropped-and-unlandable reservation stops T2 permanently (§7). No void or recovery authority is requested.
 
 1. **Stage A:** approve key preparation and name the 1Password vault.
 2. Validate and name the eligible free faucet sources per chain, and the human who uses their own faucet access where a source requires it. No operator or signer is assumed.

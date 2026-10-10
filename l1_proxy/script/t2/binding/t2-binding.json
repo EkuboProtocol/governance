@@ -1,7 +1,7 @@
 {
   "schema": "ekubo-t2-binding-v1",
   "status": "UNBOUND",
-  "note": "EKU-1261 template. No T2 key exists, so no address is bound and every signing step refuses. After the separate key-preparation approval, `t2_guard.py bind --keys <public-addresses.json>` replaces this file with the BOUND addendum; the final human approval then names its exact scope digest.",
+  "note": "EKU-1268 template. No T2 key exists, so no address, Starknet account identity (public key, class hash, salt, keystore sha256), ledger directory or faucet source is bound, and every signing step refuses. After the separate key-preparation approval, `t2_guard.py bind --keys <public-keys.json>` replaces this file with the BOUND addendum (it refuses empty or incomplete faucet sources); the final human approval then names its exact scope digest.",
   "op_vault": null,
   "roles": {
     "deployer": null,
@@ -14,9 +14,15 @@
     ],
     "starknet_account": null
   },
+  "ledger_dir": null,
   "safe_salt": "1232",
   "starknet": {
     "account": null,
+    "account_public_key": null,
+    "account_class_hash": null,
+    "account_salt": null,
+    "account_type": "open_zeppelin",
+    "keystore_sha256": null,
     "token": null,
     "staker": null,
     "governor": null,

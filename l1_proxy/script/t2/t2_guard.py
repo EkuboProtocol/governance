@@ -8,15 +8,22 @@ It binds every T2 signing step to the approved scope, the bound addresses and a 
   (stage `final-transactions`, unexpired). Environment variables never approve anything; identities, Safe salt,
   Governor felt and fee cap are exported FROM the bound addendum, and a conflicting pre-set value is refused.
 * ledger (F1): an append-only, hash-chained, fsync'd JSONL ledger under an exclusive non-blocking lock. Before a
-  transaction is published, its maximum liability (gas limit x max fee per gas + value, or the Starknet max fee) is
+  transaction is signed, its maximum liability (gas limit x max fee per gas + value, or the Starknet max fee) is
   reserved and checked against cumulative per-chain, per-role, per-kind count, message and fee limits. Failed,
   reverted, replaced and manual attempts count. Unknown outcomes stay reserved at their maximum until reconciled from
-  a receipt. On-chain nonces of every role must equal the ledger's mined count, so a deleted ledger, a manual
-  transaction or a lost receipt fails closed.
-* pre-sign (F1): each planned EVM transaction is signed with `cast mktx` (encrypted keystore, password streamed from
-  1Password through a pipe), decoded with `cast decode-transaction`, and every signed field (signer, chain, nonce,
-  to, value, input, gas, max fee, priority fee) is compared with the simulated plan and the limits BEFORE
-  `cast publish`. Fresh base fee and nonce are read immediately before signing.
+  a receipt; a reservation that was never linked to signed bytes is never released (N-2). On-chain nonces of every
+  role must equal the ledger's mined count, so a deleted ledger, a manual transaction or a lost receipt fails closed.
+  The ledger directory comes only from the bound addendum (N-3).
+* pre-sign (F1, CFO R1): the unsigned intent (chain, role, nonce, kind, attempt number, maximum liability) is
+  reserved durably BEFORE any signer runs. Each planned EVM transaction is then signed with `cast mktx` (encrypted
+  keystore, password in a memfd), decoded with `cast decode-transaction`, every signed field (signer, chain, nonce,
+  to, value, input, gas, max fee, priority fee) is compared with the reserved intent, and the signed bytes are linked
+  durably BEFORE `cast publish`. A reservation that was never linked (crash while signing) is never released.
+* Starknet identity (CFO R2): the sncast account descriptor is generated from the bound public identity (address,
+  public key, class hash, salt), the keystore bytes must match the bound sha256, and the on-chain class and public
+  key are checked, all before any password access. sncast gets explicit resource bounds, tip 0 and --nonce; the
+  transaction returned by the chain must match the reserved sender, nonce, payload, type and bounds before it is
+  credited, and an actual fee above the reservation stops T2.
 * stop conditions (T2-2): before every attempt, all logs of the T2 contracts must come from ledger transactions
   (executor Pinged/Queued must carry a payload hash this ledger dispatched), the proxy nonce must equal the ledger's
   L1 executions, the Safe signers must never have sent a transaction, and every T2 Governor/Staker/token event on
@@ -92,7 +99,7 @@ MAX_APPROVAL_SECONDS = 14 * 86400
 # Variables the guard derives from the bound addendum; a different pre-set value is a raised override and is refused.
 BOUND_ENV = ("T2_DEPLOYER", "T2_BOOTSTRAP", "T2_PAYER", "T2_SAFE_OWNERS", "T2_SAFE_SALT", "T2_L2_GOVERNOR",
              "T2_STARKNET_ACCOUNT", "T2_SAFE_97", "T2_SAFE_10143", "T2_MAX_FEE_WEI", "T2_STAKE",
-             "T2_BINDING_JSON", "T2_BINDING_SHA256", "T2_SCOPE_DIGEST")
+             "T2_BINDING_JSON", "T2_BINDING_SHA256", "T2_SCOPE_DIGEST", "T2_LEDGER_DIR", "T2_OP_VAULT")
 
 
 class Refused(Exception):
@@ -263,6 +270,80 @@ def check_binding(b: dict, lim: dict) -> None:
     expected.add((f"starknet:{STARKNET_SEPOLIA}", "starknet"))
     if seen != expected:
         refuse("binding: funding recipients must be exactly the funded roles per chain")
+    if not isinstance(b.get("op_vault"), str) or not b["op_vault"].strip():
+        refuse("binding: op_vault (the named 1Password vault) is required")
+    check_ledger_dir(b.get("ledger_dir"))
+    check_sn_account_binding(b)
+    check_faucet_sources(b)
+
+
+def check_ledger_dir(d: Any) -> None:
+    """N-3: one absolute, normalized ledger directory is bound, so two runners cannot select separate ledgers/locks."""
+    if not isinstance(d, str) or not d.startswith("/") or os.path.normpath(d) != d:
+        refuse("binding: ledger_dir must be one absolute, normalized path (no ~, no .., no trailing /)")
+
+
+def _felt(v: Any, what: str) -> int:
+    try:
+        x = int(str(v), 16)
+    except ValueError:
+        x = -1
+    if not str(v).startswith("0x") or not 0 < x < 1 << 251:
+        refuse(f"binding: {what} is not a non-zero felt")
+    return x
+
+
+def check_sn_account_binding(b: dict) -> None:
+    """CFO R2: the Starknet account identity is public metadata frozen in the addendum (no secret material)."""
+    s = b["starknet"]
+    if (s.get("account") or "").lower() != b["roles"]["starknet_account"].lower():
+        refuse("binding: starknet.account != roles.starknet_account")
+    _felt(b["roles"]["starknet_account"], "starknet account address")
+    _felt(s.get("account_public_key"), "starknet account public key")
+    _felt(s.get("account_class_hash"), "starknet account class hash")
+    _felt(s.get("account_salt"), "starknet account salt")
+    if s.get("account_type") != "open_zeppelin":
+        refuse("binding: starknet account_type must be open_zeppelin")
+    ks = s.get("keystore_sha256") or ""
+    if len(ks) != 64 or any(c not in "0123456789abcdef" for c in ks):
+        refuse("binding: starknet keystore_sha256 (sha256 of the encrypted keystore file) is required")
+
+
+FAUCET_FIELDS = ("chain", "source", "url", "eligibility", "eligibility_checked_at", "drip_max", "login", "region",
+                 "operator")
+
+
+def check_faucet_sources(b: dict) -> None:
+    """CFO F4 / N-7: no final binding without filled, eligible, free faucet sources for every funded chain."""
+    src = b.get("faucet_sources") or []
+    if not src:
+        refuse("binding: faucet_sources is empty: validated free faucet sources are required before stage B")
+    chains = {f["chain"] for f in b["funding_recipients"]}
+    per: dict[str, int] = {}
+    names = set()
+    for f in src:
+        for k in FAUCET_FIELDS:
+            if not str(f.get(k) or "").strip():
+                refuse(f"binding: faucet source {f.get('source')!r} lacks {k}")
+        if f["chain"] not in chains:
+            refuse(f"binding: faucet source {f['source']} is for an unfunded chain {f['chain']}")
+        if f.get("paid") is not False or f.get("mainnet_prerequisite") is not False:
+            refuse(f"binding: faucet source {f['source']} must be free and need no mainnet balance (paid=false, "
+                   "mainnet_prerequisite=false)")
+        if not isinstance(f.get("automated_allowed"), bool):
+            refuse(f"binding: faucet source {f['source']}: automated_allowed must be true or false")
+        if f["operator"].strip().lower() == "agent" and not f["automated_allowed"]:
+            refuse(f"binding: faucet source {f['source']} needs a named human operator (automated requests not allowed)")
+        if int(f["drip_max"]) <= 0:
+            refuse(f"binding: faucet source {f['source']}: drip_max")
+        parse_ts(f["eligibility_checked_at"])
+        if (f["chain"], f["source"]) in names:
+            refuse(f"binding: duplicate faucet source {f['source']} on {f['chain']}")
+        names.add((f["chain"], f["source"]))
+        per[f["chain"]] = per.get(f["chain"], 0) + 1
+    for c in chains:
+        if not 1 <= per.get(c, 0) <= 2:
+            refuse(f"binding: {c} needs one or two named free faucet sources (has {per.get(c, 0)})")
 
 
 def check_approval(scope: Scope, at: dt.datetime | None = None) -> dict:
@@ -303,6 +384,7 @@ def bound_env(scope: Scope, lim: dict) -> dict[str, str]:
         "T2_BINDING_JSON": scope.binding_text.rstrip("\n"),
         "T2_BINDING_SHA256": "0x" + sha256_hex(scope.binding_text.rstrip("\n").encode()),
         "T2_SCOPE_DIGEST": scope.digest,
+        "T2_LEDGER_DIR": b["ledger_dir"], "T2_OP_VAULT": b["op_vault"],
     }
 
 
@@ -324,6 +406,14 @@ def authorize() -> tuple[Scope, dict, dict, dict[str, str]]:
 
 
 # ------------------------------------------------------------------------------------------------ RPC
+class RpcError(RuntimeError):
+    """A JSON-RPC error object; callers match the exact numeric `code`, never a substring of the text (N-6)."""
+
+    def __init__(self, method: str, err: Any):
+        self.code = err.get("code") if isinstance(err, dict) else None
+        super().__init__(f"{method}: {err}")
+
+
 class Rpc:
     def __init__(self, url: str):
         self.url = url
@@ -335,8 +425,16 @@ class Rpc:
         with urllib.request.urlopen(req, timeout=60) as resp:
             out = json.load(resp)
         if "error" in out:
-            raise RuntimeError(f"{method}: {out['error']}")
+            raise RpcError(method, out["error"])
         return out["result"]
+
+
+def require_chain_ids(chains: dict[int, Any]) -> None:
+    """N-4: every EVM RPC the guard reads, watches or reconciles must report its expected chain id."""
+    for cid, chain in chains.items():
+        got = chain.chain_id()
+        if got != cid:
+            refuse(f"RPC for chain {cid} reports chain id {got}: stop")
 
 
 def rpc_url(cid: int) -> str:
@@ -498,14 +596,34 @@ class Ledger:
                 msgs, fees = msgs + max(1, len(o.get("dispatched", []))), fees + int(a["value"])
         return msgs, fees
 
-    def tx_hash(self, a: dict) -> str:
-        """EVM hashes are known before publishing; Starknet hashes are linked by a later `sn-sent` record."""
-        if a.get("hash"):
-            return a["hash"].lower()
+    def link(self, a: dict) -> dict | None:
+        """The record that links a reservation (written BEFORE any signer runs) to its signed bytes: `signed` (EVM,
+        hash and raw bytes, written after verification and before publishing) or `sn-sent` (Starknet, hash returned
+        by sncast). A reservation without a link has an unknown outcome that cannot be reconstructed (N-2)."""
         for r in self.records:
-            if r["type"] == "sn-sent" and r["ref"] == a["seq"]:
-                return r["hash"].lower()
-        return ""
+            if r["type"] in ("signed", "sn-sent") and r["ref"] == a["seq"]:
+                return r
+        return None
+
+    def tx_hash(self, a: dict) -> str:
+        if a.get("hash"):  # records written before EKU-1268 carried the hash in the reservation itself
+            return a["hash"].lower()
+        lk = self.link(a)
+        return lk["hash"].lower() if lk else ""
+
+    def raw(self, a: dict) -> str:
+        if a.get("raw"):
+            return a["raw"]
+        lk = self.link(a)
+        return lk.get("raw", "") if lk else ""
+
+    def overruns(self) -> list[dict]:
+        """Reservations whose recorded actual cost exceeded the reserved maximum (N-5): a permanent stop."""
+        return [a for a in self.attempts() if (o := self.outcome(a["seq"])) is not None and o["type"] == "outcome"
+                and int(o["cost"]) > int(a["max_cost"])]
+
+    def incidents(self) -> list[dict]:
+        return [r for r in self.records if r["type"] == "incident"]
 
     def mined_hashes(self, chain: Any) -> set[str]:
         out = set()
@@ -528,9 +646,18 @@ class Ledger:
 
 
 def ledger_path(binding: dict) -> Path:
-    base = Path(os.environ.get("T2_LEDGER_DIR") or Path.home() / ".local/state/ekubo-t2")
+    """N-3: the directory comes only from the bound addendum (`ledger_dir`); `T2_LEDGER_DIR` is a BOUND_ENV value
+    and a different pre-set value is refused, so separate ledgers or locks cannot be selected."""
+    check_ledger_dir(binding.get("ledger_dir"))
     ident = sha256_hex(json.dumps(binding["roles"], sort_keys=True).encode())[:16]
-    return base / f"ledger-{ident}.jsonl"
+    return Path(binding["ledger_dir"]) / f"ledger-{ident}.jsonl"
+
+
+def require_no_stop(led: Ledger) -> None:
+    if led.overruns():
+        refuse(f"recorded actual cost above the reserved maximum (seq {led.overruns()[0]['seq']}): stop (N-5)")
+    if led.incidents():
+        refuse(f"ledger incident (seq {led.incidents()[0]['seq']}): {led.incidents()[0]['reason']}: stop")
 
 
 # ------------------------------------------------------------------------------------------------ EVM reconciliation
@@ -550,8 +677,9 @@ def receipt_cost(cid: int, a: dict, rc: dict) -> int:
 
 def record_receipt(led: Ledger, chain: EvmChain, a: dict, rc: dict, dispatched_topic: str) -> dict:
     status = int(rc["status"], 16)
-    if rc["from"].lower() != a["from"].lower() or rc["transactionHash"].lower() != a["hash"].lower():
-        refuse(f"receipt for {a['hash']} does not match the reserved signer or hash")
+    h = led.tx_hash(a)
+    if not h or rc["from"].lower() != a["from"].lower() or rc["transactionHash"].lower() != h:
+        refuse(f"receipt for {h or '<unlinked>'} does not match the reserved signer or hash")
     dispatched = []
     if a["kind"] == "dispatch" and status == 1:
         for lg in rc["logs"]:
@@ -565,24 +693,36 @@ def record_receipt(led: Ledger, chain: EvmChain, a: dict, rc: dict, dispatched_t
 
 def reconcile_evm(led: Ledger, chains: dict[int, EvmChain], roles: dict[str, str], republish: bool,
                   dispatched_topic: str, out: Callable[[str], None] = print) -> None:
+    require_chain_ids(chains)
     for cid, chain in chains.items():
         for a in led.open_reserves(cid):
-            rc = chain.receipt(a["hash"])
+            h = led.tx_hash(a)
+            if not h:
+                # N-2: the guard stopped after the durable reservation but before the verified signed bytes were
+                # linked (during or right after signing). Whether a signature exists, or was ever published, cannot
+                # be reconstructed, and an absent transaction is not proof. The slot is never released: T2 stops
+                # permanently; resuming needs a code change and a new approval.
+                refuse(f"chain {cid}: reservation seq {a['seq']} ({a['kind']}, {a['role']} nonce {a['nonce']}, max "
+                       f"{a['max_cost']}) has no linked signed transaction (stopped during or right after signing): "
+                       "unresolved, never released: permanent stop (N-2)")
+            rc = chain.receipt(h)
             if rc is None and republish:
                 try:
-                    chain.publish(a["raw"])  # identical signed bytes: same hash, no new liability
-                    out(f"republished reserved tx {a['hash']} (seq {a['seq']})")
+                    chain.publish(led.raw(a))  # identical signed bytes: same hash, no new reservation or liability
+                    out(f"republished reserved tx {h} (seq {a['seq']})")
                 except Exception as e:  # noqa: BLE001
-                    out(f"republish of {a['hash']} failed: {e}")
-                rc = wait_receipt(chain, a["hash"], 180)
+                    out(f"republish of {h} failed: {e}")
+                rc = wait_receipt(chain, h, 180)
             if rc is not None:
                 record_receipt(led, chain, a, rc, dispatched_topic)
                 continue
             if chain.nonce(a["from"]) > int(a["nonce"]):
                 twin = [b for b in led.attempts(cid) if b["from"].lower() == a["from"].lower()
-                        and b["nonce"] == a["nonce"] and b["seq"] != a["seq"] and chain.receipt(b["hash"])]
+                        and b["nonce"] == a["nonce"] and b["seq"] != a["seq"] and led.tx_hash(b)
+                        and chain.receipt(led.tx_hash(b))]
                 if twin:
-                    led.append({"type": "void", "ref": a["seq"], "chain": cid, "reason": f"nonce mined by {twin[0]['hash']}"})
+                    led.append({"type": "void", "ref": a["seq"], "chain": cid,
+                                "reason": f"nonce mined by {led.tx_hash(twin[0])}"})
                     continue
                 refuse(f"chain {cid}: nonce {a['nonce']} of {a['from']} consumed by a transaction NOT in the ledger")
         for role, addr in roles.items():
@@ -758,6 +898,7 @@ def verify_signed(d: dict, cid: int, tx: PlannedTx, max_fee: int, prio: int) -> 
 def precheck(led: Ledger, lim: dict, cid: int, role: str, kind: str, tx: PlannedTx, base_fee: int,
              prio: int) -> tuple[int, int, int]:
     """Returns (max_fee_per_gas, priority, max_cost). Refuses before signing if any bound would be exceeded."""
+    require_no_stop(led)
     c = lim["evm"][str(cid)]
     kd = c["kinds"].get(kind)
     if kd is None or kd["role"] != role:
@@ -796,12 +937,32 @@ def precheck(led: Ledger, lim: dict, cid: int, role: str, kind: str, tx: Planned
     return max_fee, prio, cost
 
 
+def evm_intent(cid: int, role: str, addr: str, kind: str, step: str, tx: PlannedTx, max_fee: int, prio: int) -> dict:
+    """The unsigned intent that is reserved durably before any signer runs; the signed bytes must match it."""
+    return {"chain": cid, "role": role, "from": addr, "kind": kind, "step": step, "nonce": tx.nonce, "gas": tx.gas,
+            "max_fee": max_fee, "priority": prio, "value": str(tx.value), "to": tx.to,
+            "input_sha256": sha256_hex(bytes.fromhex(tx.data[2:]))}
+
+
+def _no_fault(_point: str, _rec: dict) -> None:
+    return None
+
+
 def send_plan(led: Ledger, lim: dict, binding: dict, step: str, cid: int, role: str, plan: list[PlannedTx],
               chain: EvmChain, signer: Signer, dispatched_topic: str, out: Callable[[str], None] = print,
-              before_publish: Callable[[dict], None] | None = None) -> None:
+              fault: Callable[[str, dict], None] = _no_fault,
+              decode: Callable[[str], dict] | None = None) -> None:
+    """Per transaction: checks -> durable unsigned reservation -> sign -> verify -> durable `signed` link -> publish.
+
+    CFO R1: the reservation (intent, nonce, role, kind, attempt count, maximum liability) is appended and fsync'd
+    BEFORE the signer is invoked. A crash while signing or before the link leaves an unlinked open reservation that
+    blocks every later attempt and is never released (N-2). Only an in-process refusal of the signer or of the
+    signed-field comparison, where nothing was published and the bytes are discarded, closes the slot as `void`;
+    the attempt still counts against the kind and chain attempt caps.
+    """
+    decode = decode or decode_signed
     addr = binding["roles"][role].lower()
-    if chain.chain_id() != cid:
-        refuse(f"RPC for chain {cid} reports chain id {chain.chain_id()}")
+    require_chain_ids({cid: chain})
     kinds = [classify(step, tx, binding, cid) for tx in plan]  # every tx classified before anything is signed
     for tx in plan:
         if tx.frm != addr:
@@ -813,21 +974,30 @@ def send_plan(led: Ledger, lim: dict, binding: dict, step: str, cid: int, role: 
                    f"{led.mined_count(cid, addr)}: nonce ambiguity, stop")
         base_fee, prio0 = chain.base_fee(), chain.priority_fee()
         max_fee, prio, cost = precheck(led, lim, cid, role, kind, tx, base_fee, prio0)
-        raw = signer.sign(role, cid, tx, max_fee, prio)
-        d = decode_signed(raw)
-        verify_signed(d, cid, tx, max_fee, prio)
-        rec = led.append({"type": "reserve", "chain": cid, "role": role, "from": addr, "kind": kind, "step": step,
-                          "nonce": tx.nonce, "gas": tx.gas, "max_fee": max_fee, "priority": prio,
-                          "value": str(tx.value), "max_cost": str(cost), "hash": d["hash"].lower(), "raw": raw,
-                          "to": tx.to, "input_sha256": sha256_hex(bytes.fromhex(tx.data[2:]))})
-        if before_publish:
-            before_publish(rec)
+        intent = evm_intent(cid, role, addr, kind, step, tx, max_fee, prio)
+        rec = led.append({"type": "reserve", **intent, "max_cost": str(cost), "hash": "",
+                          "attempt": led.kind_count(cid, kind) + 1,
+                          "intent_sha256": sha256_hex(json.dumps(intent, sort_keys=True).encode())})
+        fault("reserved", rec)
+        try:
+            raw = signer.sign(role, cid, tx, max_fee, prio)
+            d = decode(raw)
+            verify_signed(d, cid, tx, max_fee, prio)
+        except Refused as e:
+            led.append({"type": "void", "ref": rec["seq"], "chain": cid,
+                        "reason": f"in-process refusal before publish (bytes discarded, never published): {e}"})
+            raise
+        fault("signed", rec)
+        h0 = d["hash"].lower()
+        led.append({"type": "signed", "ref": rec["seq"], "chain": cid, "hash": h0, "raw": raw,
+                    "raw_sha256": sha256_hex(bytes.fromhex(raw[2:]))})
+        fault("linked", rec)
         try:
             h = chain.publish(raw)
         except Exception as e:  # noqa: BLE001
-            refuse(f"publish of {d['hash']} failed ({e}); it stays reserved until `reconcile`")
-        if h.lower() != d["hash"].lower():
-            refuse(f"node returned hash {h} for signed {d['hash']}")
+            refuse(f"publish of {h0} failed ({e}); it stays reserved until `reconcile`")
+        if h.lower() != h0:
+            refuse(f"node returned hash {h} for signed {h0}")
         out(f"sent {kind} {h} (nonce {tx.nonce}, gas<= {tx.gas}, maxFee {max_fee}, reserved {cost})")
         rc = wait_receipt(chain, h, int(os.environ.get("T2_RECEIPT_TIMEOUT", "900")))
         if rc is None:
@@ -841,6 +1011,7 @@ def send_plan(led: Ledger, lim: dict, binding: dict, step: str, cid: int, role: 
 def watch_evm(led: Ledger, binding: dict, chains: dict[int, EvmChain], sn_hashes_fn: Callable[[], set[str]] | None,
               topics: dict[str, str], out: Callable[[str], None] = print) -> None:
     p, r = binding["predicted"], binding["roles"]
+    require_chain_ids(chains)
     for cid, chain in chains.items():
         for o in r["safe_owners"]:
             if chain.nonce(o) != 0:
@@ -891,23 +1062,43 @@ def watch_evm(led: Ledger, binding: dict, chains: dict[int, EvmChain], sn_hashes
 SEL_CURRENT_NONCE = [""]
 
 
+SN_CONTRACT_NOT_FOUND, SN_TXN_HASH_NOT_FOUND = 20, 29  # exact Starknet JSON-RPC error codes (N-6)
+
+
 class StarknetRpc:
     def __init__(self, url: str):
         self.rpc = Rpc(url)
 
+    def chain_id(self) -> str:
+        return self.rpc.call("starknet_chainId", [])
+
     def nonce(self, a: str) -> int:
+        """Only the exact JSON-RPC error code 20 (CONTRACT_NOT_FOUND: undeployed account) means nonce 0 (N-6)."""
         try:
             return int(self.rpc.call("starknet_getNonce", ["latest", a]), 16)
-        except RuntimeError as e:
-            if "20" in str(e) or "not found" in str(e).lower():
+        except RpcError as e:
+            if e.code == SN_CONTRACT_NOT_FOUND:
                 return 0
-            raise
+            refuse(f"Starknet getNonce error is not CONTRACT_NOT_FOUND (code {e.code}): {e}")
+        return -1
 
     def receipt(self, h: str) -> dict | None:
         try:
             return self.rpc.call("starknet_getTransactionReceipt", [h])
-        except RuntimeError:
-            return None
+        except RpcError as e:
+            if e.code == SN_TXN_HASH_NOT_FOUND:
+                return None
+            refuse(f"Starknet getTransactionReceipt error (code {e.code}): {e}")
+        return None
+
+    def transaction(self, h: str) -> dict | None:
+        try:
+            return self.rpc.call("starknet_getTransactionByHash", [h])
+        except RpcError as e:
+            if e.code == SN_TXN_HASH_NOT_FOUND:
+                return None
+            refuse(f"Starknet getTransactionByHash error (code {e.code}): {e}")
+        return None
 
     def events(self, address: str, frm: int, chunk_token: str | None = None) -> dict:
         f = {"address": address, "from_block": {"block_number": frm}, "to_block": "latest", "chunk_size": 1000,
@@ -916,11 +1107,26 @@ class StarknetRpc:
             f["continuation_token"] = chunk_token
         return self.rpc.call("starknet_getEvents", [f])
 
-    def class_hash_at(self, a: str) -> int:
-        return int(self.rpc.call("starknet_getClassHashAt", ["latest", a]), 16)
+    def class_hash_at(self, a: str) -> int | None:
+        """None only for the exact CONTRACT_NOT_FOUND code; any other error refuses."""
+        try:
+            return int(self.rpc.call("starknet_getClassHashAt", ["latest", a]), 16)
+        except RpcError as e:
+            if e.code == SN_CONTRACT_NOT_FOUND:
+                return None
+            refuse(f"Starknet getClassHashAt error (code {e.code}): {e}")
+        return None
+
+
+def require_sn_chain(sn: Any) -> None:
+    """N-4 (Starknet): every Starknet RPC the guard reads, watches or reconciles must be Starknet Sepolia."""
+    got = sn.chain_id()
+    if got != SN_CHAIN_ID_SEPOLIA:
+        refuse(f"Starknet RPC reports chain id {got}, not SN_SEPOLIA: stop")
 
 
 def watch_starknet(led: Ledger, binding: dict, sn: StarknetRpc) -> None:
+    require_sn_chain(sn)
     mined = led.mined_hashes(STARKNET_SEPOLIA)
     start = min((o["block"] for o in led.records if o["type"] == "outcome" and o["chain"] == STARKNET_SEPOLIA),
                 default=None)
@@ -941,14 +1147,15 @@ def watch_starknet(led: Ledger, binding: dict, sn: StarknetRpc) -> None:
 
 
 # ------------------------------------------------------------------------------------------------ Starknet sends
-def sn_precheck(led: Ledger, lim: dict, kind: str, estimate_fri: int) -> int:
+def sn_precheck(led: Ledger, lim: dict, kind: str) -> int:
+    """Before the reservation (and so before any sncast run, dry-run included): returns the kind max fee, which is
+    the reserved maximum liability."""
+    require_no_stop(led)
     sn = lim["starknet"]
     kd = sn["kinds"].get(kind)
     if kd is None:
         refuse(f"Starknet kind {kind} is not in the approved schedule")
     cap = int(kd["max_fee_fri"])
-    if estimate_fri > cap:
-        refuse(f"Starknet {kind}: fresh fee estimate {estimate_fri} above the per-tx maximum {cap}: stop and revise")
     if led.kind_count(STARKNET_SEPOLIA, kind) + 1 > int(kd["attempts_max"]):
         refuse(f"Starknet {kind}: attempt cap {kd['attempts_max']} reached")
     retries = sum(max(0, led.kind_count(STARKNET_SEPOLIA, k) - int(v["planned"])) for k, v in sn["kinds"].items())
@@ -963,19 +1170,269 @@ def sn_precheck(led: Ledger, lim: dict, kind: str, estimate_fri: int) -> int:
     return cap
 
 
+SN_RESOURCES = ("l1_gas", "l2_gas", "l1_data_gas")
+# (amount numerator, denominator, price numerator, denominator): the first margin whose liability fits the cap.
+SN_MARGINS = ((3, 2, 2, 1), (3, 2, 3, 2), (5, 4, 5, 4), (1, 1, 1, 1))
+
+
+def _int(v: Any) -> int:
+    return int(v, 16) if isinstance(v, str) and v.startswith("0x") else int(v)
+
+
+def sn_liability(bounds: dict, tip: int = 0) -> int:
+    """Maximum fee a v3 transaction with these resource bounds can be charged: sum(max_amount x max_price) + tip x
+    max L2 gas."""
+    return sum(_int(bounds[r]["max_amount"]) * _int(bounds[r]["max_price_per_unit"]) for r in SN_RESOURCES) \
+        + tip * _int(bounds["l2_gas"]["max_amount"])
+
+
+def sn_bounds(est: dict, cap: int) -> dict:
+    """Explicit resource bounds from the fresh estimate; their maximum liability never exceeds the reserved cap."""
+    try:
+        c = {k: _int(est[k]) for r in SN_RESOURCES for k in (f"{r}_consumed", f"{r}_price")}
+    except (KeyError, TypeError, ValueError):
+        refuse("sncast dry-run output lacks the per-resource estimate")
+    for an, ad, pn, pd in SN_MARGINS:
+        b = {r: {"max_amount": -(-c[f"{r}_consumed"] * an // ad), "max_price_per_unit": -(-c[f"{r}_price"] * pn // pd)}
+             for r in SN_RESOURCES}
+        if sn_liability(b) <= cap:
+            return b
+    base = {r: {"max_amount": c[f"{r}_consumed"], "max_price_per_unit": c[f"{r}_price"]} for r in SN_RESOURCES}
+    refuse(f"Starknet fresh estimate {sn_liability(base)} above the per-tx maximum {cap}: stop and revise")
+    return {}
+
+
+def sn_bounds_argv(b: dict) -> list[str]:
+    return ["--l1-gas", str(b["l1_gas"]["max_amount"]), "--l1-gas-price", str(b["l1_gas"]["max_price_per_unit"]),
+            "--l2-gas", str(b["l2_gas"]["max_amount"]), "--l2-gas-price", str(b["l2_gas"]["max_price_per_unit"]),
+            "--l1-data-gas", str(b["l1_data_gas"]["max_amount"]),
+            "--l1-data-gas-price", str(b["l1_data_gas"]["max_price_per_unit"]), "--tip", "0"]
+
+
+SN_UDC = "0x02ceed65a4bd731034c01113685c831b01c15d7d432f71afb1cf1634b53a2125"  # sncast 0.62.1 `deploy` (UDC v2)
+
+
+def sn_selector(name: str) -> int:
+    return int(cast_out("keccak", name), 16) & ((1 << 250) - 1)
+
+
+def _tail_felts(args: list[str], flag: str) -> list[int]:
+    return _felts(args[args.index(flag) + 1:]) if flag in args else []
+
+
+def sn_expected(kind: str, args: list[str], binding: dict) -> dict:
+    """The exact transaction this kind may produce (sn_validate has already bound the argv). Values are hex felts."""
+    s, acct = binding["starknet"], int(binding["roles"]["starknet_account"], 16)
+    h = lambda xs: [hex(x) for x in xs]  # noqa: E731
+    if kind == "account-deploy":
+        return {"type": "DEPLOY_ACCOUNT", "class_hash": hex(int(s["account_class_hash"], 16)),
+                "contract_address_salt": hex(int(s["account_salt"], 16)),
+                "constructor_calldata": h([int(s["account_public_key"], 16)]), "contract_address": hex(acct)}
+    if kind in SN_DECLARE_NAME:
+        return {"type": "DECLARE", "sender_address": hex(acct),
+                "class_hash": hex(int(SN_CLASSES[kind.split("-", 1)[1]], 16))}
+    if kind in SN_KIND_CONTRACT:
+        ctor = _tail_felts(args, "--constructor-calldata")
+        inner = [int(_opt(args, "--class-hash"), 16), int(_opt(args, "--salt"), 16), 1, len(ctor), *ctor]
+        calldata = [1, int(SN_UDC, 16), sn_selector("deployContract"), len(inner), *inner]
+    else:
+        cd = _tail_felts(args, "--calldata")
+        calldata = [1, int(_opt(args, "--contract-address"), 16), sn_selector(_opt(args, "--function")), len(cd), *cd]
+    return {"type": "INVOKE", "sender_address": hex(acct), "calldata": h(calldata)}
+
+
+def sn_verify_tx(tx: dict, rc: dict, a: dict, bounds: dict) -> None:
+    """CFO R2: the transaction returned by the chain must be exactly the reserved intent (sender or deployed address,
+    nonce, payload, type/version, resource bounds, tip, no paymaster/deployment data) before it is credited."""
+    try:
+        exp = a["expect"]
+        if tx["type"] != exp["type"] or _int(tx["version"]) != 3:
+            refuse(f"type/version {tx['type']}/{tx['version']} != {exp['type']}/0x3")
+        if _int(tx["nonce"]) != int(a["nonce"]):
+            refuse(f"nonce {tx['nonce']} != reserved {a['nonce']}")
+        for k, v in exp.items():
+            if k == "type":
+                continue
+            got = rc["contract_address"] if k == "contract_address" else tx[k]
+            if isinstance(v, list):
+                if [_int(x) for x in got] != [_int(x) for x in v]:
+                    refuse(f"{k} differs from the reserved intent")
+            elif _int(got) != _int(v):
+                refuse(f"{k} {got} != {v}")
+        for r in SN_RESOURCES:
+            for f in ("max_amount", "max_price_per_unit"):
+                if _int(tx["resource_bounds"][r][f]) != _int(bounds[r][f]):
+                    refuse(f"resource bound {r}.{f} {tx['resource_bounds'][r][f]} != reserved {bounds[r][f]}")
+        if _int(tx["tip"]) != 0 or tx["paymaster_data"] != []:
+            refuse("tip or paymaster data set")
+        if exp["type"] != "DEPLOY_ACCOUNT" and tx["account_deployment_data"] != []:
+            refuse("account deployment data set")
+        if sn_liability(tx["resource_bounds"], _int(tx["tip"])) > int(a["max_cost"]):
+            refuse("signed maximum liability above the reservation")
+    except (KeyError, TypeError, ValueError, AttributeError) as e:
+        refuse(f"missing or malformed field {e!s}")
+
+
+def sn_settle(led: Ledger, sn: Any, a: dict) -> dict | None:
+    """Credits a linked reservation only after the on-chain transaction matches it; None while still unknown."""
+    h = led.tx_hash(a)
+    if not h:
+        refuse(f"Starknet reservation seq {a['seq']} ({a['kind']}, nonce {a['nonce']}) has no linked transaction hash "
+               "(stopped during or right after sncast): unresolved, never released: permanent stop (N-2)")
+    rc = sn.receipt(h)
+    if not rc or rc.get("finality_status") not in ("ACCEPTED_ON_L2", "ACCEPTED_ON_L1"):
+        return None
+    tx = sn.transaction(h)
+    if tx is None:
+        return None
+    bounds = next((r["bounds"] for r in led.records if r["type"] == "sn-bounds" and r["ref"] == a["seq"]), None)
+    try:
+        if bounds is None:
+            refuse("no reserved resource bounds")
+        sn_verify_tx(tx, rc, a, bounds)
+        fee = rc["actual_fee"]
+        if fee.get("unit") != "FRI":
+            refuse(f"actual fee unit {fee.get('unit')} is not FRI")
+        cost = _int(fee["amount"])
+        status = 1 if rc["execution_status"] == "SUCCEEDED" else 0
+        block = int(rc["block_number"])
+    except Refused as e:
+        led.append({"type": "incident", "ref": a["seq"], "chain": STARKNET_SEPOLIA, "hash": h,
+                    "reason": f"returned transaction {h} does not match the reserved intent, not credited: {e}"})
+        raise
+    except (KeyError, TypeError, ValueError, AttributeError) as e:
+        led.append({"type": "incident", "ref": a["seq"], "chain": STARKNET_SEPOLIA, "hash": h,
+                    "reason": f"receipt for {h} lacks a field ({e!s}), not credited"})
+        refuse(f"Starknet receipt for {h} lacks a field ({e!s}): stop")
+    o = led.append({"type": "outcome", "ref": a["seq"], "chain": STARKNET_SEPOLIA, "status": status, "cost": str(cost),
+                    "block": block})
+    if cost > int(a["max_cost"]):
+        refuse(f"Starknet {a['kind']} {h}: actual fee {cost} above the reserved maximum {a['max_cost']} (recorded "
+               "at its actual cost): stop (N-5)")
+    return o
+
+
 def sn_reconcile(led: Ledger, sn: StarknetRpc, account: str) -> None:
+    require_sn_chain(sn)
+    require_no_stop(led)
     for a in led.open_reserves(STARKNET_SEPOLIA):
-        h = led.tx_hash(a)
-        rc = sn.receipt(h) if h else None
-        if rc and rc.get("finality_status") in ("ACCEPTED_ON_L2", "ACCEPTED_ON_L1"):
-            led.append({"type": "outcome", "ref": a["seq"], "chain": STARKNET_SEPOLIA,
-                        "status": 1 if rc.get("execution_status") == "SUCCEEDED" else 0,
-                        "cost": str(int(rc["actual_fee"]["amount"], 16)), "block": rc.get("block_number", 0)})
+        sn_settle(led, sn, a)
     n = sn.nonce(account)
     mined = sum(1 for a in led.attempts(STARKNET_SEPOLIA)
                 if (o := led.outcome(a["seq"])) is not None and o["type"] == "outcome")
     if n != mined:
         refuse(f"Starknet account nonce {n} != ledger mined {mined}: unknown or unreconciled transaction: stop")
+
+
+def sn_account_descriptor(binding: dict, deployed: bool) -> bytes:
+    """CFO R2: the sncast account descriptor is generated from the bound public identity; an operator-supplied
+    account file is never read, so it cannot be substituted."""
+    s = binding["starknet"]
+    dep = {"address": hex(int(binding["roles"]["starknet_account"], 16)), "class_hash": s["account_class_hash"],
+           "status": "deployed"} if deployed else \
+        {"class_hash": s["account_class_hash"], "salt": s["account_salt"], "status": "undeployed"}
+    return json.dumps({"deployment": dep, "variant": {"legacy": False, "public_key": s["account_public_key"],
+                                                      "type": "open_zeppelin", "version": 1}, "version": 1},
+                      indent=2).encode()
+
+
+def sn_check_identity(sn: Any, binding: dict, kind: str, keystore: bytes) -> bool:
+    """Before any password or key access: keystore bytes, on-chain class and public key equal the bound identity.
+    Returns whether the account is deployed."""
+    s, acct = binding["starknet"], binding["roles"]["starknet_account"]
+    if sha256_hex(keystore) != s["keystore_sha256"]:
+        refuse("Starknet keystore file differs from the bound keystore_sha256: refused before any password or key "
+               "access")
+    ch = sn.class_hash_at(acct)
+    if kind == "account-deploy":
+        if ch is not None:
+            refuse(f"Starknet account {acct} already has code: account-deploy refused")
+        return False
+    if ch != int(s["account_class_hash"], 16):
+        refuse(f"Starknet account {acct} class {ch if ch is None else hex(ch)} != bound {s['account_class_hash']}")
+    if sn_call(sn, acct, "get_public_key") != [int(s["account_public_key"], 16)]:
+        refuse(f"Starknet account {acct} on-chain public key != bound account_public_key")
+    return True
+
+
+@dataclass
+class Sncast:
+    """Runs sncast with the frozen keystore bytes and generated descriptor (anonymous memfds, never re-read from
+    disk). The password is fetched only inside run(), i.e. after identity checks and the durable reservation."""
+
+    keystore: bytes
+    descriptor: bytes
+    password_source: Callable[[], str]
+    exe: str = "sncast"
+
+    def run(self, args: list[str], cwd: Path | None = None) -> list[dict]:
+        fds = []
+        try:
+            for name, data in (("t2-starknet-keystore", self.keystore), ("t2-starknet-account", self.descriptor)):
+                fd = os.memfd_create(name, 0)
+                os.write(fd, data)
+                os.lseek(fd, 0, os.SEEK_SET)
+                fds.append(fd)
+            pw = self.password_source()
+            env = {**os.environ, "KEYSTORE_PASSWORD": pw}  # sncast reads only this variable (CSO L-f: testnet only)
+            cmd = [self.exe, "--keystore", f"/dev/fd/{fds[0]}", "--account", f"/dev/fd/{fds[1]}", "--json", *args]
+            p = subprocess.run(cmd, pass_fds=tuple(fds), capture_output=True, text=True, env=env, cwd=cwd)
+            del pw, env
+        finally:
+            for fd in fds:
+                os.close(fd)
+        objs = [json.loads(line) for line in p.stdout.splitlines() if line.strip().startswith("{")]
+        if p.returncode != 0 or any(o.get("type") == "error" for o in objs):
+            refuse(f"sncast failed: {(p.stderr or p.stdout)[-400:]}")
+        return objs
+
+
+def sn_send(led: Ledger, lim: dict, binding: dict, kind: str, args: list[str], sn: Any, runner: Any,
+            cwd: Path | None = None, out: Callable[[str], None] = print,
+            fault: Callable[[str, dict], None] = _no_fault, polls: tuple[int, float] = (450, 2.0)) -> dict:
+    """Starknet: reconcile + watch -> caps -> durable reservation of the kind max (with the exact expected tx) ->
+    sncast dry-run -> explicit resource bounds (liability <= reservation, durable) -> sncast send with those bounds,
+    tip 0 and --nonce -> link hash -> credit only a transaction that matches the reservation."""
+    account = binding["roles"]["starknet_account"]
+    require_sn_chain(sn)
+    sn_reconcile(led, sn, account)
+    watch_starknet(led, binding, sn)
+    nonce = sn.nonce(account)
+    cap = sn_precheck(led, lim, kind)
+    rec = led.append({"type": "reserve", "chain": STARKNET_SEPOLIA, "role": "starknet", "from": account, "kind": kind,
+                      "step": kind, "nonce": nonce, "value": "0", "max_cost": str(cap), "hash": "",
+                      "attempt": led.kind_count(STARKNET_SEPOLIA, kind) + 1,
+                      "argv_sha256": sha256_hex(" ".join(args).encode()), "expect": sn_expected(kind, args, binding),
+                      "descriptor_sha256": sha256_hex(runner.descriptor), "keystore_sha256": sha256_hex(runner.keystore)})
+    fault("reserved", rec)
+    try:
+        est = runner.run(args + ["--dry-run"], cwd)
+        bounds = sn_bounds(next((o for o in est if "l2_gas_consumed" in o), {}), cap)
+    except Refused as e:
+        # A dry-run only signs a query-version transaction that the network never executes: nothing was sent.
+        led.append({"type": "void", "ref": rec["seq"], "chain": STARKNET_SEPOLIA,
+                    "reason": f"in-process refusal before any send (dry-run only): {e}"})
+        raise
+    led.append({"type": "sn-bounds", "ref": rec["seq"], "tip": "0", "max_liability": str(sn_liability(bounds)),
+                "bounds": {r: {f: str(v) for f, v in b.items()} for r, b in bounds.items()}})
+    fault("bounded", rec)
+    opts = sn_bounds_argv(bounds) + ([] if kind == "account-deploy" else ["--nonce", str(nonce)])
+    res = runner.run(args + opts, cwd)  # a failure here leaves the reservation unlinked: permanent stop (N-2)
+    h = _find_hash(res)
+    fault("signed", rec)
+    led.append({"type": "sn-sent", "ref": rec["seq"], "hash": h})
+    n, delay = polls
+    for _ in range(n):
+        o = sn_settle(led, sn, rec)
+        if o is not None:
+            if o["status"] != 1:
+                refuse(f"Starknet {kind} {h} reverted (fee {o['cost']} counted): stop")
+            out(f"Starknet {kind} {h} accepted, fee {o['cost']} fri (reserved {cap}, signed bounds "
+                f"{sn_liability(bounds)})")
+            return o
+        time.sleep(delay)
+    refuse(f"Starknet {kind} {h}: no receipt; stays reserved at {cap}")
+    return {}
 
 
 # ------------------------------------------------------------------------------------------------ CLI
@@ -1030,9 +1487,9 @@ def cmd_send(a: argparse.Namespace) -> None:
         watch_evm(led, scope.binding, chains, None, topics)
         watch_starknet(led, scope.binding, sn)
         plan = load_plan(Path(a.plan), cid)
-        signer = Signer(Path(os.environ["T2_KEYSTORE_DIR"]), os.environ.get("T2_OP_VAULT", ""))
+        signer = Signer(Path(os.environ["T2_KEYSTORE_DIR"]), env["T2_OP_VAULT"])
         send_plan(led, lim, scope.binding, a.step, cid, a.role, plan, chains[cid], signer, topics["Dispatched"],
-                  before_publish=_fault_hook)
+                  fault=_fault_hook)
         watch_evm(led, scope.binding, chains, None, topics)
 
 
@@ -1040,9 +1497,11 @@ def cmd_preflight(_: argparse.Namespace) -> None:
     """Before any simulation: scope, unknown outcomes and nonce/ledger agreement (read-only; reconcile repairs)."""
     scope, _lim, _appr, _env = authorize()
     with Ledger(ledger_path(scope.binding)) as led:
+        require_no_stop(led)
         if led.open_reserves():
             refuse("an earlier attempt has an unknown outcome; run `reconcile` first")
         chains = evm_chains()
+        require_chain_ids(chains)
         for cid, ch in chains.items():
             for role, addr in evm_roles(scope.binding).items():
                 if ch.nonce(addr) != led.mined_count(cid, addr):
@@ -1050,10 +1509,15 @@ def cmd_preflight(_: argparse.Namespace) -> None:
                            "lost receipt): stop")
 
 
-def _fault_hook(_rec: dict) -> None:
-    """Crash injection for the local fail-closed tests: it can only abort (after the reservation is durable and
-    before the signed bytes are published), never skip a check."""
-    if os.environ.get("T2_FAULT") == "after-reserve":
+FAULT_POINTS = ("reserved", "signed", "linked", "bounded")
+
+
+def _fault_hook(point: str, _rec: dict) -> None:
+    """Crash injection for the local fail-closed tests (T2_FAULT=<point>): it can only abort the process at a
+    boundary after the durable reservation, never skip a check. `reserved`: before the signer runs; `signed`: after
+    signing, before the durable link; `linked`: after the link, before publish; `bounded` (Starknet): after the
+    dry-run bounds, before the send."""
+    if os.environ.get("T2_FAULT") == point:
         os._exit(97)
 
 
@@ -1084,74 +1548,119 @@ def cmd_status(_: argparse.Namespace) -> None:
               f"{c['chain_cap_wei']} wei, open {len(led.open_reserves(cid))}")
     print("ccip (messages, fees):", led.ccip())
     print(f"starknet: attempts {len(led.attempts(STARKNET_SEPOLIA))}, fees {led.exposure(STARKNET_SEPOLIA)} fri")
+    for (chain, role), r in sorted(faucet_register(led).items()):
+        print(f"faucet {chain}/{role}: requests {r['requests']}, pending {r['pending']}, denied {r['denied']}, "
+              f"received {r['received_count']} ({r['received']} native units)")
+    for i in led.incidents():
+        print(f"INCIDENT seq {i['seq']}: {i['reason']}")
+
+
+def op_password(vault: str, item: str) -> Callable[[], str]:
+    def read() -> str:
+        if not vault:
+            refuse("T2_OP_VAULT unset")
+        return subprocess.run(["op", "read", f"op://{vault}/{item}/password"], check=True, capture_output=True,
+                              text=True).stdout.rstrip("\n")
+    return read
 
 
 def cmd_sn(a: argparse.Namespace) -> None:
-    """Starknet send: dry-run estimate -> per-tx and aggregate checks -> reserve -> sncast with --max-fee/--nonce."""
-    scope, lim, _appr, _env = authorize()
-    sn = StarknetRpc(os.environ["STARKNET_SEPOLIA_RPC_URL"])
-    account = scope.binding["roles"]["starknet_account"]
+    """Starknet send through the guard; see sn_send. The account identity is checked before any password access."""
+    scope, lim, _appr, env = authorize()
+    url = os.environ["STARKNET_SEPOLIA_RPC_URL"]
+    sn = StarknetRpc(url)
     args = a.sncast
     if args and args[0] == "--":
         args = args[1:]
-    if sn.rpc.call("starknet_chainId", []) != SN_CHAIN_ID_SEPOLIA:
-        refuse("STARKNET_SEPOLIA_RPC_URL is not Starknet Sepolia")
-    sn_validate(a.kind, args, scope.binding, os.environ["STARKNET_SEPOLIA_RPC_URL"])
+    require_sn_chain(sn)
+    sn_validate(a.kind, args, scope.binding, url)
+    keystore = (Path(os.environ["T2_KEYSTORE_DIR"]) / "t2-starknet.json").read_bytes()
+    deployed = sn_check_identity(sn, scope.binding, a.kind, keystore)
+    runner = Sncast(keystore, sn_account_descriptor(scope.binding, deployed),
+                    op_password(env["T2_OP_VAULT"], "t2-starknet"))
+    cwd = repo_root() / SN_CONTRACTS[a.kind.split("-", 1)[1]][1] if a.kind in SN_DECLARE_NAME else None
     with Ledger(ledger_path(scope.binding)) as led:
-        sn_reconcile(led, sn, account)
-        watch_starknet(led, scope.binding, sn)
-        nonce = sn.nonce(account)
-        est = sncast_run(args + ["--dry-run"], json_out=True, kind=a.kind)
-        fee = int(_find_fee(est))
-        cap = sn_precheck(led, lim, a.kind, fee)
-        rec = led.append({"type": "reserve", "chain": STARKNET_SEPOLIA, "role": "starknet", "from": account,
-                          "kind": a.kind, "step": a.kind, "nonce": nonce, "value": "0", "max_cost": str(cap),
-                          "hash": "", "argv_sha256": sha256_hex(" ".join(args).encode())})
-        _fault_hook(rec)
-        signer_opts = ["--max-fee", str(cap)] + ([] if a.kind == "account-deploy" else ["--nonce", str(nonce)])
-        res = sncast_run(args + signer_opts, json_out=True, kind=a.kind)
-        h = _find_hash(res)
-        led.append({"type": "sn-sent", "ref": rec["seq"], "hash": h})
-        for _ in range(450):
-            rc = sn.receipt(h)
-            if rc and rc.get("finality_status") in ("ACCEPTED_ON_L2", "ACCEPTED_ON_L1"):
-                led.append({"type": "outcome", "ref": rec["seq"], "chain": STARKNET_SEPOLIA,
-                            "status": 1 if rc.get("execution_status") == "SUCCEEDED" else 0,
-                            "cost": str(int(rc["actual_fee"]["amount"], 16)), "block": rc.get("block_number", 0)})
-                if rc.get("execution_status") != "SUCCEEDED":
-                    refuse(f"Starknet {a.kind} {h} reverted: stop")
-                if a.kind in SN_KIND_CONTRACT:
-                    print("\n".join(sn_check_deployment(sn, scope.binding, SN_KIND_CONTRACT[a.kind])))
-                print(f"Starknet {a.kind} {h} accepted, fee {int(rc['actual_fee']['amount'], 16)} fri (cap {cap})")
-                return
-            time.sleep(2)
-        refuse(f"Starknet {a.kind} {h}: no receipt; stays reserved at {cap}")
+        sn_send(led, lim, scope.binding, a.kind, args, sn, runner, cwd=cwd, fault=_fault_hook)
+        if a.kind in SN_KIND_CONTRACT:
+            print("\n".join(sn_check_deployment(sn, scope.binding, SN_KIND_CONTRACT[a.kind])))
 
 
 def cmd_sn_check(_: argparse.Namespace) -> None:
     scope = compute_scope()
     check_binding(scope.binding, load_limits())
     sn = StarknetRpc(os.environ["STARKNET_SEPOLIA_RPC_URL"])
-    if sn.rpc.call("starknet_chainId", []) != SN_CHAIN_ID_SEPOLIA:
-        refuse("STARKNET_SEPOLIA_RPC_URL is not Starknet Sepolia")
+    require_sn_chain(sn)
     print("\n".join(sn_check_deployment(sn, scope.binding)))
 
 
-def sncast_run(args: list[str], json_out: bool, kind: str = "") -> Any:
-    ks = Path(os.environ["T2_KEYSTORE_DIR"])
-    pw = subprocess.run(["op", "read", f"op://{os.environ['T2_OP_VAULT']}/t2-starknet/password"], check=True,
-                        capture_output=True, text=True).stdout.rstrip("\n")
-    env = {**os.environ, "KEYSTORE_PASSWORD": pw}  # sncast reads only this variable (CSO L-f: testnet keys only)
-    cmd = ["sncast", "--keystore", str(ks / "t2-starknet.json"), "--account", str(ks / "t2-starknet.account.json")]
-    if json_out:
-        cmd.append("--json")
-    cwd = repo_root() / SN_CONTRACTS[kind.split("-", 1)[1]][1] if kind in SN_DECLARE_NAME else None
-    p = subprocess.run(cmd + args, capture_output=True, text=True, env=env, cwd=cwd)
-    del pw, env
-    if p.returncode != 0:
-        refuse(f"sncast failed: {p.stderr[-400:]}")
-    lines = [l for l in p.stdout.splitlines() if l.strip().startswith("{")]
-    return [json.loads(l) for l in lines]
+# ------------------------------------------------------------------------------------------------ faucet register
+FAUCET_STATUSES = ("requested", "received", "denied")
+
+
+def faucet_register(led: Ledger) -> dict[tuple[str, str], dict]:
+    """Cumulative per chain and role: requests, pending (requested, no terminal record), denied, received."""
+    out: dict[tuple[str, str], dict] = {}
+    reqs = {r["seq"]: r for r in led.records if r["type"] == "faucet" and r["status"] == "requested"}
+    done = {r["ref"]: r for r in led.records if r["type"] == "faucet" and r["status"] != "requested"}
+    for seq, r in reqs.items():
+        e = out.setdefault((r["chain"], r["role"]), {"requests": 0, "pending": 0, "denied": 0, "received_count": 0,
+                                                     "received": 0})
+        e["requests"] += 1
+        t = done.get(seq)
+        if t is None:
+            e["pending"] += 1
+        elif t["status"] == "denied":
+            e["denied"] += 1
+        else:
+            e["received_count"] += 1
+            e["received"] += int(t["amount"])
+    return out
+
+
+def faucet_record(led: Ledger, binding: dict, chain: str, role: str, source: str, status: str, amount: int = 0,
+                  ref: int | None = None, evidence: str = "") -> dict:
+    """F4: one request per bound free source, chain and recipient, ever; no new request while one is pending;
+    receipts are recorded truthfully and anything above the recipient max stops T2 (no reallocation or top-up)."""
+    if status not in FAUCET_STATUSES:
+        refuse(f"faucet status {status}")
+    rcp = next((f for f in binding["funding_recipients"] if f["chain"] == chain and f["role"] == role), None)
+    if rcp is None:
+        refuse(f"faucet: {chain}/{role} is not a bound funding recipient")
+    if not any(f["chain"] == chain and f["source"] == source for f in binding["faucet_sources"]):
+        refuse(f"faucet: {source} is not a bound free source for {chain}")
+    reg = faucet_register(led).get((chain, role), {"pending": 0, "received": 0})
+    if status == "requested":
+        if any(r["type"] == "faucet" and r["status"] == "requested" and (r["chain"], r["role"], r["source"]) ==
+               (chain, role, source) for r in led.records):
+            refuse(f"faucet: {source} was already requested for {chain}/{role} (one request per source, chain and "
+                   "recipient, including denied ones)")
+        if reg["pending"]:
+            refuse(f"faucet: a request for {chain}/{role} is still pending: no repeat")
+        if reg["received"] >= int(rcp["max"]):
+            refuse(f"faucet: {chain}/{role} already holds its maximum")
+        return led.append({"type": "faucet", "chain": chain, "role": role, "source": source, "status": status,
+                           "evidence": evidence})
+    req = next((r for r in led.records if r["type"] == "faucet" and r["seq"] == ref and r["status"] == "requested"
+                and (r["chain"], r["role"], r["source"]) == (chain, role, source)), None)
+    if req is None or any(r["type"] == "faucet" and r.get("ref") == ref for r in led.records):
+        refuse("faucet: the result must reference one open request for the same source, chain and recipient")
+    if status == "received" and amount <= 0:
+        refuse("faucet: received amount must be positive")
+    rec = led.append({"type": "faucet", "ref": ref, "chain": chain, "role": role, "source": source, "status": status,
+                      "amount": str(amount if status == "received" else 0), "evidence": evidence})
+    if status == "received" and reg["received"] + amount > int(rcp["max"]):
+        led.append({"type": "incident", "ref": rec["seq"], "chain": chain,
+                    "reason": f"faucet receipt for {chain}/{role} exceeds its bound maximum {rcp['max']}"})
+        refuse(f"faucet: {chain}/{role} received above its maximum {rcp['max']} (recorded): stop, no reallocation")
+    return rec
+
+
+def cmd_faucet(a: argparse.Namespace) -> None:
+    scope, _lim, _appr, _env = authorize()
+    with Ledger(ledger_path(scope.binding)) as led:
+        faucet_record(led, scope.binding, a.chain, a.role, a.source, a.status, int(a.amount or 0),
+                      int(a.ref) if a.ref is not None else None, a.evidence or "")
+        print(json.dumps({f"{c}/{r}": v for (c, r), v in faucet_register(led).items()}, indent=2))
 
 
 def _find(objs: Any, keys: tuple[str, ...]) -> Any:
@@ -1162,20 +1671,22 @@ def _find(objs: Any, keys: tuple[str, ...]) -> Any:
     refuse(f"sncast output lacks {keys}")
 
 
-def _find_fee(objs: Any) -> int:
-    v = _find(objs, ("overall_fee", "fee"))
-    return int(v, 16) if isinstance(v, str) and v.startswith("0x") else int(v)
-
-
 def _find_hash(objs: Any) -> str:
-    return str(_find(objs, ("transaction_hash",)))
+    h = str(_find(objs, ("transaction_hash",)))
+    try:
+        if not h.startswith("0x") or int(h, 16) == 0:
+            raise ValueError
+    except ValueError:
+        refuse(f"sncast returned a malformed transaction hash {h!r}")
+    return h
 
 
 # Starknet `selector!("send_message_to_l1")` = starknet_keccak (== T2Config.SEND_MESSAGE_TO_L1_SELECTOR).
 SN_CHAIN_ID_SEPOLIA = "0x534e5f5345504f4c4941"
 SN_SIGNER_OPTS = ("--max-fee", "-m", "--nonce", "-n", "--l1-gas", "--l1-gas-price", "--l2-gas", "--l2-gas-price",
-                  "--l1-data-gas", "--l1-data-gas-price", "--tip", "--estimate-tip", "--account", "--keystore",
-                  "--accounts-file", "--network", "--wait")
+                  "--l1-data-gas", "--l1-data-gas-price", "--tip", "--estimate-tip", "--account", "-a", "--keystore",
+                  "-k", "--accounts-file", "-f", "--network", "--wait", "-w", "--wait-timeout", "--wait-retry-interval",
+                  "--dry-run", "--detailed", "--json", "-j", "--profile", "-p", "--proof-file", "--proof-facts-file")
 SN_KIND_CONTRACT = {"deploy-token": "token", "deploy-staker": "staker", "deploy-governor": "governor"}
 SN_DECLARE_NAME = {"declare-token": "T2VotingToken", "declare-staker": "governance::staker::Staker",
                    "declare-governor": "Governor"}
@@ -1295,7 +1806,7 @@ def sn_check_deployment(sn: "StarknetRpc", binding: dict, upto: str = "governor"
     for c in order[:order.index(upto) + 1]:
         h = sn.class_hash_at(s[c])
         if h != int(SN_CLASSES[c], 16):
-            refuse(f"Starknet {c} {s[c]} class hash 0x{h:064x} != pinned {SN_CLASSES[c]}")
+            refuse(f"Starknet {c} {s[c]} class hash {h if h is None else hex(h)} != pinned {SN_CLASSES[c]}")
         out.append(f"{c} {s[c]} class {SN_CLASSES[c]} OK")
     supply = int(s["stake_amount"])
     if sn_call(sn, s["token"], "totalSupply") != [supply % (1 << 128), supply >> 128]:
@@ -1391,7 +1902,12 @@ def build_binding(keys: dict, lim: dict, proxy_creation_code: str) -> dict:
         "roles": {"deployer": d, "bootstrap": keys["bootstrap"], "payer": keys["payer"], "safe_owners": owners,
                   "starknet_account": acct},
         "safe_salt": "1232",
-        "starknet": {"account": acct, "token": token, "staker": staker, "governor": governor,
+        "ledger_dir": keys["ledger_dir"],
+        "starknet": {"account": acct, "account_public_key": keys["starknet_public_key"].lower(),
+                     "account_class_hash": keys["starknet_account_class_hash"].lower(),
+                     "account_salt": keys["starknet_account_salt"].lower(), "account_type": "open_zeppelin",
+                     "keystore_sha256": keys["starknet_keystore_sha256"].lower(),
+                     "token": token, "staker": staker, "governor": governor,
                      "classes": SN_CLASSES, "salt": SN_SALT, "governor_config": SN_GOVERNOR_CONFIG,
                      "stake_amount": lim["starknet"]["stake_amount"]},
         "predicted": {
@@ -1448,6 +1964,15 @@ def main(argv: list[str] | None = None) -> int:
     n.set_defaults(f=cmd_sn)
     sp.add_parser("sn-check").set_defaults(f=cmd_sn_check)
     sp.add_parser("preflight").set_defaults(f=cmd_preflight)
+    fc = sp.add_parser("faucet", help="record a faucet request or its result in the cumulative register")
+    fc.add_argument("--chain", required=True)
+    fc.add_argument("--role", required=True)
+    fc.add_argument("--source", required=True)
+    fc.add_argument("--status", required=True, choices=FAUCET_STATUSES)
+    fc.add_argument("--amount")
+    fc.add_argument("--ref")
+    fc.add_argument("--evidence")
+    fc.set_defaults(f=cmd_faucet)
     a = ap.parse_args(argv)
     if os.environ.get("T2_MODE") not in (None, "", "testnet") and a.cmd in ("send", "sn", "reconcile"):
         print("refused: signing commands run only with T2_MODE=testnet", file=sys.stderr)

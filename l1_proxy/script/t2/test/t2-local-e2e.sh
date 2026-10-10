@@ -78,10 +78,21 @@ git -C "$R" config user.name "t2-local-e2e"
 git -C "$R" config user.email "t2-local-e2e@invalid"
 T2="$R/l1_proxy/script/t2"
 SNACCT="0x0$(head -c 31 /dev/urandom | od -An -tx1 | tr -d ' \n' | cut -c1-62)"
+felt() { printf '0x0%s' "$(head -c 31 /dev/urandom | od -An -tx1 | tr -d ' \n' | cut -c1-62)"; }
+# Starknet identity: LOCAL TEST public values only (this e2e sends nothing on Starknet; no Starknet key exists).
+head -c 64 /dev/urandom > "$W/sn-keystore-placeholder"
 jq -n --arg d "${ADDR[deployer]}" --arg b "${ADDR[bootstrap]}" --arg p "${ADDR[payer]}" \
   --arg a "${ADDR[safe-signer-a]}" --arg bb "${ADDR[safe-signer-b]}" --arg c "${ADDR[safe-signer-c]}" --arg s "$SNACCT" \
+  --arg pk "$(felt)" --arg ch "$(felt)" --arg salt "$(felt)" --arg ks "$(sha256sum "$W/sn-keystore-placeholder" | cut -d' ' -f1)" \
+  --arg ld "$W/ledger" \
   '{deployer:$d, bootstrap:$b, payer:$p, safe_owners:[$a,$bb,$c], starknet_account:$s, op_vault:"local-e2e",
-    faucet_sources:[]}' > "$W/keys.json"
+    ledger_dir:$ld, starknet_public_key:$pk, starknet_account_class_hash:$ch, starknet_account_salt:$salt,
+    starknet_keystore_sha256:$ks,
+    faucet_sources:[["eip155:11155111"],["eip155:97"],["eip155:10143"],["starknet:SN_SEPOLIA"]] | map({chain:.[0],
+      source:"LOCAL TEST fixture", url:"https://faucet.invalid/", eligibility:"LOCAL TEST ONLY: no faucet is used",
+      eligibility_checked_at:"2026-10-10T00:00:00Z", drip_max:"1", login:"none", region:"none",
+      operator:"LOCAL TEST (no human, no request)", automated_allowed:false, paid:false, mainnet_prerequisite:false})}' \
+  > "$W/keys.json"
 python3 "$T2/t2_guard.py" bind --keys "$W/keys.json"
 git -C "$R" commit -q -am "LOCAL TEST binding (throwaway keys)"
 
@@ -143,6 +154,9 @@ mv "$W/pw/t2-bootstrap.real" "$W/pw/t2-bootstrap"
 [ "$(nonce "$SEPOLIA_RPC_URL" "${ADDR[bootstrap]}")" = "$b0" ] && [ "$(nonce "$SEPOLIA_RPC_URL" "${ADDR[payer]}")" = "$p0" ] \
   || die "mismatched keystore published something"
 ok "payer keystore under the bootstrap role: signed bytes refused, nothing published"
+grep -q '"type":"void"' "$W"/ledger/ledger-*.jsonl && grep -q 'never published' "$W"/ledger/ledger-*.jsonl \
+  || die "the refused signing attempt was not reserved and closed as void"
+ok "that attempt was reserved before signing and closed as void (attempt still counted)"
 
 python3 -c 'import fcntl, sys, time; f = open(sys.argv[1], "a"); fcntl.flock(f, fcntl.LOCK_EX); time.sleep(60)' \
   "$W/ledger/$(ls "$W/ledger" | grep '\.lock$')" & lockpid=$!
@@ -164,9 +178,9 @@ expect_ok dispatch "$P97" && ok "payer dispatch of the bootstrap request (payer 
 grep -q "sent dispatch" "$W/last.log" || die "no dispatch"
 
 log "crash, restart and reconciliation (F1)"
-if T2_FAULT=after-reserve run ping-request 10143 259200; then die "fault hook did not fire"; fi
+if T2_FAULT=linked run ping-request 10143 259200; then die "fault hook did not fire"; fi
 P10143="$(payload_of)"
-expect_refused "unknown outcome" dispatch "$P10143" && ok "after a crash between reservation and publish: next attempt refused"
+expect_refused "unknown outcome" dispatch "$P10143" && ok "after a crash between the durable signed link and publish: next attempt refused"
 (cd "$R/l1_proxy" && T2_MODE=testnet script/t2/t2-run.sh reconcile --republish) > "$W/last.log" 2>&1 || { cat "$W/last.log"; die reconcile; }
 grep -q "republished reserved tx" "$W/last.log" && ok "reconcile republished the identical signed bytes (no new liability)"
 expect_ok dispatch "$P10143" && ok "dispatch after reconciliation"
@@ -179,6 +193,18 @@ expect_ok handoff && ok "handoff (bootstrap)"
 expect_refused "authority is not the bootstrap key" ping-request 97 259200 && ok "bootstrap request after handoff refused in simulation"
 (cd "$R/l1_proxy" && T2_MODE=testnet script/t2/t2-run.sh status) > "$W/status.log" 2>&1
 cat "$W/status.log"
+python3 - "$W"/ledger/ledger-*.jsonl <<'PY' || die "ledger order: a signature without an earlier reservation"
+import json, sys
+recs = [json.loads(l) for l in open(sys.argv[1])]
+evm = [r for r in recs if r["type"] == "reserve" and r["chain"] != "SN_SEPOLIA"]
+assert evm and all(r["hash"] == "" for r in evm), "EVM reservation written with a hash (sign-then-reserve)"
+for r in recs:
+    if r["type"] == "signed":
+        res = recs[r["ref"]]
+        assert res["type"] == "reserve" and res["seq"] < r["seq"], r
+print(f"ledger order OK: {len(evm)} EVM reservations, each before its signed link")
+PY
+ok "real ledger: every EVM reservation precedes its signature link (no sign-then-reserve)"
 cast send -q -r "$SEPOLIA_RPC_URL" --keystore "$W/ks/t2-payer.json" --password-file "$W/pw/t2-payer" \
   "${ADDR[payer]}" --value 1 >/dev/null
 expect_refused "deleted ledger, manual transaction or lost receipt" dispatch "$P97" && ok "out-of-band payer transaction refused"

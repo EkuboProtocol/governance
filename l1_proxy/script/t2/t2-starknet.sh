@@ -8,7 +8,11 @@
 # printed and nothing is sent. With T2_MODE=testnet every transaction goes through `t2_guard.py sn --kind <kind>`:
 # scope digest + approval record, exact argv shape for the kind (target, function, calldata, class hash, salt),
 # Governor/Staker/token events all from the ledger, account nonce == ledger, fresh fee estimate <= per-tx max,
-# cumulative fees <= 48 STRK, attempt/retry caps, durable reservation, then sncast with --max-fee/--nonce.
+# cumulative fees <= 48 STRK, attempt/retry caps, then a durable reservation of the kind max BEFORE sncast runs.
+# The account identity (keystore sha256, on-chain class and public key) is checked before any password access; the
+# sncast account descriptor is generated from the bound addendum (an operator account file is never read). sncast
+# gets explicit resource bounds (liability <= reservation), tip 0 and --nonce, and the transaction returned by the
+# chain must match the reservation before it is credited (EKU-1268).
 # The keystore password reaches sncast only via KEYSTORE_PASSWORD in its own environment (CSO L-f: acceptable for
 # testnet-only keys; never reuse this for production).
 #
@@ -35,7 +39,7 @@ send() { # kind sncast-args...
   if [ "$T2_MODE" = testnet ]; then
     "${GUARD[@]}" sn --kind "$kind" -- "$@"
   else
-    printf 'DRY RUN (not sent) [%s]: sncast --keystore <t2-starknet.json> --account <t2-starknet.account.json>' "$kind"
+    printf 'DRY RUN (not sent) [%s]: sncast --keystore <t2-starknet.json> --account <descriptor generated from the addendum>' "$kind"
     printf ' %q' "$@"; echo
   fi
 }
