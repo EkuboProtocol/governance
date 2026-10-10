@@ -1,0 +1,51 @@
+{
+  "schema": "ekubo-t2-binding-v1",
+  "status": "UNBOUND",
+  "note": "EKU-1272 template. No T2 key exists, so no address, Starknet account identity (public key, class hash, salt, keystore sha256), EVM keystore sha256, ledger directory or faucet source is bound, and every signing step refuses. After the separate key-preparation approval, `t2_guard.py bind --keys <public-keys.json>` replaces this file with the BOUND addendum (it refuses empty or incomplete faucet sources, an unsupported account class, and a Starknet address that is not the DEPLOY_ACCOUNT address derived from the class, salt and public key); the final human approval then names its exact scope digest.",
+  "op_vault": null,
+  "roles": {
+    "deployer": null,
+    "bootstrap": null,
+    "payer": null,
+    "safe_owners": [
+      null,
+      null,
+      null
+    ],
+    "starknet_account": null
+  },
+  "ledger_dir": null,
+  "evm_keystore_sha256": {
+    "deployer": null,
+    "bootstrap": null,
+    "payer": null
+  },
+  "safe_salt": "1232",
+  "starknet": {
+    "account": null,
+    "account_public_key": null,
+    "account_class_hash": null,
+    "account_salt": null,
+    "account_type": "open_zeppelin",
+    "keystore_sha256": null,
+    "token": null,
+    "staker": null,
+    "governor": null,
+    "stake_amount": "1000000000000000000000"
+  },
+  "predicted": {
+    "proxy": null,
+    "sender": null,
+    "targets_97": [],
+    "safe_97": null,
+    "executor_97": null,
+    "targets_10143": [],
+    "safe_10143": null,
+    "executor_10143": null
+  },
+  "limits": {
+    "ccip_fee_max_wei": "2000000000000000"
+  },
+  "funding_recipients": [],
+  "faucet_sources": []
+}

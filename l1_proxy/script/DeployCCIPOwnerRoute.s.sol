@@ -28,7 +28,7 @@ import {CCIPRouteVerifier} from "./CCIPRouteVerifier.sol";
 ///
 ///         Env, per destination chain id `<cid>` (56, 143): `CANCELLER_<cid>`, `SAFE_OWNERS_<cid>` (comma list),
 ///         `SAFE_THRESHOLD_<cid>`, `SAFE_GUARD_<cid>`, `SAFE_FALLBACK_HANDLER_<cid>`, `SAFE_SINGLETON_<cid>`,
-///         `SAFE_PROXY_RUNTIME_KECCAK_<cid>`, `EXECUTOR_<cid>`, `EXECUTOR_RUNTIME_KECCAK_<cid>`. Route-wide:
+///         `SAFE_SINGLETON_CODEHASH_<cid>`, `SAFE_PROXY_RUNTIME_KECCAK_<cid>`, `EXECUTOR_<cid>`, `EXECUTOR_RUNTIME_KECCAK_<cid>`. Route-wide:
 ///         `DEPLOYER`, `SENDER_PREDICTED`, `BOOTSTRAP`, `SENDER_RUNTIME_KECCAK`, `ETH_RPC_URL`, `BNB_RPC_URL`,
 ///         `MONAD_RPC_URL`.
 contract DeployCCIPOwnerRoute is CCIPRouteVerifier {
@@ -65,6 +65,9 @@ contract DeployCCIPOwnerRoute is CCIPRouteVerifier {
         x.fallbackHandler = vm.envAddress(_key("SAFE_FALLBACK_HANDLER", cid));
         x.singleton = vm.envAddress(_key("SAFE_SINGLETON", cid));
         x.proxyRuntimeKeccak = vm.envBytes32(_key("SAFE_PROXY_RUNTIME_KECCAK", cid));
+        x.singletonCodehash = vm.envBytes32(_key("SAFE_SINGLETON_CODEHASH", cid));
+        // L-6 (CSO EKU-1218): an approved canceller has no guard.
+        _eq(x.guard == address(0), "L-6: canceller SAFE_GUARD must be zero");
     }
 
     function _rpcFor(uint256 cid) internal view returns (string memory) {

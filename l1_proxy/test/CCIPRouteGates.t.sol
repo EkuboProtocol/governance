@@ -481,4 +481,142 @@ contract CCIPRouteGatesTest is Test {
             "D5: owner() proof call"
         );
     }
+
+    // ---------------------------------------------------------------- EKU-1232: L-4, L-5, L-7 (CSO EKU-1218)
+
+    /// L-4: a known (manifest) operation that is still live blocks a transfer, and the known list must be exactly
+    /// the proof hash; once the proof has executed and nothing else is live, the transfer gate passes.
+    function test_L4_knownLiveBlocksTransfer_knownListIsExactlyProof() public {
+        bytes memory proof = _payload(1, _ownerBatch(ex.targets()));
+        bytes32 hp = keccak256(proof);
+        Vm.EthGetLogs memory lp = _queue(proof);
+        CCIPRouteGates.QueueReport memory r = _report(_arr(lp), _h(hp));
+        assertEq(r.knownLive.length, 1);
+        h.requireClean(r); // the general D2/I-1 gate tolerates one known live op
+        vm.expectRevert(_err("L-4: knownLive must be zero at a transfer"));
+        h.requireTransferClean(r, _h(hp), hp);
+
+        vm.warp(_now() + DELAY);
+        ex.execute(proof);
+        r = _report(_arr(lp), _h(hp));
+        h.requireTransferClean(r, _h(hp), hp);
+
+        bytes32[] memory two = new bytes32[](2);
+        (two[0], two[1]) = (hp, keccak256("later op"));
+        vm.expectRevert(_err("L-4: KNOWN_PAYLOAD_HASHES must be exactly the proof hash"));
+        h.requireTransferClean(r, two, hp);
+        vm.expectRevert(_err("L-4: KNOWN_PAYLOAD_HASHES must be exactly the proof hash"));
+        h.requireTransferClean(r, new bytes32[](0), hp);
+        vm.expectRevert(_err("L-4: KNOWN_PAYLOAD_HASHES must be exactly the proof hash"));
+        h.requireTransferClean(r, _h(keccak256("not the proof")), hp);
+    }
+
+    /// L-7: Monad (143 and testnet 10143) log pages are at most 100 blocks; other chains keep the default.
+    function test_L7_monadLogChunk_enforced() public {
+        if (!vm.envExists("LOG_CHUNK")) assertEq(h.logChunk(), 1000);
+        vm.chainId(143);
+        assertEq(h.logChunk(), 100);
+        h.checkChunk(100);
+        vm.expectRevert(_err("L-7: Monad LOG_CHUNK must be <= 100"));
+        h.checkChunk(101);
+        vm.setEnv("LOG_CHUNK", "1000");
+        vm.expectRevert(_err("L-7: Monad LOG_CHUNK must be <= 100"));
+        h.logChunk();
+        vm.chainId(10143);
+        vm.expectRevert(_err("L-7: Monad LOG_CHUNK must be <= 100"));
+        h.fetchQueued(address(ex), 0, block.number, 1000);
+        vm.setEnv("LOG_CHUNK", "100");
+        assertEq(h.logChunk(), 100);
+    }
+
+    /// L-5: the audit needs a second source at the same block; the C10 monitor export must match the RPC logs
+    /// exactly (missing log, extra log or a different block fail closed). The provider path is fork-tested.
+    function test_L5_secondSource_required_and_reconciled() public {
+        Vm.EthGetLogs memory la = _queue(_payload(1, _one(address(t0), hex"8da5cb5b")));
+        Vm.EthGetLogs memory lb = _queue(_payload(2, _one(address(t1), hex"8da5cb5b")));
+        Vm.EthGetLogs[] memory raw = new Vm.EthGetLogs[](2);
+        (raw[0], raw[1]) = (la, lb);
+        CCIPRouteGates.QueuedLog[] memory logs = h.decodeQueued(raw);
+        CCIPRouteGates.QueueReport memory r = h.classifyQueued(ex, logs, new bytes32[](0), _now());
+
+        if (!vm.envExists("AUDIT_RPC_URL_2") && !vm.envExists("AUDIT_MONITOR_QUEUED_HASHES")) {
+            vm.expectRevert(_err("L-5: second log source required (AUDIT_RPC_URL_2 or AUDIT_MONITOR_*)"));
+            h.reconcileSecondSource(ex, logs, r);
+        }
+
+        bytes32[] memory seen = new bytes32[](2);
+        (seen[0], seen[1]) = (lb.topics[1], la.topics[1]);
+        h.reconcileWithMonitor(logs, seen, block.number);
+        vm.expectRevert(_err("L-5: monitor export is not at the audited block"));
+        h.reconcileWithMonitor(logs, seen, block.number + 1);
+        vm.expectRevert(_err("L-5: Queued count differs from the monitor"));
+        h.reconcileWithMonitor(logs, _h(la.topics[1]), block.number);
+        seen[1] = keccak256("x");
+        vm.expectRevert(_err("L-5: Queued log missing from the monitor"));
+        h.reconcileWithMonitor(logs, seen, block.number);
+    }
+
+    /// L-c: a monitor export that is a strict superset of the RPC logs fails closed (count check), as does a
+    ///      permutation-preserving superset with a duplicate.
+    function test_Lc_monitorSuperset_rejected() public {
+        Vm.EthGetLogs memory la = _queue(_payload(1, _one(address(t0), hex"8da5cb5b")));
+        Vm.EthGetLogs[] memory raw = new Vm.EthGetLogs[](1);
+        raw[0] = la;
+        CCIPRouteGates.QueuedLog[] memory logs = h.decodeQueued(raw);
+        bytes32[] memory seen = new bytes32[](2);
+        (seen[0], seen[1]) = (la.topics[1], keccak256("extra"));
+        vm.expectRevert(_err("L-5: Queued count differs from the monitor"));
+        h.reconcileWithMonitor(logs, seen, block.number);
+        seen[1] = la.topics[1];
+        vm.expectRevert(_err("L-5: Queued count differs from the monitor"));
+        h.reconcileWithMonitor(logs, seen, block.number);
+    }
+
+    /// L-c: the second provider must be a different host from the primary.
+    function test_Lc_distinctHosts() public {
+        h.requireDistinctHosts("https://eth.llamarpc.com", "https://ethereum-rpc.publicnode.com/x");
+        h.requireDistinctHosts("https://a.example/key1", "https://b.example/key1");
+        string[4] memory same = [
+            "https://RPC.example.com/v2/key-b",
+            "http://user:pw@rpc.example.com:8545",
+            "https://rpc.example.com?x=1",
+            "https://rpc.example.com/"
+        ];
+        for (uint256 i = 0; i < same.length; i++) {
+            vm.expectRevert(_err("L-c: AUDIT_RPC_URL_2 must be a different host from AUDIT_RPC_URL_1"));
+            h.requireDistinctHosts("https://rpc.example.com/v2/key-a", same[i]);
+        }
+        vm.expectRevert(_err("L-c: AUDIT_RPC_URL host missing"));
+        h.requireDistinctHosts("", "https://rpc.example.com");
+    }
+
+    /// L-d: the transfer must be mined in TRANSFER_TX_BLOCK within [presign, presign + 72 h].
+    function test_Ld_transferTiming() public {
+        h.checkTransferTiming(101, 2000, 101, 1000);
+        h.checkTransferTiming(101, 1000 + 72 hours, 101, 1000);
+        vm.expectRevert(_err("L-d: transfer tx is not in TRANSFER_TX_BLOCK"));
+        h.checkTransferTiming(102, 2000, 101, 1000);
+        vm.expectRevert(_err("L-d: transfer mined outside the 72 h pre-sign window"));
+        h.checkTransferTiming(101, 1001 + 72 hours, 101, 1000);
+        vm.expectRevert(_err("L-d: transfer mined outside the 72 h pre-sign window"));
+        h.checkTransferTiming(101, 999, 101, 1000);
+        vm.expectRevert(_err("L-d: PRESIGN_AUDIT_TS required"));
+        h.checkTransferTiming(101, 2000, 101, 0);
+    }
+
+    /// L-7: a pre-sign audit must fork the latest available block; the lag bound itself is capped.
+    function test_L7_auditFreshness() public view {
+        h.checkAuditFreshness(1000, 1000, 600);
+        h.checkAuditFreshness(1000, 1600, 600);
+        h.checkAuditFreshness(1000, 940, 600); // block clock up to 60 s ahead of the wall clock
+    }
+
+    function test_L7_auditFreshness_rejects() public {
+        vm.expectRevert(_err("L-7: pre-sign audit must fork the latest available block"));
+        h.checkAuditFreshness(1000, 1601, 600);
+        vm.expectRevert(_err("L-7: pre-sign audit must fork the latest available block"));
+        h.checkAuditFreshness(1000, 939, 600);
+        vm.expectRevert(_err("L-7: AUDIT_MAX_LAG above 1 hour"));
+        h.checkAuditFreshness(1000, 1000, 3601);
+    }
 }

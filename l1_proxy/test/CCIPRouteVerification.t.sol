@@ -310,8 +310,25 @@ contract CCIPRouteVerificationTest is Test {
             guard: address(0),
             fallbackHandler: FALLBACK,
             singleton: SINGLETON,
-            proxyRuntimeKeccak: keccak256(address(safe).code)
+            proxyRuntimeKeccak: keccak256(address(safe).code),
+            singletonCodehash: keccak256(SINGLETON.code)
         });
+    }
+
+    /// L-6 (CSO EKU-1218): the singleton is pinned by code hash as well as address.
+    function test_safe_singletonCodehash_pinned() public {
+        CCIPRouteVerifier.SafeExpect memory x = _safeX();
+        x.singletonCodehash = bytes32(0);
+        _safeFails(x, "safe.singletonCodehash expectation");
+        x.singletonCodehash = keccak256("other singleton code");
+        _safeFails(x, "safe.singletonCodehash");
+        vm.etch(SINGLETON, hex"00");
+        _safeFails(_safeX0(), "safe.singletonCodehash");
+    }
+
+    function _safeX0() internal view returns (CCIPRouteVerifier.SafeExpect memory x) {
+        x = _safeX();
+        x.singletonCodehash = keccak256("");
     }
 
     function _safeFails(CCIPRouteVerifier.SafeExpect memory x, string memory what) internal {
