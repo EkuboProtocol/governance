@@ -26,6 +26,8 @@ mod staker_test;
 pub mod staker_v2;
 #[cfg(test)]
 mod staker_v2_test;
+#[cfg(test)]
+mod t2_l1_message_test;
 
 mod interfaces {
     pub(crate) mod erc20;

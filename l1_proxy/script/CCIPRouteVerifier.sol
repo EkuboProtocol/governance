@@ -62,6 +62,8 @@ abstract contract CCIPRouteVerifier is Script {
         address fallbackHandler;
         address singleton;
         bytes32 proxyRuntimeKeccak;
+        /// @dev L-6 (CSO EKU-1218): the canonical singleton's runtime keccak, not only its address.
+        bytes32 singletonCodehash;
     }
 
     error VerificationFailed(string what);
@@ -273,6 +275,7 @@ abstract contract CCIPRouteVerifier is Script {
         _eq(_chainId(src) == x.chainId, "safe.chainId");
         _eq(!isPlaceholder(safe), "safe: placeholder or singleton address");
         _eq(x.singleton != address(0) && x.singleton != safe, "safe.singleton expectation");
+        _eq(x.singletonCodehash != bytes32(0), "safe.singletonCodehash expectation");
         uint256 n = x.owners.length;
         _eq(x.threshold >= 2 && x.threshold <= n, "safe.threshold expectation (>= 2, <= owners)");
         for (uint256 i = 0; i < n; i++) {
@@ -287,6 +290,7 @@ abstract contract CCIPRouteVerifier is Script {
         _eq(keccak256(code) == x.proxyRuntimeKeccak, "safe.proxyRuntimeKeccak");
         _eq(address(uint160(uint256(_slot(src, safe, bytes32(0))))) == x.singleton, "safe.singleton");
         _eq(_slot(src, safe, bytes32(0)) == bytes32(uint256(uint160(x.singleton))), "safe.singleton slot dirty");
+        _eq(keccak256(_code(src, x.singleton)) == x.singletonCodehash, "safe.singletonCodehash");
 
         _eq(_uint(src, safe, abi.encodeCall(ISafeView.getThreshold, ())) == x.threshold, "safe.threshold");
         _eq(uint256(_slot(src, safe, bytes32(uint256(4)))) == x.threshold, "safe.threshold slot");

@@ -50,6 +50,11 @@ contract CCIPRouteGates is DeployCCIPOwnerRoute {
         uint64 blockNumber;
     }
 
+    /// @dev L-7 (CSO EKU-1218): Monad RPCs cap eth_getLogs at 100 blocks.
+    uint256 internal constant MONAD_LOG_CHUNK = 100;
+    /// @dev L-7: absolute ceiling between the pre-sign audit block and sending the transfer.
+    uint256 internal constant AUDIT_SEND_CEILING = 72 hours;
+
     struct QueueReport {
         uint256 total;
         uint256 executed;
@@ -112,6 +117,7 @@ contract CCIPRouteGates is DeployCCIPOwnerRoute {
         public
         returns (QueuedLog[] memory)
     {
+        checkChunk(chunk);
         return decodeQueued(fetchLogs(e, CCIPOwnerExecutor.Queued.selector, bytes32(0), fromBlock, toBlock, chunk));
     }
 
@@ -163,7 +169,8 @@ contract CCIPRouteGates is DeployCCIPOwnerRoute {
     }
 
     /// @notice D2 at the forked block (pin `--fork-block-number` to the block immediately before the transfer).
-    ///         Env: EXECUTOR, EXECUTOR_DEPLOY_BLOCK, optional KNOWN_PAYLOAD_HASHES (comma list), LOG_CHUNK.
+    ///         Env: EXECUTOR, EXECUTOR_DEPLOY_BLOCK, optional KNOWN_PAYLOAD_HASHES (comma list), LOG_CHUNK, and a
+    ///         second log source for L-5 (AUDIT_RPC_URL_2, or AUDIT_MONITOR_QUEUED_HASHES + AUDIT_MONITOR_BLOCK).
     function auditQueued() external returns (QueueReport memory r) {
         r = _audit(CCIPOwnerExecutor(vm.envAddress("EXECUTOR")));
         requireClean(r);
@@ -172,8 +179,9 @@ contract CCIPRouteGates is DeployCCIPOwnerRoute {
     function _audit(CCIPOwnerExecutor e) internal returns (QueueReport memory r) {
         uint256 from = vm.envUint("EXECUTOR_DEPLOY_BLOCK");
         bytes32[] memory known = vm.envOr("KNOWN_PAYLOAD_HASHES", ",", new bytes32[](0));
-        QueuedLog[] memory logs = fetchQueued(address(e), from, block.number, vm.envOr("LOG_CHUNK", uint256(1000)));
+        QueuedLog[] memory logs = fetchQueued(address(e), from, block.number, logChunk());
         r = classifyQueued(e, logs, known, vm.getBlockTimestamp());
+        reconcileSecondSource(e, logs, r);
         console.log("D2 audit: chain, block", block.chainid, block.number);
         console.log("  executor", address(e));
         console.log("  Queued logs / executed / cancelled", r.total, r.executed, r.cancelled);
@@ -191,6 +199,101 @@ contract CCIPRouteGates is DeployCCIPOwnerRoute {
     function requireClean(QueueReport memory r) public pure {
         _eq(r.unknownLive.length == 0, "D2: unknown live Queued op(s); Safe must cancel before any transfer");
         _eq(r.knownLive.length <= 1, "I-1: more than one GOVERNOR op in flight");
+    }
+
+    /// @notice L-4 (CSO EKU-1218): at a transfer no operation may be live at all, known or not, and the known list is
+    ///         exactly the harmless proof hash recorded in manifest section 6.
+    function requireTransferClean(QueueReport memory r, bytes32[] memory known, bytes32 proofHash) public pure {
+        requireClean(r);
+        _eq(r.knownLive.length == 0, "L-4: knownLive must be zero at a transfer");
+        _eq(known.length == 1 && known[0] == proofHash, "L-4: KNOWN_PAYLOAD_HASHES must be exactly the proof hash");
+    }
+
+    function isMonad(uint256 cid) public pure returns (bool) {
+        return cid == 143 || cid == 10143;
+    }
+
+    /// @notice Page size for every gate log query; L-7: at most 100 blocks on Monad.
+    function logChunk() public view returns (uint256 chunk) {
+        chunk = vm.envOr("LOG_CHUNK", isMonad(block.chainid) ? MONAD_LOG_CHUNK : uint256(1000));
+        checkChunk(chunk);
+    }
+
+    function checkChunk(uint256 chunk) public view {
+        _eq(chunk != 0, "LOG_CHUNK zero");
+        _eq(!isMonad(block.chainid) || chunk <= MONAD_LOG_CHUNK, "L-7: Monad LOG_CHUNK must be <= 100");
+    }
+
+    // ---------------------------------------------------------------- L-5: second, independent log source
+
+    /// @notice L-5 (CSO EKU-1218): reconciles the audit against a second source at the SAME block and fails closed on
+    ///         any difference or when no second source is configured. Source 2 is `AUDIT_RPC_URL_2` (an independent
+    ///         provider forked at this block) or the C10 monitor export `AUDIT_MONITOR_QUEUED_HASHES` at
+    ///         `AUDIT_MONITOR_BLOCK`.
+    function reconcileSecondSource(CCIPOwnerExecutor e, QueuedLog[] memory logs, QueueReport memory r) public {
+        if (vm.envExists("AUDIT_RPC_URL_2")) {
+            reconcileWithProvider(
+                e,
+                logs,
+                r,
+                vm.envString("AUDIT_RPC_URL_2"),
+                vm.envUint("EXECUTOR_DEPLOY_BLOCK"),
+                vm.envOr("KNOWN_PAYLOAD_HASHES", ",", new bytes32[](0))
+            );
+        } else if (vm.envExists("AUDIT_MONITOR_QUEUED_HASHES")) {
+            reconcileWithMonitor(
+                logs, vm.envBytes32("AUDIT_MONITOR_QUEUED_HASHES", ","), vm.envUint("AUDIT_MONITOR_BLOCK")
+            );
+        } else {
+            revert VerificationFailed("L-5: second log source required (AUDIT_RPC_URL_2 or AUDIT_MONITOR_*)");
+        }
+    }
+
+    /// @notice L-5 with an independent RPC provider forked at the current block: the parent block hash, timestamp,
+    ///         every Queued log and the ops() classification must match exactly. The caller's fork is restored.
+    function reconcileWithProvider(
+        CCIPOwnerExecutor e,
+        QueuedLog[] memory logs,
+        QueueReport memory r,
+        string memory rpc2,
+        uint256 fromBlock,
+        bytes32[] memory known
+    ) public {
+        uint256 b = block.number;
+        bytes32 parent = blockhash(b - 1);
+        uint256 ts = block.timestamp;
+        _eq(parent != bytes32(0), "L-5: parent block hash unavailable");
+        uint256 primary = vm.activeFork();
+        vm.createSelectFork(rpc2, b);
+        _eq(block.number == b && blockhash(b - 1) == parent && block.timestamp == ts, "L-5: provider 2 block");
+        QueuedLog[] memory logs2 = fetchQueued(address(e), fromBlock, b, logChunk());
+        QueueReport memory r2 = classifyQueued(e, logs2, known, ts);
+        vm.selectFork(primary);
+        _eq(block.number == b, "L-5: primary fork not restored");
+        _eq(logs2.length == logs.length, "L-5: Queued log count differs between providers");
+        for (uint256 i = 0; i < logs.length; i++) {
+            _eq(
+                logs2[i].payloadHash == logs[i].payloadHash && logs2[i].ccipMessageId == logs[i].ccipMessageId
+                    && logs2[i].opId == logs[i].opId && logs2[i].eta == logs[i].eta
+                    && logs2[i].deadline == logs[i].deadline && logs2[i].blockNumber == logs[i].blockNumber
+                    && keccak256(logs2[i].payload) == keccak256(logs[i].payload),
+                "L-5: Queued log differs between providers"
+            );
+        }
+        _eq(
+            keccak256(abi.encode(r2)) == keccak256(abi.encode(r)), "L-5: ops() classification differs between providers"
+        );
+        console.log("L-5: provider 2 reconciled at block", b);
+    }
+
+    /// @notice L-5 with the C10 monitor's export: every Queued payloadHash it saw up to `monitorBlock`.
+    function reconcileWithMonitor(QueuedLog[] memory logs, bytes32[] memory seen, uint256 monitorBlock) public view {
+        _eq(monitorBlock == block.number, "L-5: monitor export is not at the audited block");
+        _eq(seen.length == logs.length, "L-5: Queued count differs from the monitor");
+        for (uint256 i = 0; i < logs.length; i++) {
+            _eq(_contains(seen, logs[i].payloadHash), "L-5: Queued log missing from the monitor");
+        }
+        console.log("L-5: C10 monitor export reconciled at block", monitorBlock);
     }
 
     // ---------------------------------------------------------------- L-1: Governor messages (T5)
@@ -373,7 +476,7 @@ contract CCIPRouteGates is DeployCCIPOwnerRoute {
         bytes32 h = keccak256(payload);
         bytes32 mid = vm.envBytes32("PROOF_CCIP_MESSAGE_ID");
         uint256 from = vm.envUint("SENDER_DEPLOY_BLOCK");
-        uint256 chunk = vm.envOr("LOG_CHUNK", uint256(1000));
+        uint256 chunk = logChunk();
         _eq(CCIPGovernanceSender(senderAddr).authority() == L1_PROXY, "authority");
         (CCIPGovernanceSender.RequestStatus st,,) = CCIPGovernanceSender(senderAddr).requests(h);
         _eq(uint8(st) == 2, "D1: proof request not Dispatched");
@@ -430,7 +533,7 @@ contract CCIPRouteGates is DeployCCIPOwnerRoute {
         (CCIPOwnerExecutor.OpStatus st,,) = e.ops(h);
         _eq(st == CCIPOwnerExecutor.OpStatus.Executed, "D3: proof op not Executed on this chain");
         uint256 from = vm.envUint("EXECUTOR_DEPLOY_BLOCK");
-        uint256 chunk = vm.envOr("LOG_CHUNK", uint256(1000));
+        uint256 chunk = logChunk();
         _eq(
             fetchLogs(address(e), CCIPOwnerExecutor.Executed.selector, h, from, block.number, chunk).length == 1,
             "D1: Executed(proof) emitted by executor"
@@ -444,12 +547,34 @@ contract CCIPRouteGates is DeployCCIPOwnerRoute {
         (uint8 rs, uint64 rDest,) = abi.decode(reqView, (uint8, uint64, uint32));
         _eq(rs == 2 && rDest == selectorFor(cid), "D1: proof not Dispatched to this chain on Ethereum (finalized)");
 
-        // D2 at this block.
-        requireClean(_audit(e));
+        // L-7: the pre-sign audit forks the latest available block; a post-transfer audit is evidence only.
+        if (keccak256(bytes(vm.envOr("AUDIT_MODE", string("presign")))) == keccak256("post")) {
+            _eq(vm.envUint("TRANSFER_TX_BLOCK") == block.number + 1, "L-7: post audit must fork transferBlock - 1");
+            console.log("L-7: POST-TRANSFER AUDIT AT transferBlock - 1: EVIDENCE ONLY, NOT A PRE-SIGN APPROVAL");
+        } else {
+            checkAuditFreshness(block.timestamp, vm.unixTime() / 1000, vm.envOr("AUDIT_MAX_LAG", uint256(600)));
+            console.log(
+                "L-7: audit block timestamp, absolute send ceiling (unix)",
+                block.timestamp,
+                block.timestamp + AUDIT_SEND_CEILING
+            );
+        }
+
+        // D2 + L-4 + L-5 at this block.
+        requireTransferClean(_audit(e), vm.envOr("KNOWN_PAYLOAD_HASHES", ",", new bytes32[](0)), h);
 
         // D3: exact calldata, simulated.
         simulateTransfers(e, vm.envOr("TRANSFER_TARGET", address(0)));
         console.log("T6 pre-transfer checks PASSED at block", block.number);
+    }
+
+    /// @notice L-7: the pre-sign audit block must be the latest available one (within `maxLag` seconds of wall time).
+    function checkAuditFreshness(uint256 blockTs, uint256 wallTs, uint256 maxLag) public pure {
+        _eq(maxLag <= 1 hours, "L-7: AUDIT_MAX_LAG above 1 hour");
+        _eq(
+            wallTs + 60 >= blockTs && wallTs <= blockTs + maxLag,
+            "L-7: pre-sign audit must fork the latest available block"
+        );
     }
 
     /// @notice D3 / D4 / D5: simulates the exact `transferOwnership(executor)` calldata from the company key on each
@@ -508,7 +633,7 @@ contract CCIPRouteGates is DeployCCIPOwnerRoute {
         uint256 cid = block.chainid;
         address e = vm.envAddress(_key("EXECUTOR", cid));
         uint256 from = vm.envUint("TRANSFER_FROM_BLOCK");
-        uint256 chunk = vm.envOr("LOG_CHUNK", uint256(1000));
+        uint256 chunk = logChunk();
         address[] memory ts = targetsFor(cid);
         for (uint256 i = 0; i < ts.length; i++) {
             _eq(IOwnableTarget(ts[i]).owner() == e, "D4: owner() != executor");

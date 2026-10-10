@@ -24,6 +24,8 @@ contract CCIPRouteGatesBnbForkTest is Test {
     address constant SAFE_L2_141 = 0x29fcB43b46531BcA003ddC8FCB67FFE91900C762;
     address constant FALLBACK_141 = 0xfd0732Dc9E303f09fCEf3a7388Ad10A83459Ec99;
     bytes32 constant SAFE_PROXY_141_KECCAK = 0xd7d408ebcd99b2b70be43e20253d6d92a8ea8fab29bd3be7f55b10032331fb4c;
+    /// @dev L-6: SafeL2 1.4.1 singleton runtime keccak (same bytes on BNB Chain, BNB testnet and Monad testnet).
+    bytes32 constant SAFE_L2_141_CODEHASH = 0xb1f926978a0f44a2c0ec8fe822418ae969bd8c3f18d61e5103100339894f81ff;
     address constant COMPANY_KEY = 0x00000C771F6176268D5A9846E0956C3eF58597A1;
     address constant USDT = 0x55d398326f99059fF775485246999027B3197955;
 
@@ -63,7 +65,8 @@ contract CCIPRouteGatesBnbForkTest is Test {
             guard: address(0),
             fallbackHandler: FALLBACK_141,
             singleton: SAFE_L2_141,
-            proxyRuntimeKeccak: SAFE_PROXY_141_KECCAK
+            proxyRuntimeKeccak: SAFE_PROXY_141_KECCAK,
+            singletonCodehash: SAFE_L2_141_CODEHASH
         });
     }
 
@@ -177,6 +180,47 @@ contract CCIPRouteGatesBnbForkTest is Test {
         h.simulateTransfers(e, address(0));
         for (uint256 i = 0; i < ts.length; i++) {
             assertEq(IOwnable(ts[i]).owner(), address(e));
+        }
+    }
+
+    /// L-5 (CSO EKU-1218): a second, independent provider forked at the same block must agree on the parent block
+    /// hash, timestamp, every Queued log and the ops() classification; a log only one provider reports fails
+    /// closed. The executor is a local deployment made persistent across both forks (no Queued logs on chain).
+    function test_fork_bnb_L5_twoProviders_sameBlock() public {
+        string memory rpc2 = vm.envOr("BNB_RPC_URL_2", string(""));
+        if (bytes(rpc2).length == 0) {
+            vm.skip(true);
+            return;
+        }
+        vm.createSelectFork(rpc, forkBlock - 5);
+        h = new CCIPRouteGates();
+        address deployer = makeAddr("eku1232-fork-deployer");
+        vm.prank(deployer);
+        CCIPOwnerExecutor e = new CCIPOwnerExecutor(
+            h.routerFor(56),
+            5009297550715157269,
+            vm.computeCreateAddress(deployer, 0),
+            259200,
+            1209600,
+            2592000,
+            FORMAT_SAFE,
+            h.targetsFor(56)
+        );
+        vm.makePersistent(address(e));
+        vm.makePersistent(address(h));
+        uint256 from = block.number - 20;
+        CCIPRouteGates.QueuedLog[] memory logs = h.fetchQueued(address(e), from, block.number, 100);
+        CCIPRouteGates.QueueReport memory r = h.classifyQueued(e, logs, new bytes32[](0), block.timestamp);
+        uint256 b = block.number;
+        h.reconcileWithProvider(e, logs, r, rpc2, from, new bytes32[](0));
+        assertEq(block.number, b, "primary fork restored");
+
+        CCIPRouteGates.QueuedLog[] memory extra = new CCIPRouteGates.QueuedLog[](1);
+        extra[0].payloadHash = keccak256("only on provider 1");
+        try h.reconcileWithProvider(e, extra, r, rpc2, from, new bytes32[](0)) {
+            revert("discrepancy accepted");
+        } catch (bytes memory err) {
+            assertEq(err, _err("L-5: Queued log count differs between providers"));
         }
     }
 
