@@ -1717,6 +1717,139 @@ class DeltaCoverageTest(LedgerCase):
         self.assertEqual(len(self.led.records), 1)
 
 
+# ---------------------------------------------------------------- E-1: post-return DEPLOY_ACCOUNT tamper (CSO EKU-1274)
+class FakeDeployRunner(FakeRunner):
+    """Key-free `sncast account deploy` stand-in: the send builds the DEPLOY_ACCOUNT sncast would produce from the
+    bound identity (no --nonce; nonce 0), and its receipt carries the deployed contract_address. Like Sncast, every
+    run reads the password once; `tamper` may then corrupt the returned tx or receipt."""
+
+    def __init__(self, ledger_path, sn, tamper=None):
+        super().__init__(ledger_path, sn, tamper=tamper)
+        self.descriptor = g.sn_account_descriptor(sn_binding(), False)
+        self.pw = 0
+
+    def run(self, args, cwd=None):
+        recs = [json.loads(line) for line in self.path.read_text().splitlines()]
+        res = [r for r in recs if r["type"] == "reserve" and r["chain"] == g.STARKNET_SEPOLIA
+               and not any(x.get("ref") == r["seq"] and x["type"] in ("sn-sent", "outcome", "void") for x in recs)]
+        assert len(res) == 1, "sncast ran without exactly one durable unlinked reservation"
+        self.calls.append(list(args))
+        self.pw += 1
+        if "--dry-run" in args:
+            return [dict(SN_FEE_EST)]
+        opt = {args[i]: args[i + 1] for i in range(len(args) - 1) if args[i].startswith("--")}
+        tx = {"type": "DEPLOY_ACCOUNT", "version": "0x3", "nonce": "0x0", "class_hash": SN_CLASS,
+              "contract_address_salt": SN_SALT_A, "constructor_calldata": [SN_PUB],
+              "resource_bounds": {r: {"max_amount": hex(int(opt[f"--{r.replace('_', '-')}"])),
+                                      "max_price_per_unit": hex(int(opt[f"--{r.replace('_', '-')}-price"]))}
+                                  for r in g.SN_RESOURCES},
+              "tip": hex(int(opt["--tip"])), "paymaster_data": [], "signature": ["0x1", "0x2"],
+              "nonce_data_availability_mode": "L1", "fee_data_availability_mode": "L1"}
+        rc = {"finality_status": "ACCEPTED_ON_L2", "execution_status": "SUCCEEDED", "block_number": 7,
+              "contract_address": SN_ACCT, "actual_fee": {"amount": hex(10**15), "unit": "FRI"}}
+        if self.tamper:
+            self.tamper(tx, rc)
+        h = "0x" + os.urandom(31).hex()
+        self.sn.txs[h], self.sn.rcs[h] = tx, rc
+        self.sn.nonce_v += 1
+        if int(rc["contract_address"], 16) == int(SN_ACCT, 16):
+            self.sn.classes[int(SN_ACCT, 16)] = int(tx["class_hash"], 16)
+        return [{"command": "account deploy", "transaction_hash": h, "type": "response"}]
+
+
+DEPLOY_URL = "http://sn.invalid"
+
+
+def deploy_args():
+    return ["account", "deploy", "--url", DEPLOY_URL]
+
+
+class DeployAccountTamperTest(LedgerCase):
+    """CSO EKU-1274 E-1: the returned DEPLOY_ACCOUNT must equal the reserved intent field by field (class hash, salt,
+    constructor calldata and the receipt contract_address). A tampered return persists an incident, credits no
+    outcome, keeps the reservation at its maximum and stops every later send before sncast or the password."""
+
+    def deploy(self, runner, sn):
+        return g.sn_send(self.led, LIM, sn_binding(), "account-deploy", deploy_args(), sn, runner,
+                         out=lambda s: None, polls=(2, 0))
+
+    def undeployed(self):
+        sn = FakeSn()
+        sn.classes.clear()
+        return sn
+
+    def test_clean_deploy_is_credited(self):  # control: the same path with an untampered return
+        sn = self.undeployed()
+        r = FakeDeployRunner(self.path, sn)
+        o = self.deploy(r, sn)
+        self.assertEqual((o["status"], o["cost"]), (1, str(10**15)))
+        self.assertEqual([x["type"] for x in self.led.records], ["reserve", "sn-bounds", "sn-sent", "outcome"])
+        a = self.led.records[0]
+        self.assertEqual(a["expect"], {"type": "DEPLOY_ACCOUNT", "class_hash": hex(int(SN_CLASS, 16)),
+                                       "contract_address_salt": hex(int(SN_SALT_A, 16)),
+                                       "constructor_calldata": [hex(int(SN_PUB, 16))],
+                                       "contract_address": hex(int(SN_ACCT, 16))})
+        self.assertEqual((self.led.incidents(), self.led.open_reserves(g.STARKNET_SEPOLIA)), ([], []))
+        self.assertEqual(r.calls[1][:4], deploy_args())
+        self.assertNotIn("--nonce", r.calls[1])
+        self.assertEqual(r.pw, 2)  # dry-run + send
+        self.assertEqual(self.led.exposure(g.STARKNET_SEPOLIA), 10**15)
+
+    def tampered(self, tamper, pat):
+        sn = self.undeployed()
+        r = FakeDeployRunner(self.path, sn, tamper=tamper)
+        with self.assertRaisesRegex(g.Refused, pat):
+            self.deploy(r, sn)
+        self.assertEqual(r.pw, 2)
+        (a,) = self.led.open_reserves(g.STARKNET_SEPOLIA)
+        self.assertEqual(a["kind"], "account-deploy")
+        self.assertIsNone(self.led.outcome(a["seq"]))  # no outcome credited
+        self.assertFalse([x for x in self.led.records if x["type"] in ("outcome", "void")])
+        cap = int(LIM["starknet"]["kinds"]["account-deploy"]["max_fee_fri"])
+        self.assertEqual(int(a["max_cost"]), cap)
+        self.assertEqual(self.led.exposure(g.STARKNET_SEPOLIA), cap)  # reservation retained at its maximum
+        (inc,) = self.led.incidents()
+        self.assertEqual((inc["ref"], inc["hash"]), (a["seq"], self.led.tx_hash(a)))
+        self.assertIn("does not match the reserved intent", inc["reason"])
+        persisted = [json.loads(x) for x in self.path.read_text().splitlines()]
+        self.assertEqual([x["type"] for x in persisted], ["reserve", "sn-bounds", "sn-sent", "incident"])
+        n = len(persisted)
+        # the next in-process send is refused before sncast runs or the password is read
+        r2 = FakeDeployRunner(self.path, sn)
+        with self.assertRaisesRegex(g.Refused, "incident"):
+            self.deploy(r2, sn)
+        self.assertEqual((r2.calls, r2.pw), ([], 0))
+        # and so is the next `sn` command through sn_run with the real Sncast runner (fresh ledger handle)
+        self.led.__exit__()
+        w = Path(self.dir.name)
+        (w / "t2-starknet.json").write_bytes(SN_KS)
+        exe = w / "sncast"
+        exe.write_text(FAKE_SNCAST)
+        exe.chmod(0o700)
+        pw = []
+        for kind, args in (("account-deploy", deploy_args()), ("vote", vote_args())):
+            with self.subTest(next_kind=kind):
+                sn2 = self.undeployed() if kind == "account-deploy" else FakeSn()
+                with self.assertRaisesRegex(g.Refused, "incident"):
+                    g.sn_run(sn_binding(), LIM, kind, args, sn2, DEPLOY_URL, w / "t2-starknet.json",
+                             lambda: (lambda: pw.append(1) or "pw"), self.path, exe=str(exe), polls=(1, 0))
+        self.assertEqual((pw, Path(str(exe) + ".calls").exists()), ([], False))
+        self.assertEqual(len(self.path.read_text().splitlines()), n)  # nothing further written
+
+    def test_wrong_class_hash(self):
+        self.tampered(lambda tx, rc: tx.update(
+            class_hash="0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f"), "class_hash")
+
+    def test_wrong_contract_address_salt(self):
+        self.tampered(lambda tx, rc: tx.update(contract_address_salt="0x1"), "contract_address_salt")
+
+    def test_wrong_constructor_calldata(self):
+        self.tampered(lambda tx, rc: tx.update(constructor_calldata=[SN_PUB, "0x0"]), "constructor_calldata")
+
+    def test_wrong_receipt_contract_address(self):
+        self.tampered(lambda tx, rc: rc.update(contract_address="0x" + "77" * 31), "contract_address ")
+
+
 # ---------------------------------------------------------------- D-2: bound EVM keystores; D-3 containment
 FAKE_CAST = r'''#!/usr/bin/env python3
 import json, os, sys, time

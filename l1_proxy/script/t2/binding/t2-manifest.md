@@ -1,8 +1,10 @@
-# EKU-1272 T2 real-delivery testnet manifest, bounded budget and binding rules (A′-CCIP owner route)
+# EKU-1280 T2 real-delivery testnet manifest, bounded budget and binding rules (A′-CCIP owner route)
 
 **Status: PREPARED, NOT AUTHORIZED.** No key was generated, fetched or used. No faucet was requested. No testnet or mainnet transaction was signed or sent. Nothing was merged or deployed. Every test ran on a local EVM, local anvil forks, local snforge or read-only public RPC.
 
-This revision (EKU-1272) replaces the EKU-1268 manifest (`2e87e401…26c7`, PR #87 head `65e094e`). It closes CFO EKU-1269 R2-D (the undeployed Starknet account address is **derived** from the pinned class, salt and public key and matched to every bound address field and the funding recipient before any keystore, password or signer, §5/§7), adds killing tests for all nine CSO EKU-1270 D-1 mutant survivors, binds the EVM keystore sha256 per signing role (D-2), and contains the D-3 residuals (§7, §10). Budget, limits and caps are unchanged.
+This revision (EKU-1280) replaces the EKU-1272 manifest (`d5f7c2b2…c209c241f`, PR #87 head `9287094`). It is **test-only**: it adds the CSO EKU-1274 E-1 post-return `DEPLOY_ACCOUNT` tamper regressions (§11) so that each field of the reserved deploy intent (class hash, salt, constructor calldata, receipt `contract_address`) has a killing test. `t2_guard.py`, budget, limits, caps, gates and the R2-D pre-secret derivation are byte-unchanged.
+
+The EKU-1272 revision replaced the EKU-1268 manifest (`2e87e401…26c7`, PR #87 head `65e094e`). It closes CFO EKU-1269 R2-D (the undeployed Starknet account address is **derived** from the pinned class, salt and public key and matched to every bound address field and the funding recipient before any keystore, password or signer, §5/§7), adds killing tests for all nine CSO EKU-1270 D-1 mutant survivors, binds the EVM keystore sha256 per signing role (D-2), and contains the D-3 residuals (§7, §10). Budget, limits and caps are unchanged.
 
 The EKU-1268 revision replaced the EKU-1261 manifest (`dcd5a142…d44e`, PR #87 head `5bab186`). It closes CFO EKU-1263 R1 (durable reservation **before** signing) and R2 (Starknet account identity and returned-transaction checks), adopts the CSO EKU-1262 N-1 stop-condition tests, and addresses N-2..N-8 (§7, §8, §10, §12). The EKU-1261 revision closed CSO EKU-1233 T2-1..T2-3 and L-a..L-f and CFO EKU-1234 F1..F4. Production gate items L-4..L-7 and the L-c/L-d gate code are byte-unchanged in this revision.
 
@@ -15,8 +17,9 @@ Evidence labels: **MOCKED** (local EVM with mocks), **REAL CODE ON FORK**, **IMP
 
 | Item | Value |
 |---|---|
-| Base | `65e094e` (EKU-1268) on `5bab186` (EKU-1261) on `a483a79` (EKU-1232), stacked on PR #86 `2161f7a` |
-| This revision's diff vs `65e094e` | Test-only T2 tooling only: `script/t2/t2_guard.py`, `script/t2/test/test_t2_guard.py`, `script/t2/test/t2-local-e2e.sh`, `script/t2/t2-run.sh` (comment), `script/t2/binding/t2-binding.json` (UNBOUND template: new null `evm_keystore_sha256`), this manifest. The EKU-1268 diff vs `5bab186` was likewise T2 tooling only. **No** change under `l1_proxy/src`, `vendor`, `lib`, `foundry.toml`, `script/CCIPRouteGates.s.sol`, `script/t2/*.sol`, `script/t2/cairo`, `t2-limits.json`, `t2_budget.py`, `src/*.cairo` or `Scarb.*`. |
+| Base | `9287094` (EKU-1272) on `65e094e` (EKU-1268) on `5bab186` (EKU-1261) on `a483a79` (EKU-1232), stacked on PR #86 `2161f7a` |
+| This revision's diff vs `9287094` | `script/t2/test/test_t2_guard.py` (new `FakeDeployRunner`, `DeployAccountTamperTest`) and this manifest only. `t2_guard.py` and every other file are byte-identical to `9287094`. |
+| EKU-1272 diff vs `65e094e` | Test-only T2 tooling only: `script/t2/t2_guard.py`, `script/t2/test/test_t2_guard.py`, `script/t2/test/t2-local-e2e.sh`, `script/t2/t2-run.sh` (comment), `script/t2/binding/t2-binding.json` (UNBOUND template: new null `evm_keystore_sha256`), this manifest. The EKU-1268 diff vs `5bab186` was likewise T2 tooling only. **No** change under `l1_proxy/src`, `vendor`, `lib`, `foundry.toml`, `script/CCIPRouteGates.s.sol`, `script/t2/*.sol`, `script/t2/cairo`, `t2-limits.json`, `t2_budget.py`, `src/*.cairo` or `Scarb.*`. |
 | Contract sources | **Unchanged.** The `l1_proxy/src`, `l1_proxy/vendor`, `l1_proxy/lib`, `foundry.toml`, `Scarb.toml`, `Scarb.lock` and `src/*.cairo` diff (other than `cfg(test)` files) against `2161f7a` is empty. |
 | Production gate tooling (needs CSO review) | `script/CCIPRouteGates.s.sol`: **L-c** `requireDistinctHosts(AUDIT_RPC_URL_1, AUDIT_RPC_URL_2)` on the provider path; **L-d** `checkTransferReceipt` / `checkTransferTiming` (`AUDIT_MODE=post` needs `TRANSFER_TX_HASH` + `PRESIGN_AUDIT_TS`; `checkPostTransfer` needs `TRANSFER_TX_BLOCK` + `PRESIGN_AUDIT_TS`). L-4..L-7 code is untouched. |
 | New test-only Cairo (needs exact-SHA review) | `l1_proxy/script/t2/cairo` (separate Scarb package `t2_voting_token`): `T2VotingToken`, fixed supply 1000e18 minted once in the constructor to the bound `t2-starknet` account. No mint, burn, owner, admin, upgrade or pause. Class hash `0x03c9587aec2a445af1ab5b8876287c7358cfa293bccaa8c20ddb54392bd0ff44`. 124 lines of snforge tests. |
@@ -433,7 +436,13 @@ The local e2e drives the real `t2-run.sh` → forge → `t2_guard.py` → `cast 
 | D-2 | `EvmKeystoreBindingTest` | The binding needs distinct digests for exactly the three signing roles (UNBOUND template has nulls); substituted bytes, one extra byte, a missing file or no bound digest refuse before any reservation, password read or cast run; the frozen bytes are signed even if the file is swapped after the check; real `cast mktx` signs from the memfd keystore (throwaway key). |
 | D-3 | `EvmKeystoreBindingTest`, `StarknetIdentityTest`, `DeltaCoverageTest` | cast and sncast children see only the allowlisted environment; a hung signer child is killed and reaped and the slot stays unlinked (permanent stop); a non-`L1` DA mode is an incident. |
 
-Mutation: `cso_mutants.py` (CSO EKU-1262, 18), `presign_mutants.py` (EKU-1268, 35), `cso_delta_mutants.py` (CSO EKU-1270, 19, including the nine D-1 survivors) and `eku1272_mutants.py` (EKU-1272, 24 mutants of the R2-D/D-2/D-3 checks) are kept with the EKU-1272 evidence.
+**Boundary-specific evidence for this revision (EKU-1280, CSO EKU-1274 E-1).** Key-free (fixture identity, fake RPC, fake runner, fake sncast executable):
+
+| Requirement | Test (class) | What it proves |
+|---|---|---|
+| E-1 returned `DEPLOY_ACCOUNT` | `DeployAccountTamperTest` | Through the full `sn_send` `account-deploy` path with a key-free `FakeDeployRunner` (dry-run, explicit bounds, no `--nonce`, password read once per run as in `Sncast`): a returned tx with another `class_hash`, `contract_address_salt` or `constructor_calldata`, or a receipt with another `contract_address`, persists exactly `reserve`, `sn-bounds`, `sn-sent`, `incident`; no `outcome` or `void`; the reservation stays open at the `account-deploy` maximum. The next `sn_send` refuses with zero runner calls and zero password reads, and the next `sn` command through `sn_run` with the real `Sncast` runner (account-deploy and vote) refuses with zero password reads, zero sncast runs and no further ledger record. A clean control on the same path is credited (`reserve`, `sn-bounds`, `sn-sent`, `outcome`, no incident) and its reserved `expect` carries all four fields. |
+
+Mutation: `cso_1274_mutants.py` (CSO EKU-1274, 18; the four E-1 survivors are now killed) is kept with the EKU-1280 evidence. `cso_mutants.py` (CSO EKU-1262, 18), `presign_mutants.py` (EKU-1268, 35), `cso_delta_mutants.py` (CSO EKU-1270, 19, including the nine D-1 survivors) and `eku1272_mutants.py` (EKU-1272, 24 mutants of the R2-D/D-2/D-3 checks) are kept with the EKU-1272 evidence.
 
 ## 12. Remaining human decisions (none is requested by this revision)
 
