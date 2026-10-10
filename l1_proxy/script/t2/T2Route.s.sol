@@ -11,20 +11,24 @@ import {CCIPGovernancePayload} from "../../src/CCIPGovernancePayload.sol";
 import {CCIPGovernanceSender} from "../../src/CCIPGovernanceSender.sol";
 import {CCIPOwnerExecutor} from "../../src/CCIPOwnerExecutor.sol";
 import {T2DummyTarget} from "./T2DummyTarget.sol";
-import {T2Config, ISafeProxyFactory141, ISafe141, IStarknetCoreView} from "./T2Config.sol";
+import {T2Config, ISafeProxyFactory141, ISafe141, IStarknetCoreView, IRouterOffRamps} from "./T2Config.sol";
 
-/// @notice TESTNET-ONLY runner for the T2 real-delivery rehearsal (EKU-1232). NOT AUTHORIZED TO BROADCAST until the
-///         T2 authorization (keys, funding, exact pack revision) is approved. Every step asserts its chain, its key's
-///         nonce, the predicted address and an exact read-back, and fails closed otherwise.
+/// @notice TESTNET-ONLY runner for the T2 real-delivery rehearsal (EKU-1232, EKU-1261). NOT AUTHORIZED TO SEND until
+///         the final T2 authorization binds the exact scope digest. This script only SIMULATES: `t2-run.sh` turns the
+///         simulated transactions into a plan, and `t2_guard.py` signs each one with the step's single role keystore
+///         only after the scope, ledger, caps and exact transaction fields check out. Every step asserts its chain,
+///         its key's nonce, the predicted address and an exact read-back, and fails closed otherwise.
 ///
 ///         `T2_MODE` is required: `testnet` (all identities must be real, never placeholders, fixtures, the
-///         company key or the production L1 proxy) or `dryrun` (refuses `--broadcast`/`--resume`, accepts the
-///         `0x1232…` placeholders and prints NOT EXECUTABLE). Production chains 1, 56, 143 are always refused.
+///         company key or the production L1 proxy, and must equal the bound addendum `T2_BINDING_JSON`) or `dryrun`
+///         (refuses `--broadcast`/`--resume`, accepts the `0x1232…` placeholders and prints NOT EXECUTABLE).
+///         Production chains 1, 56, 143 are always refused.
 ///
-///         Env: T2_DEPLOYER, T2_BOOTSTRAP, T2_SAFE_OWNERS (3, comma), T2_SAFE_SALT, T2_L2_GOVERNOR (felt),
-///         SEPOLIA_RPC_URL, BNB_TESTNET_RPC_URL, MONAD_TESTNET_RPC_URL. Step-specific variables are listed per step.
+///         Env: T2_DEPLOYER, T2_BOOTSTRAP, T2_PAYER, T2_SAFE_OWNERS (3, comma), T2_SAFE_SALT, T2_L2_GOVERNOR (felt),
+///         SEPOLIA_RPC_URL, BNB_TESTNET_RPC_URL, MONAD_TESTNET_RPC_URL; in testnet mode also T2_BINDING_JSON and
+///         T2_BINDING_SHA256 (exported by `t2_guard.py` from the approved addendum, never typed).
 ///         Order: t2ProxyStep (Sepolia) -> t2DestStep (97, then 10143 with --network monad) -> t2SenderStep
-///         (Sepolia) -> t2VerifyRoute -> pings -> handoff -> proposals.
+///         (Sepolia) -> t2VerifyRoute -> ping requests (bootstrap) + dispatches (payer) -> handoff -> proposals.
 contract T2Route is T2Config {
     /// @dev `StarknetOwnerProxy(0x1E0E…).l2Owner()` on Ethereum mainnet; never a T2 input.
     uint256 internal constant PRODUCTION_L2_GOVERNOR =
@@ -35,7 +39,11 @@ contract T2Route is T2Config {
     function _testnet() internal view returns (bool) {
         requireT2Chain();
         bytes32 m = keccak256(bytes(vm.envString("T2_MODE")));
-        if (m == keccak256("testnet")) return true;
+        if (m == keccak256("testnet")) {
+            _requireBinding();
+            _requireRoles(true);
+            return true;
+        }
         if (m == keccak256("dryrun")) {
             if (!vm.isContext(VmSafe.ForgeContext.ScriptDryRun) && !vm.isContext(VmSafe.ForgeContext.Test)) {
                 revert VerificationFailed("T2 dryrun refuses --broadcast and --resume");
@@ -66,6 +74,76 @@ contract T2Route is T2Config {
         }
     }
 
+    /// @notice T2-1/F3 (EKU-1261): the payer is a distinct key. It must differ from the deployer (whose nonces are the
+    ///         address plan), the bootstrap, every Safe owner, the company key and the production proxy.
+    function _payer(bool testnet) internal view returns (address payer) {
+        payer = _id(testnet, "T2_PAYER");
+        _eq(payer != vm.envAddress("T2_DEPLOYER"), "T2_PAYER: must differ from the deployer");
+        _eq(payer != vm.envAddress("T2_BOOTSTRAP"), "T2_PAYER: must differ from the bootstrap");
+        address[] memory o = vm.envAddress("T2_SAFE_OWNERS", ",");
+        for (uint256 i = 0; i < o.length; i++) {
+            _eq(payer != o[i], "T2_PAYER: must differ from every Safe owner");
+        }
+    }
+
+    /// @notice Every role distinct and real (testnet mode checks this before any step).
+    function _requireRoles(bool testnet) internal view {
+        address d = _id(testnet, "T2_DEPLOYER");
+        _eq(_id(testnet, "T2_BOOTSTRAP") != d, "C11: bootstrap must differ from deployer");
+        _owners(testnet);
+        _payer(testnet);
+    }
+
+    /// @notice T2-3 (EKU-1261): in testnet mode every identity, the Safe salt, the T2 Governor felt and every predicted
+    ///         address must equal the bound addendum. `t2_guard.py` exports `T2_BINDING_JSON` only after recomputing the
+    ///         scope digest and matching it to the saved approval record; the hash below catches any edit in between.
+    function _requireBinding() internal view {
+        string memory j = vm.envString("T2_BINDING_JSON");
+        _eq(sha256(bytes(j)) == vm.envBytes32("T2_BINDING_SHA256"), "T2_BINDING_JSON != T2_BINDING_SHA256");
+        _eq(_strEq(vm.parseJsonString(j, ".schema"), "ekubo-t2-binding-v1"), "binding: schema");
+        _eq(_strEq(vm.parseJsonString(j, ".status"), "BOUND"), "binding: status is not BOUND");
+        address d = vm.parseJsonAddress(j, ".roles.deployer");
+        _eq(vm.envAddress("T2_DEPLOYER") == d, "T2_DEPLOYER != binding");
+        _eq(vm.envAddress("T2_BOOTSTRAP") == vm.parseJsonAddress(j, ".roles.bootstrap"), "T2_BOOTSTRAP != binding");
+        _eq(vm.envAddress("T2_PAYER") == vm.parseJsonAddress(j, ".roles.payer"), "T2_PAYER != binding");
+        address[] memory o = vm.envAddress("T2_SAFE_OWNERS", ",");
+        address[] memory bo = vm.parseJsonAddressArray(j, ".roles.safe_owners");
+        _eq(o.length == bo.length, "T2_SAFE_OWNERS != binding");
+        for (uint256 i = 0; i < o.length; i++) {
+            _eq(o[i] == bo[i], "T2_SAFE_OWNERS != binding");
+        }
+        _eq(vm.envUint("T2_SAFE_SALT") == vm.parseJsonUint(j, ".safe_salt"), "T2_SAFE_SALT != binding");
+        _eq(vm.envUint("T2_L2_GOVERNOR") == vm.parseJsonUint(j, ".starknet.governor"), "T2_L2_GOVERNOR != binding");
+        _eq(vm.parseJsonAddress(j, ".predicted.proxy") == t2Proxy(d), "binding: proxy prediction");
+        _eq(vm.parseJsonAddress(j, ".predicted.sender") == t2Sender(d), "binding: sender prediction");
+        _eq(vm.parseJsonAddress(j, ".predicted.executor_97") == t2Executor(d, BNB_TESTNET), "binding: executor 97");
+        _eq(vm.parseJsonAddress(j, ".predicted.executor_10143") == t2Executor(d, MONAD_TESTNET), "binding: executor 10143");
+        _eq(vm.envAddress("T2_SAFE_97") == vm.parseJsonAddress(j, ".predicted.safe_97"), "T2_SAFE_97 != binding");
+        _eq(vm.envAddress("T2_SAFE_10143") == vm.parseJsonAddress(j, ".predicted.safe_10143"), "T2_SAFE_10143 != binding");
+        _eq(_addrsEq(vm.parseJsonAddressArray(j, ".predicted.targets_97"), t2Targets(d, BNB_TESTNET)), "binding: targets 97");
+        _eq(
+            _addrsEq(vm.parseJsonAddressArray(j, ".predicted.targets_10143"), t2Targets(d, MONAD_TESTNET)),
+            "binding: targets 10143"
+        );
+        if (isDest(block.chainid)) {
+            address safe = t2SafeAddress(ISafeProxyFactory141(SAFE_FACTORY_141).proxyCreationCode(), o, vm.envUint("T2_SAFE_SALT"));
+            _eq(safe == vm.envAddress(string.concat("T2_SAFE_", vm.toString(block.chainid))), "binding: Safe CREATE2 prediction");
+        }
+        _eq(vm.envUint("T2_MAX_FEE_WEI") == vm.parseJsonUint(j, ".limits.ccip_fee_max_wei"), "T2_MAX_FEE_WEI != binding");
+    }
+
+    function _strEq(string memory a, string memory b) internal pure returns (bool) {
+        return keccak256(bytes(a)) == keccak256(bytes(b));
+    }
+
+    function _addrsEq(address[] memory a, address[] memory b) internal pure returns (bool) {
+        if (a.length != b.length) return false;
+        for (uint256 i = 0; i < a.length; i++) {
+            if (a[i] != b[i]) return false;
+        }
+        return true;
+    }
+
     function _rpc(uint256 cid) internal view returns (string memory) {
         if (cid == SEPOLIA) return vm.envString("SEPOLIA_RPC_URL");
         if (cid == BNB_TESTNET) return vm.envString("BNB_TESTNET_RPC_URL");
@@ -89,6 +167,21 @@ contract T2Route is T2Config {
             _eq(IRouter(SEPOLIA_ROUTER).getOnRamp(MONAD_TESTNET_SELECTOR) == SEPOLIA_ONRAMP, "OnRamp ->10143");
         } else {
             _eq(IRouter(t2Router(cid)).isOffRamp(SEPOLIA_SELECTOR, t2OffRamp(cid)), "OffRamp 2.0.0 registered");
+            _eq(_addrsEq(registeredOffRamps(cid), t2OffRampSet(cid)), "L-a: registered OffRamp set != pinned set: stop");
+        }
+    }
+
+    /// @notice The OffRamps the destination Router registers for the Sepolia selector, in Router order.
+    function registeredOffRamps(uint256 cid) public view returns (address[] memory set) {
+        IRouterOffRamps.OffRamp[] memory all = IRouterOffRamps(t2Router(cid)).getOffRamps();
+        uint256 n;
+        for (uint256 i = 0; i < all.length; i++) {
+            if (all[i].sourceChainSelector == SEPOLIA_SELECTOR) n++;
+        }
+        set = new address[](n);
+        n = 0;
+        for (uint256 i = 0; i < all.length; i++) {
+            if (all[i].sourceChainSelector == SEPOLIA_SELECTOR) set[n++] = all[i].offRamp;
         }
     }
 
@@ -274,9 +367,10 @@ contract T2Route is T2Config {
 
     // ---------------------------------------------------------------- runtime steps (Sepolia)
 
-    /// @notice Bootstrap ping to destination `cid`, then dispatch paying the exact fee (capped by T2_MAX_FEE_WEI).
-    ///         `deadlineFromNow` is seconds; > T2_TTL (+ margin) makes a deliberate recoverable DeadlineTooFar.
-    function t2Ping(uint256 cid, uint64 deadlineFromNow) external {
+    /// @notice T2-1 step A (bootstrap key ONLY): the ping request to destination `cid`. It sends nothing over CCIP;
+    ///         the payer dispatches the printed payload in step B (`t2Dispatch`). `deadlineFromNow` is seconds;
+    ///         > T2_TTL (+ margin) makes a deliberate recoverable DeadlineTooFar.
+    function t2PingRequest(uint256 cid, uint64 deadlineFromNow) external returns (bytes memory payload) {
         bool testnet = _testnet();
         _eq(block.chainid == SEPOLIA, "Sepolia only");
         CCIPGovernanceSender s = CCIPGovernanceSender(t2Sender(vm.envAddress("T2_DEPLOYER")));
@@ -284,16 +378,19 @@ contract T2Route is T2Config {
         _eq(s.authority() == bootstrap, "authority is not the bootstrap key");
         uint64 deadline = uint64(block.timestamp) + deadlineFromNow;
         uint64 opId = s.nextOpId(t2Selector(cid)) + 1;
-        bytes memory payload = CCIPGovernancePayload.encode(
+        payload = CCIPGovernancePayload.encode(
             cid, t2Executor(vm.envAddress("T2_DEPLOYER"), cid), opId, 1, deadline, new CCIPGovernancePayload.Call[](0)
         );
         vm.broadcast(bootstrap);
         bytes32 id = s.request(t2Selector(cid), T2_GAS_LIMIT, deadline, new CCIPGovernancePayload.Call[](0));
         _eq(id == keccak256(payload), "requestId != keccak(expected payload)");
-        _dispatch(s, payload, testnet);
+        console.log("ping requested (NOT dispatched): payloadHash, payload");
+        console.logBytes32(id);
+        console.logBytes(payload);
     }
 
-    /// @notice Permissionless dispatch of a Pending request, exact fee, capped. Env T2_PAYER, T2_MAX_FEE_WEI.
+    /// @notice T2-1 step B (payer key ONLY): permissionless dispatch of a Pending request, exact fee, capped by
+    ///         T2_MAX_FEE_WEI <= 0.002 ETH. Env T2_PAYER, T2_MAX_FEE_WEI.
     function t2Dispatch(bytes calldata payload) external {
         bool testnet = _testnet();
         _eq(block.chainid == SEPOLIA, "Sepolia only");
@@ -301,11 +398,12 @@ contract T2Route is T2Config {
     }
 
     function _dispatch(CCIPGovernanceSender s, bytes memory payload, bool testnet) internal {
-        address payer = _id(testnet, "T2_PAYER");
+        address payer = _payer(testnet);
         (CCIPGovernanceSender.RequestStatus st, uint64 dest, uint32 gasLimit) = s.requests(keccak256(payload));
         _eq(st == CCIPGovernanceSender.RequestStatus.Pending, "request not Pending");
         uint256 fee = IRouterClient(SEPOLIA_ROUTER).getFee(dest, _message(s, dest, payload, gasLimit));
         uint256 cap = vm.envUint("T2_MAX_FEE_WEI");
+        _eq(cap <= T2_CCIP_FEE_CEILING, "T2_MAX_FEE_WEI above the 0.002 ETH ceiling");
         _eq(fee <= cap, "CCIP fee above T2_MAX_FEE_WEI: stop");
         vm.broadcast(payer);
         bytes32 mid = s.dispatch{value: fee}(payload);
@@ -373,6 +471,7 @@ contract T2Route is T2Config {
     function t2L1Execute(uint256 cid, uint64 nonce, uint8 kind, uint256 value, uint64 deadline) external {
         bool testnet = _testnet();
         _eq(block.chainid == SEPOLIA, "Sepolia only");
+        _eq(!testnet || kind != 2, "kind 2 (padded low-gas op) is local rehearsal only (STRK budget, EKU-1261)");
         (bytes memory data, uint256[] memory felts,) = t2Message(cid, nonce, kind, value, deadline);
         address d = vm.envAddress("T2_DEPLOYER");
         StarknetOwnerProxy p = StarknetOwnerProxy(payable(t2Proxy(d)));
@@ -381,7 +480,7 @@ contract T2Route is T2Config {
             IStarknetCoreView(STARKNET_SEPOLIA_CORE).l2ToL1Messages(t2MessageHash(_governor(), address(p), felts)) > 0,
             "L2->L1 message not settled on StarknetCore yet"
         );
-        vm.broadcast(_id(testnet, "T2_PAYER"));
+        vm.broadcast(_payer(testnet));
         p.execute(t2Sender(d), 0, nonce, data);
         _eq(p.currentNonce() == nonce + 1, "nonce not consumed");
     }
@@ -394,7 +493,7 @@ contract T2Route is T2Config {
         CCIPOwnerExecutor e = CCIPOwnerExecutor(t2Executor(vm.envAddress("T2_DEPLOYER"), block.chainid));
         (CCIPOwnerExecutor.OpStatus st,, uint64 eta) = e.ops(keccak256(payload));
         _eq(st == CCIPOwnerExecutor.OpStatus.Queued && block.timestamp >= eta, "not Queued or not ready");
-        vm.broadcast(_id(testnet, "T2_PAYER"));
+        vm.broadcast(_payer(testnet));
         e.execute(payload);
     }
 
@@ -426,7 +525,7 @@ contract T2Route is T2Config {
         ISafe141 safe = ISafe141(e.canceller());
         bytes memory sigs = vm.envBytes("T2_SAFE_SIGNATURES");
         safe.checkSignatures(h, data, sigs);
-        vm.broadcast(_id(testnet, "T2_PAYER"));
+        vm.broadcast(_payer(testnet));
         safe.execTransaction(address(e), 0, data, 0, 0, 0, 0, address(0), payable(address(0)), sigs);
         for (uint256 i = 0; i < hashes.length; i++) {
             (CCIPOwnerExecutor.OpStatus st,,) = e.ops(hashes[i]);
@@ -450,5 +549,43 @@ contract T2Route is T2Config {
             T2DummyTarget(ts[i]).transferOwnership(address(e));
             _eq(T2DummyTarget(ts[i]).owner() == address(e), "dummy owner != executor");
         }
+    }
+
+    // ---------------------------------------------------------------- post-send read-backs (read-only, raw RPC)
+
+    /// @notice After the guard sent `proxy`: the deployed test proxy over raw RPC at latest.
+    function t2CheckProxy() external {
+        requireT2Chain();
+        address d = vm.envAddress("T2_DEPLOYER");
+        verifyProxy(remote(_rpc(SEPOLIA), "latest"), t2Proxy(d), _governor());
+        console.log("post-check proxy PASSED");
+    }
+
+    /// @notice After the guard sent `dest <cid>`: targets (owner = deployer), Safe and executor over raw RPC at latest.
+    function t2CheckDest(uint256 cid) external {
+        requireT2Chain();
+        address d = vm.envAddress("T2_DEPLOYER");
+        Src memory src = remote(_rpc(cid), "latest");
+        _eq(_chainId(src) == cid, "post-check: RPC chain id");
+        _verifyDest(cid, d, src);
+        address[] memory ts = t2Targets(d, cid);
+        for (uint256 i = 0; i < ts.length; i++) {
+            _eq(_addr(src, ts[i], abi.encodeWithSignature("owner()")) == d, "post-check: dummy owner");
+        }
+        console.log("post-check dest PASSED", cid);
+    }
+
+    /// @notice After the guard sent `sender`: exact sender read-back (authority = bootstrap) at latest.
+    function t2CheckSender() external {
+        requireT2Chain();
+        address d = vm.envAddress("T2_DEPLOYER");
+        address bootstrap = vm.envAddress("T2_BOOTSTRAP");
+        Src memory sep = remote(_rpc(SEPOLIA), "latest");
+        SenderExpect memory x =
+            t2SenderExpect(t2Sender(d), t2Proxy(d), bootstrap, t2Executor(d, BNB_TESTNET), t2Executor(d, MONAD_TESTNET));
+        x.runtimeKeccak = t2SenderRuntimeKeccak(x, bootstrap);
+        verifySender(sep, x);
+        console.log("post-check sender PASSED");
+        console.logBytes32(x.runtimeKeccak);
     }
 }

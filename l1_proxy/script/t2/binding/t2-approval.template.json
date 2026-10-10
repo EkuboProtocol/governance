@@ -1,0 +1,12 @@
+{
+  "schema": "ekubo-t2-approval-v1",
+  "stage": "final-transactions | key-preparation",
+  "scope_digest": "<t2_guard.py digest: scope_digest>",
+  "manifest_sha256": "<...>",
+  "binding_sha256": "<...>",
+  "tooling_sha256": "<...>",
+  "approved_by": "<named human approver>",
+  "approval_ref": "<Paperclip approval / interaction id>",
+  "approved_at": "<UTC ISO-8601>",
+  "expires_at": "<= approved_at + 14 days>"
+}

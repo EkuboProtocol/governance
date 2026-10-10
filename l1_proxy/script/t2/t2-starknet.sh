@@ -1,86 +1,84 @@
 #!/usr/bin/env bash
-# EKU-1232 T2 Starknet Sepolia runner (TESTNET ONLY): declare + deploy the short-period Governor stack, stake, and
-# drive proposals whose calls are `send_message_to_l1(T2 proxy, felts)`. Repository root is the Scarb package.
+# EKU-1232/EKU-1261 T2 Starknet Sepolia runner (TESTNET ONLY): declare + deploy the isolated T2 voting stack
+# (fixed-supply T2VotingToken -> governance Staker -> Governor at the mainnet Governor class), stake the whole test
+# supply, and drive proposals whose only calls are `send_message_to_l1(T2 proxy, felts)`.
 #
-# Default (T2_MODE unset or dryrun): prints the exact sncast command and runs `declare --dry-run`-style checks only
-# where sncast supports them; nothing is sent. With T2_MODE=testnet and T2_AUTHORIZED_SCOPE == T2_APPROVED_SCOPE_ID it
-# sends from the encrypted keystore account ($T2_KEYSTORE_DIR/t2-starknet.json + t2-starknet.account.json); the
-# keystore password is read from 1Password into KEYSTORE_PASSWORD for the sncast process only.
+# Every address, class hash, constructor argument, stake amount and fee bound comes from the bound addendum and
+# t2-limits.json; nothing here is an environment override. In the default T2_MODE=dryrun the exact sncast argv is
+# printed and nothing is sent. With T2_MODE=testnet every transaction goes through `t2_guard.py sn --kind <kind>`:
+# scope digest + approval record, exact argv shape for the kind (target, function, calldata, class hash, salt),
+# Governor/Staker/token events all from the ledger, account nonce == ledger, fresh fee estimate <= per-tx max,
+# cumulative fees <= 48 STRK, attempt/retry caps, durable reservation, then sncast with --max-fee/--nonce.
+# The keystore password reaches sncast only via KEYSTORE_PASSWORD in its own environment (CSO L-f: acceptable for
+# testnet-only keys; never reuse this for production).
 #
 # Usage: script/t2/t2-starknet.sh <step> [args]
-#   declare                      declare governance::staker::Staker and Governor (class hashes pinned below)
-#   deploy-staker                Staker(token = STRK)            salt 0x1232, not unique
-#   deploy-governor <staker>     Governor(staker, T2 config)     salt 0x1232, not unique
-#   stake <staker>               approve + stake_amount(self, T2_STAKE)
-#   propose <governor> <file>    file = serialized Span<Call> felts (one per line; from `t2-run.sh message`)
-#   vote <governor> <id>
-#   execute <governor> <id> <file>
-#   check <governor> <staker>    read-only: class hashes, get_config, get_staker
+#   account-deploy                deploy the t2-starknet OZ account (address bound in the addendum)
+#   declare <token|staker|governor>
+#   deploy <token|staker|governor>
+#   stake                         approve(staker, supply) + stake_amount(self, supply)
+#   propose <calls-file>          calls file = Span<Call> felts, one per line (from `t2-run.sh message`)
+#   vote <id>
+#   execute <p1|p2a|p2b> <id> <calls-file>
+#   check                         read-only: class hashes, token supply, Staker token, Governor staker + config
 set -euo pipefail
 cd "$(dirname "$0")/../.."/..
 : "${STARKNET_SEPOLIA_RPC_URL:?}"
 T2_MODE="${T2_MODE:-dryrun}"
-STRK=0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d
-GOVERNOR_CLASS=0x044e2e3d2ae1b0415450b2b5d417698ce495f7ef500826ddb48a61f9dfe67401 # == mainnet Governor class
-STAKER_CLASS=0x0244c2213a85dc27cb4f966a6ce48be0b7d38aafad6882ca063a2da97f09dade   # governance::staker::Staker
-SALT=0x1232
-T2_STAKE="${T2_STAKE:-2000000000000000000}" # 2 STRK, withdrawable
-# Config: voting_start_delay 60, voting_period 600, smoothing 60, quorum 1e18, threshold 1e18, exec delay 60, window 7 d
-CONFIG="60 600 60 1000000000000000000 1000000000000000000 60 604800"
+GUARD=(python3 l1_proxy/script/t2/t2_guard.py)
+B=l1_proxy/script/t2/binding/t2-binding.json
+U="$STARKNET_SEPOLIA_RPC_URL"
 
-sn() {
+bound() { jq -er "$1" "$B" || { echo "binding: $1 is not bound" >&2; exit 3; }; }
+send() { # kind sncast-args...
+  local kind="$1"; shift
   if [ "$T2_MODE" = testnet ]; then
-    [ -n "${T2_APPROVED_SCOPE_ID:-}" ] && [ "${T2_AUTHORIZED_SCOPE:-}" = "$T2_APPROVED_SCOPE_ID" ] \
-      || { echo "T2_AUTHORIZED_SCOPE does not match the approved scope: refusing" >&2; exit 3; }
-    KEYSTORE_PASSWORD="$(op read "op://${T2_OP_VAULT:?}/t2-starknet/password")" \
-      sncast --keystore "${T2_KEYSTORE_DIR:?}/t2-starknet.json" --account "$T2_KEYSTORE_DIR/t2-starknet.account.json" \
-      --wait "$@"
+    "${GUARD[@]}" sn --kind "$kind" -- "$@"
   else
-    printf 'DRY RUN (not sent): sncast --keystore <t2-starknet.json> --account <t2-starknet.account.json> --wait'
+    printf 'DRY RUN (not sent) [%s]: sncast --keystore <t2-starknet.json> --account <t2-starknet.account.json>' "$kind"
     printf ' %q' "$@"; echo
   fi
 }
-call() { sncast call --url "$STARKNET_SEPOLIA_RPC_URL" "$@"; }
-felts() { tr '\n' ' ' < "$1"; }
+felts() { grep -v '^\s*$' "$1" | tr '\n' ' '; }
+cls() { bound ".starknet.classes.$1"; }
 
 step="${1:?step}"; shift || true
 case "$step" in
+  account-deploy) send account-deploy account deploy --url "$U" ;;
   declare)
-    scarb --release build
-    for c in governance::staker::Staker Governor; do
-      sncast utils class-hash --contract-name "$c" --scarb-profile release
-      sn --scarb-profile release declare --url "$STARKNET_SEPOLIA_RPC_URL" --contract-name "$c"
-    done ;;
-  deploy-staker)
-    sn deploy --url "$STARKNET_SEPOLIA_RPC_URL" --class-hash "$STAKER_CLASS" --salt "$SALT" \
-      --constructor-calldata "$STRK" ;;
-  deploy-governor)
-    # shellcheck disable=SC2086
-    sn deploy --url "$STARKNET_SEPOLIA_RPC_URL" --class-hash "$GOVERNOR_CLASS" --salt "$SALT" \
-      --constructor-calldata "${1:?staker}" $CONFIG ;;
+    c="${1:?token|staker|governor}"
+    case "$c" in token) n=T2VotingToken;; staker) n=governance::staker::Staker;; governor) n=Governor;;
+      *) echo "declare token|staker|governor" >&2; exit 2;; esac
+    send "declare-$c" declare --url "$U" --contract-name "$n" ;;
+  deploy)
+    c="${1:?token|staker|governor}"
+    case "$c" in
+      token)    cd_=("$(bound .roles.starknet_account)") ;;
+      staker)   cd_=("$(bound .starknet.token)") ;;
+      governor) mapfile -t cfg < <(bound '.starknet.governor_config[]'); cd_=("$(bound .starknet.staker)" "${cfg[@]}") ;;
+      *) echo "deploy token|staker|governor" >&2; exit 2 ;;
+    esac
+    send "deploy-$c" deploy --url "$U" --class-hash "$(cls "$c")" --salt "$(bound .starknet.salt)" --unique \
+      --constructor-calldata "${cd_[@]}" ;;
   stake)
-    sn invoke --url "$STARKNET_SEPOLIA_RPC_URL" --contract-address "$STRK" --function approve \
-      --calldata "${1:?staker}" "$T2_STAKE" 0
-    sn invoke --url "$STARKNET_SEPOLIA_RPC_URL" --contract-address "$1" --function stake_amount \
-      --calldata "${T2_STARKNET_ACCOUNT:?}" "$T2_STAKE" ;;
+    amt="$(bound .starknet.stake_amount)"
+    lo="$(python3 -c "print($amt % (1 << 128))")"; hi="$(python3 -c "print($amt >> 128)")"
+    send approve invoke --url "$U" --contract-address "$(bound .starknet.token)" --function approve \
+      --calldata "$(bound .starknet.staker)" "$lo" "$hi"
+    send stake invoke --url "$U" --contract-address "$(bound .starknet.staker)" --function stake_amount \
+      --calldata "$(bound .roles.starknet_account)" "$amt" ;;
   propose)
     # shellcheck disable=SC2046
-    sn invoke --url "$STARKNET_SEPOLIA_RPC_URL" --contract-address "${1:?governor}" --function propose \
-      --calldata $(felts "${2:?calls file}") ;;
+    send propose invoke --url "$U" --contract-address "$(bound .starknet.governor)" --function propose \
+      --calldata $(felts "${1:?calls file}") ;;
   vote)
-    sn invoke --url "$STARKNET_SEPOLIA_RPC_URL" --contract-address "${1:?governor}" --function vote \
-      --calldata "${2:?id}" 1 ;;
+    send vote invoke --url "$U" --contract-address "$(bound .starknet.governor)" --function vote --calldata "${1:?id}" 1 ;;
   execute)
+    p="${1:?p1|p2a|p2b}"
+    case "$p" in p1|p2a|p2b) ;; *) echo "execute p1|p2a|p2b" >&2; exit 2;; esac
     # shellcheck disable=SC2046
-    sn invoke --url "$STARKNET_SEPOLIA_RPC_URL" --contract-address "${1:?governor}" --function execute \
+    send "execute-$p" invoke --url "$U" --contract-address "$(bound .starknet.governor)" --function execute \
       --calldata "${2:?id}" $(felts "${3:?calls file}") ;;
-  check)
-    for a in "${1:?governor}" "${2:?staker}"; do
-      curl -sS -H 'content-type: application/json' --data \
-        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"starknet_getClassHashAt\",\"params\":[\"latest\",\"$a\"]}" \
-        "$STARKNET_SEPOLIA_RPC_URL"; echo
-    done
-    call --contract-address "$1" --function get_config
-    call --contract-address "$1" --function get_staker ;;
+  check) "${GUARD[@]}" sn-check ;;
   *) echo "unknown step $step" >&2; exit 2 ;;
 esac

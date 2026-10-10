@@ -1,0 +1,21 @@
+# EKU-1261 TESTNET-ONLY package: the fixed-supply T2 voting token. A separate package, so the production
+# `governance` package, its Governor/Staker classes, Scarb.toml and Scarb.lock are untouched.
+[package]
+name = "t2_voting_token"
+version = "0.1.0"
+cairo-version = ">=2.19.3"
+edition = '2024_07'
+
+[dependencies]
+starknet = ">=2.19.3"
+
+[dev-dependencies]
+snforge_std = ">=0.62.1"
+cairo_test = ">=2.19.3"
+
+[[target.starknet-contract]]
+allowed-libfuncs-list.name = "audited"
+casm = true
+
+[scripts]
+test = "snforge test"

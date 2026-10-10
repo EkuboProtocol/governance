@@ -556,6 +556,54 @@ contract CCIPRouteGatesTest is Test {
         h.reconcileWithMonitor(logs, seen, block.number);
     }
 
+    /// L-c: a monitor export that is a strict superset of the RPC logs fails closed (count check), as does a
+    ///      permutation-preserving superset with a duplicate.
+    function test_Lc_monitorSuperset_rejected() public {
+        Vm.EthGetLogs memory la = _queue(_payload(1, _one(address(t0), hex"8da5cb5b")));
+        Vm.EthGetLogs[] memory raw = new Vm.EthGetLogs[](1);
+        raw[0] = la;
+        CCIPRouteGates.QueuedLog[] memory logs = h.decodeQueued(raw);
+        bytes32[] memory seen = new bytes32[](2);
+        (seen[0], seen[1]) = (la.topics[1], keccak256("extra"));
+        vm.expectRevert(_err("L-5: Queued count differs from the monitor"));
+        h.reconcileWithMonitor(logs, seen, block.number);
+        seen[1] = la.topics[1];
+        vm.expectRevert(_err("L-5: Queued count differs from the monitor"));
+        h.reconcileWithMonitor(logs, seen, block.number);
+    }
+
+    /// L-c: the second provider must be a different host from the primary.
+    function test_Lc_distinctHosts() public {
+        h.requireDistinctHosts("https://eth.llamarpc.com", "https://ethereum-rpc.publicnode.com/x");
+        h.requireDistinctHosts("https://a.example/key1", "https://b.example/key1");
+        string[4] memory same = [
+            "https://RPC.example.com/v2/key-b",
+            "http://user:pw@rpc.example.com:8545",
+            "https://rpc.example.com?x=1",
+            "https://rpc.example.com/"
+        ];
+        for (uint256 i = 0; i < same.length; i++) {
+            vm.expectRevert(_err("L-c: AUDIT_RPC_URL_2 must be a different host from AUDIT_RPC_URL_1"));
+            h.requireDistinctHosts("https://rpc.example.com/v2/key-a", same[i]);
+        }
+        vm.expectRevert(_err("L-c: AUDIT_RPC_URL host missing"));
+        h.requireDistinctHosts("", "https://rpc.example.com");
+    }
+
+    /// L-d: the transfer must be mined in TRANSFER_TX_BLOCK within [presign, presign + 72 h].
+    function test_Ld_transferTiming() public {
+        h.checkTransferTiming(101, 2000, 101, 1000);
+        h.checkTransferTiming(101, 1000 + 72 hours, 101, 1000);
+        vm.expectRevert(_err("L-d: transfer tx is not in TRANSFER_TX_BLOCK"));
+        h.checkTransferTiming(102, 2000, 101, 1000);
+        vm.expectRevert(_err("L-d: transfer mined outside the 72 h pre-sign window"));
+        h.checkTransferTiming(101, 1001 + 72 hours, 101, 1000);
+        vm.expectRevert(_err("L-d: transfer mined outside the 72 h pre-sign window"));
+        h.checkTransferTiming(101, 999, 101, 1000);
+        vm.expectRevert(_err("L-d: PRESIGN_AUDIT_TS required"));
+        h.checkTransferTiming(101, 2000, 101, 0);
+    }
+
     /// L-7: a pre-sign audit must fork the latest available block; the lag bound itself is capped.
     function test_L7_auditFreshness() public view {
         h.checkAuditFreshness(1000, 1000, 600);

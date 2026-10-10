@@ -58,6 +58,16 @@ interface IStarknetCoreView {
     function l2ToL1Messages(bytes32 msgHash) external view returns (uint256);
 }
 
+/// @dev Router 1.2.0 `getOffRamps()`; the vendored 2.0.0 `IRouter` does not declare it.
+interface IRouterOffRamps {
+    struct OffRamp {
+        uint64 sourceChainSelector;
+        address offRamp;
+    }
+
+    function getOffRamps() external view returns (OffRamp[] memory);
+}
+
 /// @notice TESTNET-ONLY configuration of the T2 real-delivery rehearsal of the A'-CCIP owner route (EKU-1232).
 ///         Ethereum Sepolia (StarknetOwnerProxy test instance + sender) -> CCIP -> BNB Chain testnet (97) and Monad
 ///         testnet (10143) executors owning dummy targets, driven by a short-period Governor on Starknet Sepolia.
@@ -79,6 +89,11 @@ abstract contract T2Config is CCIPRouteVerifier {
     address internal constant BNB_TESTNET_OFFRAMP = 0x32d4DD31a03e82FE7B1b8C9E5E6fa028B2fcA770; // OffRamp 2.0.0
     address internal constant MONAD_TESTNET_ROUTER = 0x5aD0A67f4Da0E8665a3fbf15E4215A780407Cf33; // Router 1.2.0
     address internal constant MONAD_TESTNET_OFFRAMP = 0x8C7676A0E7289Fe1ECb09d77a755E52AFd5eC471; // OffRamp 2.0.0
+    // Legacy OffRamps from Sepolia that are still registered (C12 trust delta). The registered set must equal the
+    // pinned set exactly (CSO L-a, EKU-1261); any addition or removal stops T2.
+    address internal constant BNB_TESTNET_OFFRAMP_120 = 0xf1c128Fe52Ea78CcAAB407509292E61ce38C1523; // 1.2.0
+    address internal constant BNB_TESTNET_OFFRAMP_150 = 0xB513523aee87f838e78b32d2Bacaaf2e94D9f0f9; // 1.5.0
+    address internal constant MONAD_TESTNET_OFFRAMP_160 = 0x5Dc49Ec54B92F7D493bC8126c0730DA74605cc00; // 1.6.0
     /// @dev Starknet Sepolia core contract on Ethereum Sepolia ("StarkWare_Starknet_2026_12").
     address internal constant STARKNET_SEPOLIA_CORE = 0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057;
 
@@ -93,7 +108,8 @@ abstract contract T2Config is CCIPRouteVerifier {
     uint256 internal constant T2_SAFE_OWNER_COUNT = 3;
 
     // Constructor-shortened TESTNET timing (bounded by `checkTiming(false, ...)`; production is 72 h / 14 d / 30 d).
-    uint64 internal constant T2_DELAY = 600; // 10 min
+    /// @dev 1 h (was 10 min): gives the 2-of-3 test signers a realistic window to cancel a DON-queued op (EKU-1261).
+    uint64 internal constant T2_DELAY = 3600;
     uint64 internal constant T2_WINDOW = 86400; // 1 d
     uint64 internal constant T2_TTL = 604800; // 7 d
     uint32 internal constant T2_MAX_GAS_LIMIT = 1_000_000;
@@ -102,6 +118,9 @@ abstract contract T2Config is CCIPRouteVerifier {
     /// @dev Calldata bytes of the padded `note` call that makes `ccipReceive` exceed `T2_LOW_GAS_LIMIT`
     ///      (measured in `T2RehearsalFork`: >= 1.5x headroom over the limit, well under maxDataBytes 32000).
     uint256 internal constant T2_PAD_BYTES = 14_000;
+
+    /// @dev Hard per-message CCIP fee ceiling (0.002 Sepolia ETH, CFO EKU-1234). The binding addendum may only lower it.
+    uint256 internal constant T2_CCIP_FEE_CEILING = 0.002 ether;
 
     /// @dev Starknet `selector!("send_message_to_l1")` (starknet_keccak).
     uint256 public constant SEND_MESSAGE_TO_L1_SELECTOR =
@@ -128,6 +147,24 @@ abstract contract T2Config is CCIPRouteVerifier {
     function t2OffRamp(uint256 cid) public pure returns (address) {
         if (cid == BNB_TESTNET) return BNB_TESTNET_OFFRAMP;
         if (cid == MONAD_TESTNET) return MONAD_TESTNET_OFFRAMP;
+        revert NotT2Chain(cid);
+    }
+
+    /// @notice The exact OffRamp set the destination Router registers for the Sepolia source selector.
+    function t2OffRampSet(uint256 cid) public pure returns (address[] memory set) {
+        if (cid == BNB_TESTNET) {
+            set = new address[](3);
+            set[0] = BNB_TESTNET_OFFRAMP_120;
+            set[1] = BNB_TESTNET_OFFRAMP_150;
+            set[2] = BNB_TESTNET_OFFRAMP;
+            return set;
+        }
+        if (cid == MONAD_TESTNET) {
+            set = new address[](2);
+            set[0] = MONAD_TESTNET_OFFRAMP_160;
+            set[1] = MONAD_TESTNET_OFFRAMP;
+            return set;
+        }
         revert NotT2Chain(cid);
     }
 
@@ -213,9 +250,17 @@ abstract contract T2Config is CCIPRouteVerifier {
     }
 
     /// @notice Runtime keccak of a local, never-broadcast reference build with exactly these constructor arguments.
-    ///         Must not be called while a broadcast is active.
+    ///         Must not be called while a broadcast is active. The build may run on another chain (the sender step
+    ///         re-verifies both destinations from Sepolia), where the router, canceller and targets have no code: a
+    ///         one-byte placeholder is etched there inside the snapshot (reverted below), which the constructor's
+    ///         code-length checks accept. The runtime holds only immutables, so the hash does not depend on the chain.
     function t2ExecutorRuntimeKeccak(ExecutorExpect memory x) public returns (bytes32 h) {
         uint256 snap = vm.snapshotState();
+        if (x.router.code.length == 0) vm.etch(x.router, hex"00");
+        if (x.canceller.code.length == 0) vm.etch(x.canceller, hex"00");
+        for (uint256 i = 0; i < x.targets.length; i++) {
+            if (x.targets[i].code.length == 0) vm.etch(x.targets[i], hex"00");
+        }
         h = keccak256(
             address(
                 new CCIPOwnerExecutor(

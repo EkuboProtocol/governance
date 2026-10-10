@@ -80,7 +80,7 @@ abstract contract T2ForkBase is Test {
             r.t2ExecutorExpect(cid, r.t2Executor(deployer, cid), senderPredicted, safe, ts);
         address router = r.t2Router(cid);
         vm.prank(deployer);
-        e = new CCIPOwnerExecutor(router, 16015286601757825753, senderPredicted, 600, 86400, 604800, safe, ts);
+        e = new CCIPOwnerExecutor(router, 16015286601757825753, senderPredicted, 3600, 86400, 604800, safe, ts);
         assertEq(address(e), r.t2Executor(deployer, cid), "executor at deployer nonce n+1");
         r.verifyExecutor(_local(), x);
         emit log_named_address("dest: executor", address(e));

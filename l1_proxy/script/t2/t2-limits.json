@@ -1,0 +1,247 @@
+{
+  "ccip": {
+    "fee_max_wei": "2000000000000000",
+    "fee_total_wei": "18000000000000000",
+    "messages_max": 9
+  },
+  "evm": {
+    "10143": {
+      "attempts_max": 16,
+      "chain_cap_wei": "2000000000000000000",
+      "gas_price_ceiling_wei": "200000000000",
+      "kinds": {
+        "deploy-executor": {
+          "attempts_max": 1,
+          "gas_max": 2600000,
+          "planned": 1,
+          "role": "deployer"
+        },
+        "deploy-target": {
+          "attempts_max": 4,
+          "gas_max": 700000,
+          "planned": 4,
+          "role": "deployer"
+        },
+        "execute": {
+          "attempts_max": 3,
+          "gas_max": 300000,
+          "planned": 2,
+          "role": "payer"
+        },
+        "manual-exec": {
+          "attempts_max": 1,
+          "gas_max": 900000,
+          "planned": 0,
+          "role": "payer"
+        },
+        "safe-cancel": {
+          "attempts_max": 1,
+          "gas_max": 250000,
+          "planned": 0,
+          "role": "payer"
+        },
+        "safe-create": {
+          "attempts_max": 1,
+          "gas_max": 550000,
+          "planned": 1,
+          "role": "deployer"
+        },
+        "transfer": {
+          "attempts_max": 5,
+          "gas_max": 80000,
+          "planned": 4,
+          "role": "deployer"
+        }
+      },
+      "role_cap_wei": {
+        "deployer": "1400000000000000000",
+        "payer": "600000000000000000"
+      }
+    },
+    "11155111": {
+      "attempts_max": 25,
+      "chain_cap_wei": "250000000000000000",
+      "gas_price_ceiling_wei": "20000000000",
+      "kinds": {
+        "deploy-proxy": {
+          "attempts_max": 1,
+          "gas_max": 800000,
+          "planned": 1,
+          "role": "deployer"
+        },
+        "deploy-sender": {
+          "attempts_max": 1,
+          "gas_max": 1900000,
+          "planned": 1,
+          "role": "deployer"
+        },
+        "dispatch": {
+          "attempts_max": 11,
+          "gas_max": 520000,
+          "planned": 9,
+          "role": "payer",
+          "value_max_wei": "2000000000000000"
+        },
+        "handoff": {
+          "attempts_max": 1,
+          "gas_max": 65000,
+          "planned": 1,
+          "role": "bootstrap"
+        },
+        "l1-execute": {
+          "attempts_max": 8,
+          "gas_max": 230000,
+          "planned": 6,
+          "role": "payer"
+        },
+        "ping-request": {
+          "attempts_max": 3,
+          "gas_max": 145000,
+          "planned": 3,
+          "role": "bootstrap"
+        }
+      },
+      "role_cap_wei": {
+        "bootstrap": "10000000000000000",
+        "deployer": "60000000000000000",
+        "payer": "180000000000000000"
+      }
+    },
+    "97": {
+      "attempts_max": 14,
+      "chain_cap_wei": "50000000000000000",
+      "gas_price_ceiling_wei": "3000000000",
+      "kinds": {
+        "deploy-executor": {
+          "attempts_max": 1,
+          "gas_max": 2600000,
+          "planned": 1,
+          "role": "deployer"
+        },
+        "deploy-target": {
+          "attempts_max": 2,
+          "gas_max": 700000,
+          "planned": 2,
+          "role": "deployer"
+        },
+        "execute": {
+          "attempts_max": 3,
+          "gas_max": 300000,
+          "planned": 2,
+          "role": "payer"
+        },
+        "manual-exec": {
+          "attempts_max": 2,
+          "gas_max": 900000,
+          "planned": 1,
+          "role": "payer"
+        },
+        "safe-cancel": {
+          "attempts_max": 2,
+          "gas_max": 250000,
+          "planned": 1,
+          "role": "payer"
+        },
+        "safe-create": {
+          "attempts_max": 1,
+          "gas_max": 550000,
+          "planned": 1,
+          "role": "deployer"
+        },
+        "transfer": {
+          "attempts_max": 3,
+          "gas_max": 80000,
+          "planned": 2,
+          "role": "deployer"
+        }
+      },
+      "role_cap_wei": {
+        "deployer": "30000000000000000",
+        "payer": "20000000000000000"
+      }
+    }
+  },
+  "generated_by": "l1_proxy/script/t2/t2_budget.py",
+  "schema": "ekubo-t2-limits-v1",
+  "starknet": {
+    "attempts_max": 20,
+    "balance_cap_fri": "50000000000000000000",
+    "fee_cap_fri": "48000000000000000000",
+    "kinds": {
+      "account-deploy": {
+        "attempts_max": 2,
+        "max_fee_fri": "1000000000000000000",
+        "planned": 1
+      },
+      "approve": {
+        "attempts_max": 2,
+        "max_fee_fri": "500000000000000000",
+        "planned": 1
+      },
+      "declare-governor": {
+        "attempts_max": 2,
+        "max_fee_fri": "5000000000000000000",
+        "planned": 1
+      },
+      "declare-staker": {
+        "attempts_max": 2,
+        "max_fee_fri": "4000000000000000000",
+        "planned": 1
+      },
+      "declare-token": {
+        "attempts_max": 2,
+        "max_fee_fri": "2000000000000000000",
+        "planned": 1
+      },
+      "deploy-governor": {
+        "attempts_max": 2,
+        "max_fee_fri": "1000000000000000000",
+        "planned": 1
+      },
+      "deploy-staker": {
+        "attempts_max": 2,
+        "max_fee_fri": "1000000000000000000",
+        "planned": 1
+      },
+      "deploy-token": {
+        "attempts_max": 2,
+        "max_fee_fri": "1000000000000000000",
+        "planned": 1
+      },
+      "execute-p1": {
+        "attempts_max": 2,
+        "max_fee_fri": "7000000000000000000",
+        "planned": 1
+      },
+      "execute-p2a": {
+        "attempts_max": 2,
+        "max_fee_fri": "7000000000000000000",
+        "planned": 1
+      },
+      "execute-p2b": {
+        "attempts_max": 2,
+        "max_fee_fri": "7000000000000000000",
+        "planned": 1
+      },
+      "propose": {
+        "attempts_max": 4,
+        "max_fee_fri": "500000000000000000",
+        "planned": 3
+      },
+      "stake": {
+        "attempts_max": 2,
+        "max_fee_fri": "500000000000000000",
+        "planned": 1
+      },
+      "vote": {
+        "attempts_max": 4,
+        "max_fee_fri": "300000000000000000",
+        "planned": 3
+      }
+    },
+    "non_fee_reserve_fri": "2000000000000000000",
+    "retries_max": 2,
+    "stake_amount": "1000000000000000000000",
+    "token_supply": "1000000000000000000000"
+  }
+}

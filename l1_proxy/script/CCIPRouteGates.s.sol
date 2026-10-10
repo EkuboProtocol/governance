@@ -232,6 +232,7 @@ contract CCIPRouteGates is DeployCCIPOwnerRoute {
     ///         `AUDIT_MONITOR_BLOCK`.
     function reconcileSecondSource(CCIPOwnerExecutor e, QueuedLog[] memory logs, QueueReport memory r) public {
         if (vm.envExists("AUDIT_RPC_URL_2")) {
+            requireDistinctHosts(vm.envString("AUDIT_RPC_URL_1"), vm.envString("AUDIT_RPC_URL_2"));
             reconcileWithProvider(
                 e,
                 logs,
@@ -246,6 +247,45 @@ contract CCIPRouteGates is DeployCCIPOwnerRoute {
             );
         } else {
             revert VerificationFailed("L-5: second log source required (AUDIT_RPC_URL_2 or AUDIT_MONITOR_*)");
+        }
+    }
+
+    /// @notice L-c (CSO EKU-1233): the second provider must be a different host from the primary `AUDIT_RPC_URL_1`
+    ///         (which the runbook passes as --fork-url/--rpc-url). Scheme, userinfo, port, path and case are ignored.
+    function requireDistinctHosts(string memory url1, string memory url2) public pure {
+        bytes memory h1 = _host(url1);
+        bytes memory h2 = _host(url2);
+        _eq(h1.length != 0 && h2.length != 0, "L-c: AUDIT_RPC_URL host missing");
+        _eq(keccak256(h1) != keccak256(h2), "L-c: AUDIT_RPC_URL_2 must be a different host from AUDIT_RPC_URL_1");
+    }
+
+    function _host(string memory url) internal pure returns (bytes memory h) {
+        bytes memory u = bytes(url);
+        uint256 i;
+        for (uint256 j = 0; j + 2 < u.length; j++) {
+            if (u[j] == ":" && u[j + 1] == "/" && u[j + 2] == "/") {
+                i = j + 3;
+                break;
+            }
+        }
+        uint256 start = i;
+        uint256 end = u.length;
+        for (uint256 j = i; j < u.length; j++) {
+            bytes1 c = u[j];
+            if (c == "@") start = j + 1;
+            if (c == "/" || c == "?" || c == "#") {
+                end = j;
+                break;
+            }
+        }
+        uint256 colon = end;
+        for (uint256 j = start; j < end; j++) {
+            if (u[j] == ":") colon = j;
+        }
+        h = new bytes(colon > start ? colon - start : 0);
+        for (uint256 j = 0; j < h.length; j++) {
+            bytes1 c = u[start + j];
+            h[j] = (c >= "A" && c <= "Z") ? bytes1(uint8(c) + 32) : c;
         }
     }
 
@@ -550,6 +590,9 @@ contract CCIPRouteGates is DeployCCIPOwnerRoute {
         // L-7: the pre-sign audit forks the latest available block; a post-transfer audit is evidence only.
         if (keccak256(bytes(vm.envOr("AUDIT_MODE", string("presign")))) == keccak256("post")) {
             _eq(vm.envUint("TRANSFER_TX_BLOCK") == block.number + 1, "L-7: post audit must fork transferBlock - 1");
+            checkTransferReceipt(
+                vm.envBytes32("TRANSFER_TX_HASH"), vm.envUint("TRANSFER_TX_BLOCK"), vm.envUint("PRESIGN_AUDIT_TS")
+            );
             console.log("L-7: POST-TRANSFER AUDIT AT transferBlock - 1: EVIDENCE ONLY, NOT A PRE-SIGN APPROVAL");
         } else {
             checkAuditFreshness(block.timestamp, vm.unixTime() / 1000, vm.envOr("AUDIT_MAX_LAG", uint256(600)));
@@ -566,6 +609,31 @@ contract CCIPRouteGates is DeployCCIPOwnerRoute {
         // D3: exact calldata, simulated.
         simulateTransfers(e, vm.envOr("TRANSFER_TARGET", address(0)));
         console.log("T6 pre-transfer checks PASSED at block", block.number);
+    }
+
+    /// @notice L-d (CSO EKU-1233): the transfer transaction is mined in `txBlock`, whose timestamp lies within the
+    ///         72 h send ceiling of the pre-sign audit (`presignTs` = the audited block timestamp the pre-sign run
+    ///         printed). The active fork is rolled to the transaction and restored.
+    function checkTransferReceipt(bytes32 txHash, uint256 txBlock, uint256 presignTs) public {
+        uint256 back = block.number;
+        vm.rollFork(txHash);
+        uint256 b = block.number;
+        uint256 ts = block.timestamp;
+        vm.rollFork(back);
+        _eq(block.number == back, "L-d: fork not restored");
+        checkTransferTiming(b, ts, txBlock, presignTs);
+    }
+
+    function checkTransferTiming(uint256 minedBlock, uint256 minedTs, uint256 txBlock, uint256 presignTs)
+        public
+        pure
+    {
+        _eq(presignTs != 0, "L-d: PRESIGN_AUDIT_TS required");
+        _eq(minedBlock == txBlock, "L-d: transfer tx is not in TRANSFER_TX_BLOCK");
+        _eq(
+            minedTs >= presignTs && minedTs <= presignTs + AUDIT_SEND_CEILING,
+            "L-d: transfer mined outside the 72 h pre-sign window"
+        );
     }
 
     /// @notice L-7: the pre-sign audit block must be the latest available one (within `maxLag` seconds of wall time).
@@ -628,11 +696,14 @@ contract CCIPRouteGates is DeployCCIPOwnerRoute {
         }
     }
 
-    /// @notice D4 after the transfers. Env: EXECUTOR_<cid>, TRANSFER_FROM_BLOCK, LOG_CHUNK.
+    /// @notice D4 after the transfers. Env: EXECUTOR_<cid>, TRANSFER_FROM_BLOCK, TRANSFER_TX_BLOCK, PRESIGN_AUDIT_TS,
+    ///         LOG_CHUNK. L-d: every transfer log is in TRANSFER_TX_BLOCK, within 72 h of the pre-sign audit.
     function checkPostTransfer() external {
         uint256 cid = block.chainid;
         address e = vm.envAddress(_key("EXECUTOR", cid));
         uint256 from = vm.envUint("TRANSFER_FROM_BLOCK");
+        uint256 txBlock = vm.envUint("TRANSFER_TX_BLOCK");
+        uint256 presignTs = vm.envUint("PRESIGN_AUDIT_TS");
         uint256 chunk = logChunk();
         address[] memory ts = targetsFor(cid);
         for (uint256 i = 0; i < ts.length; i++) {
@@ -649,6 +720,8 @@ contract CCIPRouteGates is DeployCCIPOwnerRoute {
                 l.length == 1 && l[0].topics[2] == bytes32(uint256(uint160(e))),
                 "D4: OwnershipTransferred(company, executor)"
             );
+            _eq(l[0].blockNumber == txBlock, "L-d: transfer log is not in TRANSFER_TX_BLOCK");
+            checkTransferReceipt(l[0].transactionHash, txBlock, presignTs);
             console.log("transferred", ts[i]);
             console.logBytes32(l[0].transactionHash);
         }

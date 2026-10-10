@@ -1,0 +1,40 @@
+{
+  "schema": "ekubo-t2-binding-v1",
+  "status": "UNBOUND",
+  "note": "EKU-1261 template. No T2 key exists, so no address is bound and every signing step refuses. After the separate key-preparation approval, `t2_guard.py bind --keys <public-addresses.json>` replaces this file with the BOUND addendum; the final human approval then names its exact scope digest.",
+  "op_vault": null,
+  "roles": {
+    "deployer": null,
+    "bootstrap": null,
+    "payer": null,
+    "safe_owners": [
+      null,
+      null,
+      null
+    ],
+    "starknet_account": null
+  },
+  "safe_salt": "1232",
+  "starknet": {
+    "account": null,
+    "token": null,
+    "staker": null,
+    "governor": null,
+    "stake_amount": "1000000000000000000000"
+  },
+  "predicted": {
+    "proxy": null,
+    "sender": null,
+    "targets_97": [],
+    "safe_97": null,
+    "executor_97": null,
+    "targets_10143": [],
+    "safe_10143": null,
+    "executor_10143": null
+  },
+  "limits": {
+    "ccip_fee_max_wei": "2000000000000000"
+  },
+  "funding_recipients": [],
+  "faucet_sources": []
+}

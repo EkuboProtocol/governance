@@ -115,3 +115,64 @@ fn test_t2_governor_emits_exact_l1_message() {
     assert(*message.to_address == vector_proxy(), 'to proxy');
     assert(message.payload.span() == vector_felts().span(), 'exact felts');
 }
+
+// EKU-1261 T2-2: isolated T2 Governor authority. The T2 Staker token is a fixed supply minted once to t2-starknet
+// (`l1_proxy/script/t2/cairo`, T2VotingToken; here the same shape with the test token), and t2-starknet stakes ALL
+// of it to itself. A third party then has zero weight: it cannot propose, and its vote changes nothing.
+fn stranger() -> ContractAddress {
+    't2_third_party'.try_into().unwrap()
+}
+
+fn isolated_stack() -> IGovernorDispatcher {
+    set_block_timestamp(1_791_000_000);
+    let supply: u256 = 1_000_000_000_000_000_000_000;
+    let (staker, token) = setup_staker(supply);
+    let mut args: Array<felt252> = array![];
+    Serde::serialize(@(staker, t2_config()), ref args);
+    let (address, _) = declare("Governor").unwrap().contract_class().deploy(@args).unwrap();
+    token.approve(staker.contract_address, supply);
+    staker.stake(proposer());
+    assert(token.balanceOf(get_contract_address()) == 0, 'whole supply staked');
+    advance(t2_config().voting_weight_smoothing_duration);
+    IGovernorDispatcher { contract_address: address }
+}
+
+fn one_message(governor: ContractAddress) -> Span<Call> {
+    array![
+        Call {
+            to: governor,
+            selector: selector!("send_message_to_l1"),
+            calldata: array![vector_proxy().into(), 1, 0x1261].span(),
+        },
+    ]
+        .span()
+}
+
+#[test]
+#[should_panic(expected: 'THRESHOLD')]
+fn test_t2_isolated_third_party_cannot_propose() {
+    let governor = isolated_stack();
+    as_caller(stranger());
+    governor.propose(one_message(governor.contract_address));
+}
+
+#[test]
+fn test_t2_isolated_third_party_vote_has_zero_weight() {
+    let governor = isolated_stack();
+    let calls = one_message(governor.contract_address);
+    as_caller(proposer());
+    let id = governor.propose(calls);
+    advance(t2_config().voting_start_delay);
+    as_caller(stranger());
+    governor.vote(id, false);
+    as_caller(proposer());
+    governor.vote(id, true);
+    let p = governor.get_proposal(id);
+    assert(p.nay == 0, 'stranger nay has zero weight');
+    assert(p.yea == 1_000_000_000_000_000_000_000, 'all weight is t2-starknet');
+    advance(t2_config().voting_period + t2_config().execution_delay);
+    as_caller(get_contract_address());
+    let mut spy = spy_messages_to_l1();
+    governor.execute(id, calls);
+    assert(spy.get_messages().messages.len() == 1, 'executed');
+}
